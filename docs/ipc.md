@@ -435,12 +435,20 @@ source repositories that must be converted first:
 }
 ```
 
-`POST /updates/source` accepts `{"id":"shurufa233-github"}` and applies the
-manifest/mirror settings from an installable source to `config.json`. Source-only
-Rime presets intentionally return a 400 until a generated shurufa233 manifest is
-provided, keeping upstream YAML conversion explicit and license-auditable.
+`POST /updates/source` accepts `{"id":"shurufa233-github"}` or
+`{"id":"shurufa233-github-cn"}` and applies the manifest/mirror settings from an
+installable source to `config.json`. It also accepts optional
+`manifestUrls` and `mirrorBaseUrls` arrays for enterprise or self-hosted mirror
+overrides. Source-only Rime presets intentionally return a 400 until a generated
+shurufa233 manifest is provided, keeping upstream YAML conversion explicit and
+license-auditable.
 
-For China-region acceleration, keep GitHub as the canonical source and publish the same release artifacts to one or more configured mirror/CDN base URLs. The daemon tries mirror base URLs before the original dictionary URL.
+For China-region acceleration, keep GitHub as the canonical source and publish
+the same release artifacts to one or more configured mirror/CDN base URLs. The
+daemon tries mirror URLs before the original manifest and dictionary URLs. Mirror
+entries may be plain bases such as `https://cdn.example/dicts` or templates such
+as `https://gh-proxy.com/{url}`; `{url}` expands to the canonical GitHub URL and
+`{filename}` / `{file}` / `{name}` expand to the release asset filename.
 When `autoCheck` is enabled, the daemon checks the configured manifest in the background after startup and then periodically. When `autoApply` is also enabled, a newer manifest is downloaded, SHA-256 verified when hashes are present, loaded into all active IME sessions, and persisted under the local dictionary directory without requiring the settings panel to stay open.
 
 Large dictionaries can be published as `.json.gz`. The daemon verifies `sha256`

@@ -36,8 +36,11 @@ from the settings UI and CLI.
 
 For China-region access, keep the upstream GitHub URLs as provenance and publish
 the generated shurufa233 manifest/artifacts to a user-controlled mirror or CDN.
-Put that mirror in `mirrorBaseUrls`; the daemon tries mirror dictionary URLs
-before falling back to the canonical artifact URL.
+Put that mirror in `mirrorBaseUrls`; the daemon tries mirror manifest and
+dictionary URLs before falling back to the canonical GitHub URLs. A mirror can be
+a static base such as `https://cdn.example/dicts`, or a proxy template such as
+`https://gh-proxy.com/{url}`. The template keeps one source URL in the manifest
+while still allowing China-region GitHub release acceleration.
 
 ## One-Command Upstream Sync
 
@@ -93,6 +96,8 @@ hot update from the settings UI, daemon endpoints, or:
 ```powershell
 shurufa-imecli update-check
 shurufa-imecli update-apply
+shurufa-imecli update-source shurufa233-github-cn
+shurufa-imecli update-source shurufa233-github-cn --mirror "https://gh-proxy.com/{url}"
 ```
 
 ## Rime Import

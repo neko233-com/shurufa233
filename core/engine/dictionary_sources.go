@@ -35,6 +35,21 @@ var builtinDictionarySources = []DictionarySourcePreset{
 		},
 	},
 	{
+		ID:          "shurufa233-github-cn",
+		Name:        "shurufa233 Release (GitHub mirror-ready)",
+		Kind:        "manifest",
+		Description: "中国地区可选热更源。保留 GitHub Release 作为权威地址，并优先尝试 mirrorBaseUrls 中的 GitHub 代理模板；用户可在设置里替换为自建或企业镜像。",
+		Homepage:    "https://github.com/neko233-com/shurufa233",
+		License:     "mixed-source-manifest",
+		Installable: true,
+		ManifestURLs: []string{
+			"https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json",
+		},
+		MirrorBaseURLs: []string{
+			"https://gh-proxy.com/{url}",
+		},
+	},
+	{
 		ID:          "rime-luna-source",
 		Name:        "Rime 朙月拼音",
 		Kind:        "rime-source",

@@ -2321,6 +2321,9 @@ function App() {
                   {source.rawSources && source.rawSources.length > 0 && (
                     <i>{source.rawSources.slice(0, 2).map((item) => item.label).join(", ")}</i>
                   )}
+                  {source.mirrorBaseUrls && source.mirrorBaseUrls.length > 0 && (
+                    <i>Mirror · {source.mirrorBaseUrls.slice(0, 2).join(", ")}</i>
+                  )}
                   {source.convertCommand && <code>{source.convertCommand}</code>}
                   {source.syncCommand && <code>{source.syncCommand}</code>}
                 </button>

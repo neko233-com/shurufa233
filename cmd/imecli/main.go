@@ -409,7 +409,7 @@ Usage:
   shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]
   shurufa-imecli reverse "你好" [--limit N]
   shurufa-imecli update-sources
-  shurufa-imecli update-source shurufa233-github
+  shurufa-imecli update-source shurufa233-github-cn [--mirror URL_OR_TEMPLATE] [--manifest URL]
   shurufa-imecli schemas
   shurufa-imecli schema [current|apply <id>]
   shurufa-imecli rime import default.custom.yaml
@@ -683,6 +683,9 @@ func updateSources(client *http.Client) error {
 		if len(source.ManifestURLs) > 0 {
 			fmt.Printf("  manifest: %s\n", strings.Join(source.ManifestURLs, ", "))
 		}
+		if len(source.MirrorBaseURLs) > 0 {
+			fmt.Printf("  mirrors: %s\n", strings.Join(source.MirrorBaseURLs, ", "))
+		}
 		for _, raw := range source.RawSources {
 			fmt.Printf("  raw: %s %s %s\n", raw.Role, raw.Label, raw.URL)
 		}
@@ -697,15 +700,80 @@ func updateSources(client *http.Client) error {
 }
 
 func updateSource(client *http.Client, args []string) error {
-	if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
-		return fmt.Errorf("missing update source id")
+	id, manifests, mirrors, err := parseUpdateSourceArgs(args)
+	if err != nil {
+		return err
 	}
-	body, err := postJSONBytes(client, "/updates/source", map[string]string{"id": strings.TrimSpace(args[0])})
+	payload := map[string]any{"id": id}
+	if len(manifests) > 0 {
+		payload["manifestUrls"] = manifests
+	}
+	if mirrors != nil {
+		payload["mirrorBaseUrls"] = mirrors
+	}
+	body, err := postJSONBytes(client, "/updates/source", payload)
 	if err != nil {
 		return err
 	}
 	fmt.Println(string(body))
 	return nil
+}
+
+func parseUpdateSourceArgs(args []string) (string, []string, []string, error) {
+	if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+		return "", nil, nil, fmt.Errorf("missing update source id")
+	}
+	id := strings.TrimSpace(args[0])
+	var manifests []string
+	var mirrors []string
+	mirrorsSet := false
+	for i := 1; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		if arg == "" {
+			continue
+		}
+		if strings.EqualFold(arg, "--no-mirror") || strings.EqualFold(arg, "--no-mirrors") {
+			mirrorsSet = true
+			mirrors = []string{}
+			continue
+		}
+		value := ""
+		if split := strings.IndexByte(arg, '='); split >= 0 {
+			value = strings.TrimSpace(arg[split+1:])
+			arg = strings.TrimSpace(arg[:split])
+		} else {
+			if i+1 >= len(args) {
+				return "", nil, nil, fmt.Errorf("%s requires a value", arg)
+			}
+			value = strings.TrimSpace(args[i+1])
+			i++
+		}
+		values := splitCSVArg(value)
+		switch strings.ToLower(arg) {
+		case "--manifest", "--manifest-url":
+			manifests = append(manifests, values...)
+		case "--mirror", "--mirror-url", "--mirror-base":
+			mirrorsSet = true
+			mirrors = append(mirrors, values...)
+		default:
+			return "", nil, nil, fmt.Errorf("unknown update-source option %q", arg)
+		}
+	}
+	if !mirrorsSet {
+		mirrors = nil
+	}
+	return id, manifests, mirrors, nil
+}
+
+func splitCSVArg(value string) []string {
+	var out []string
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func schemas(client *http.Client) error {

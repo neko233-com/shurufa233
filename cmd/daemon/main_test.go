@@ -1102,8 +1102,8 @@ func TestDictionaryURLsPreferConfiguredMirrors(t *testing.T) {
 
 	got := dictionaryURLs(config, "https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.2026.07.04.json")
 	want := []string{
-		"https://mirror.example.cn/releases/zh-CN.2026.07.04.json",
 		"https://cdn.example.com/shurufa233/zh-CN.2026.07.04.json",
+		"https://mirror.example.cn/releases/zh-CN.2026.07.04.json",
 		"https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.2026.07.04.json",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -1134,12 +1134,22 @@ func TestUpdateSourcesEndpointListsRimeSources(t *testing.T) {
 		t.Fatalf("selected = %q", got.Selected)
 	}
 	foundIce := false
+	foundCN := false
 	for _, source := range got.Sources {
+		if source.ID == "shurufa233-github-cn" &&
+			source.Installable &&
+			len(source.MirrorBaseURLs) > 0 &&
+			strings.Contains(source.MirrorBaseURLs[0], "{url}") {
+			foundCN = true
+		}
 		if source.ID == "rime-ice-source" &&
 			strings.Contains(source.ConvertCommand, "shurufa-dictimport") &&
 			strings.Contains(source.SyncCommand, "shurufa-dictsync") {
 			foundIce = true
 		}
+	}
+	if !foundCN {
+		t.Fatalf("expected China mirror-ready source, got %#v", got.Sources)
 	}
 	if !foundIce {
 		t.Fatalf("expected rime-ice source with convert and sync commands, got %#v", got.Sources)
@@ -1169,6 +1179,56 @@ func TestApplyUpdateSourceUpdatesConfig(t *testing.T) {
 	}
 	if len(state.config.Update.ManifestURLs) == 0 || !strings.Contains(state.config.Update.ManifestURLs[0], "github.com/neko233-com/shurufa233") {
 		t.Fatalf("manifest URLs = %#v", state.config.Update.ManifestURLs)
+	}
+}
+
+func TestApplyChinaUpdateSourceAddsMirrorTemplates(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.Update.SourcePreset = ""
+	config.Update.MirrorBaseURLs = nil
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	state.sessions["default"] = state.engine
+
+	req := httptest.NewRequest(http.MethodPost, "/updates/source", strings.NewReader(`{"id":"shurufa233-github-cn"}`))
+	rec := httptest.NewRecorder()
+	state.applyUpdateSource(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if state.config.Update.SourcePreset != "shurufa233-github-cn" {
+		t.Fatalf("source preset = %q", state.config.Update.SourcePreset)
+	}
+	if len(state.config.Update.MirrorBaseURLs) == 0 || !strings.Contains(state.config.Update.MirrorBaseURLs[0], "{url}") {
+		t.Fatalf("mirror URLs = %#v", state.config.Update.MirrorBaseURLs)
+	}
+}
+
+func TestMirroredURLsPreferMirrorsAndKeepCanonicalFallback(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.Update.MirrorBaseURLs = []string{
+		"https://gh-proxy.com/{url}",
+		"https://cdn.example/dicts",
+	}
+
+	got := mirroredURLs(config, "https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json")
+
+	want := []string{
+		"https://gh-proxy.com/https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json",
+		"https://cdn.example/dicts/dictionary-manifest.json",
+		"https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("mirrored URLs = %#v, want %#v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("mirrored URLs = %#v, want %#v", got, want)
+		}
 	}
 }
 

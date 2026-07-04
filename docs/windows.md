@@ -218,6 +218,14 @@ canonical GitHub URL fallback:
 shurufa-dictsync -preset rime-ice-source -mirror-url "https://ghproxy.example/{url}" -mirror-url "https://git.example/{repo}.git"
 ```
 
+For end-user hot updates, the installable `shurufa233-github-cn` source keeps
+GitHub Releases as the canonical manifest while trying configured
+`mirrorBaseUrls` first. Mirror entries can be plain CDN bases or proxy templates:
+
+```powershell
+shurufa-imecli update-source shurufa233-github-cn --mirror "https://gh-proxy.com/{url}"
+```
+
 ## Native Profile Tool
 
 ```powershell

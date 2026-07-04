@@ -1596,7 +1596,7 @@ func (s *AppState) checkLatestDictionaries() (updateCheck, error) {
 	config := s.config
 	s.mu.RUnlock()
 
-	manifest, manifestURL, err := s.fetchManifest(config.Update.ManifestURLs)
+	manifest, manifestURL, err := s.fetchManifestWithConfig(config)
 	if err != nil {
 		return updateCheck{}, err
 	}
@@ -1615,7 +1615,7 @@ func (s *AppState) applyLatestDictionaries(force bool) (updateApplyResult, error
 	config := s.config
 	s.mu.RUnlock()
 
-	manifest, manifestURL, err := s.fetchManifest(config.Update.ManifestURLs)
+	manifest, manifestURL, err := s.fetchManifestWithConfig(config)
 	if err != nil {
 		return updateApplyResult{}, err
 	}
@@ -1750,6 +1750,10 @@ func (s *AppState) saveLocked() error {
 	return os.WriteFile(s.path, data, 0o644)
 }
 
+func (s *AppState) fetchManifestWithConfig(config engine.Config) (dictionaryManifest, string, error) {
+	return s.fetchManifest(mirroredURLs(config, config.Update.ManifestURLs...))
+}
+
 func (s *AppState) fetchManifest(urls []string) (dictionaryManifest, string, error) {
 	var lastErr error
 	for _, url := range urls {
@@ -1833,16 +1837,44 @@ func hasGzipHeader(data []byte) bool {
 }
 
 func dictionaryURLs(config engine.Config, rawURL string) []string {
-	urls := []string{rawURL}
-	name := filepath.Base(strings.ReplaceAll(rawURL, "\\", "/"))
-	for _, base := range config.Update.MirrorBaseURLs {
-		base = strings.TrimRight(strings.TrimSpace(base), "/")
-		if base == "" {
-			continue
+	return mirroredURLs(config, rawURL)
+}
+
+func mirroredURLs(config engine.Config, rawURLs ...string) []string {
+	out := make([]string, 0, len(rawURLs)*(len(config.Update.MirrorBaseURLs)+1))
+	seen := map[string]bool{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			return
 		}
-		urls = append([]string{base + "/" + name}, urls...)
+		seen[value] = true
+		out = append(out, value)
 	}
-	return urls
+	for _, rawURL := range rawURLs {
+		for _, mirror := range config.Update.MirrorBaseURLs {
+			add(renderMirrorDownloadURL(mirror, rawURL))
+		}
+		add(rawURL)
+	}
+	return out
+}
+
+func renderMirrorDownloadURL(mirror string, rawURL string) string {
+	mirror = strings.TrimSpace(mirror)
+	rawURL = strings.TrimSpace(rawURL)
+	if mirror == "" || rawURL == "" {
+		return ""
+	}
+	name := filepath.Base(strings.ReplaceAll(rawURL, "\\", "/"))
+	if strings.Contains(mirror, "{url}") || strings.Contains(mirror, "{file}") || strings.Contains(mirror, "{filename}") || strings.Contains(mirror, "{name}") {
+		out := strings.ReplaceAll(mirror, "{url}", rawURL)
+		out = strings.ReplaceAll(out, "{file}", name)
+		out = strings.ReplaceAll(out, "{filename}", name)
+		out = strings.ReplaceAll(out, "{name}", name)
+		return out
+	}
+	return strings.TrimRight(mirror, "/") + "/" + name
 }
 
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {

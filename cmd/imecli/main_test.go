@@ -229,11 +229,15 @@ func TestUpdateSourcePostsSelectedID(t *testing.T) {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		sourceCalled = true
-		var req map[string]string
+		var req struct {
+			ID             string   `json:"id"`
+			ManifestURLs   []string `json:"manifestUrls"`
+			MirrorBaseURLs []string `json:"mirrorBaseUrls"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode source request: %v", err)
 		}
-		if req["id"] != "shurufa233-github" {
+		if req.ID != "shurufa233-github" {
 			t.Fatalf("source request = %#v", req)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
@@ -248,6 +252,52 @@ func TestUpdateSourcePostsSelectedID(t *testing.T) {
 	}
 	if !sourceCalled {
 		t.Fatal("update source endpoint was not called")
+	}
+}
+
+func TestUpdateSourcePostsMirrorOverrides(t *testing.T) {
+	var sourceCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/updates/source" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		sourceCalled = true
+		var req struct {
+			ID             string   `json:"id"`
+			ManifestURLs   []string `json:"manifestUrls"`
+			MirrorBaseURLs []string `json:"mirrorBaseUrls"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode source request: %v", err)
+		}
+		if req.ID != "shurufa233-github-cn" || len(req.ManifestURLs) != 1 || len(req.MirrorBaseURLs) != 1 {
+			t.Fatalf("source request = %#v", req)
+		}
+		if req.MirrorBaseURLs[0] != "https://gh-proxy.com/{url}" {
+			t.Fatalf("mirror override = %#v", req.MirrorBaseURLs)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := updateSource(server.Client(), []string{"shurufa233-github-cn", "--manifest", "https://mirror.example/manifest.json", "--mirror", "https://gh-proxy.com/{url}"}); err != nil {
+		t.Fatal(err)
+	}
+	if !sourceCalled {
+		t.Fatal("update source endpoint was not called")
+	}
+}
+
+func TestParseUpdateSourceNoMirrorSendsEmptyOverride(t *testing.T) {
+	id, manifests, mirrors, err := parseUpdateSourceArgs([]string{"shurufa233-github-cn", "--no-mirror"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "shurufa233-github-cn" || len(manifests) != 0 || mirrors == nil || len(mirrors) != 0 {
+		t.Fatalf("parsed update source = id:%q manifests:%#v mirrors:%#v", id, manifests, mirrors)
 	}
 }
 
