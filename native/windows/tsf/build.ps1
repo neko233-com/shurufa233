@@ -53,7 +53,7 @@ function Assert-VcRuntimeLibrary {
 
   if (-not $runtimeLib) {
     $componentHint = if ($TargetArch -eq "arm64") {
-      "Microsoft.VisualStudio.Component.VC.Tools.ARM64 and Microsoft.VisualStudio.Component.VC.14.44.17.14.ARM64"
+      "Microsoft.VisualStudio.Component.VC.14.44.17.14.ARM64 and Microsoft.VisualStudio.Component.VC.Tools.ARM64EC"
     } else {
       "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
     }
