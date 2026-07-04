@@ -114,6 +114,9 @@ type keyEventResult struct {
 	Action      string                     `json:"action"`
 	Key         string                     `json:"key,omitempty"`
 	Character   string                     `json:"character,omitempty"`
+	Index       int                        `json:"index,omitempty"`
+	PageDelta   int                        `json:"pageDelta,omitempty"`
+	MoveDelta   int                        `json:"moveDelta,omitempty"`
 	Committed   string                     `json:"committed,omitempty"`
 	PassThrough string                     `json:"passThrough,omitempty"`
 	Reason      string                     `json:"reason,omitempty"`
@@ -610,6 +613,20 @@ func executeKeyEvent(session *engine.Engine, req extensionCommandPayload) keyEve
 		return buildKeyEventResult(session, "pass-through", key, character, "", character, "empty-buffer", decision, false, req.Start, limit)
 	}
 
+	if quickIndex, ok := keyEventQuickSelectIndex(session, key, character, before); ok {
+		state, err := session.Select(quickIndex)
+		if err != nil {
+			return buildKeyEventResult(session, "error", key, character, "", "", err.Error(), decision, true, req.Start, limit)
+		}
+		persistUserScores(session.UserScores())
+		return buildKeyEventResultFromStateWithNavigation("commit-candidate", key, character, quickIndex, 0, 0, state.Committed, "", "quick-select", decision, true, 0, limit, state)
+	}
+	if moveDelta, ok := keyEventMoveDelta(key, req); ok && len(before.Candidates) > 0 {
+		return buildKeyEventResultFromStateWithNavigation("move-selection", key, character, req.Index, 0, moveDelta, "", "", "", decision, true, req.Start, limit, before)
+	}
+	if pageDelta, ok := keyEventPageDelta(session, key, character, req, before); ok {
+		return buildKeyEventResultFromStateWithNavigation("page-candidates", key, character, req.Index, pageDelta, 0, "", "", "", decision, true, req.Start, limit, before)
+	}
 	if index, ok := keyEventCandidateIndex(key, req.Start); ok && len(before.Candidates) > index {
 		state, err := session.Select(index)
 		if err != nil {
@@ -654,6 +671,10 @@ func buildKeyEventResult(session *engine.Engine, action string, key string, char
 }
 
 func buildKeyEventResultFromState(action string, key string, character string, committed string, passThrough string, reason string, decision *engine.AppContextDecision, handled bool, start int, limit int, state engine.State) keyEventResult {
+	return buildKeyEventResultFromStateWithNavigation(action, key, character, 0, 0, 0, committed, passThrough, reason, decision, handled, start, limit, state)
+}
+
+func buildKeyEventResultFromStateWithNavigation(action string, key string, character string, index int, pageDelta int, moveDelta int, committed string, passThrough string, reason string, decision *engine.AppContextDecision, handled bool, start int, limit int, state engine.State) keyEventResult {
 	if committed == "" {
 		committed = state.Committed
 	}
@@ -663,6 +684,9 @@ func buildKeyEventResultFromState(action string, key string, character string, c
 		Action:      action,
 		Key:         key,
 		Character:   character,
+		Index:       index,
+		PageDelta:   pageDelta,
+		MoveDelta:   moveDelta,
 		Committed:   committed,
 		PassThrough: passThrough,
 		Reason:      reason,
@@ -741,12 +765,109 @@ func keyEventCandidateIndex(key string, start int) (int, bool) {
 	return start + int(key[0]-'1'), true
 }
 
+func keyEventQuickSelectIndex(session *engine.Engine, key string, character string, state engine.State) (int, bool) {
+	if len(state.Candidates) == 0 {
+		return 0, false
+	}
+	config := session.Config()
+	label := keyEventPunctuationLabel(extensionCommandPayload{}, key, character)
+	switch label {
+	case ";":
+		if config.DoublePinyin && strings.EqualFold(config.DoublePinyinScheme, "microsoft") {
+			return 0, false
+		}
+		if !config.SemicolonQuickSelect || len(state.Candidates) < 2 {
+			return 0, false
+		}
+		return 1, true
+	case "'":
+		if !config.QuoteQuickSelect || len(state.Candidates) < 3 {
+			return 0, false
+		}
+		return 2, true
+	default:
+		return 0, false
+	}
+}
+
+func keyEventMoveDelta(key string, req extensionCommandPayload) (int, bool) {
+	switch key {
+	case "right", "down", "arrowright", "arrowdown":
+		return 1, true
+	case "left", "up", "arrowleft", "arrowup":
+		return -1, true
+	case "tab":
+		if req.Shift {
+			return -1, true
+		}
+		return 1, true
+	default:
+		return 0, false
+	}
+}
+
+func keyEventPageDelta(session *engine.Engine, key string, character string, req extensionCommandPayload, state engine.State) (int, bool) {
+	if len(state.Candidates) <= keyEventLimit(session, req) {
+		return 0, false
+	}
+	config := session.Config()
+	label := keyEventPunctuationLabel(req, key, character)
+	if config.BracketPageKeys {
+		switch label {
+		case "[":
+			return -1, true
+		case "]":
+			return 1, true
+		}
+	}
+	if config.MinusEqualPageKeys {
+		switch label {
+		case "-":
+			return -1, true
+		case "=":
+			return 1, true
+		}
+		switch key {
+		case "pageup", "prior":
+			return -1, true
+		case "pagedown", "next":
+			return 1, true
+		}
+	}
+	if config.CommaPeriodPageKeys {
+		switch label {
+		case ",":
+			return -1, true
+		case ".":
+			return 1, true
+		}
+	}
+	return 0, false
+}
+
+func keyEventLimit(session *engine.Engine, req extensionCommandPayload) int {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = req.PageSize
+	}
+	if limit <= 0 {
+		limit = session.Config().CandidatePageSize
+	}
+	if limit <= 0 {
+		return 7
+	}
+	return limit
+}
+
 func keyEventPunctuation(session *engine.Engine, req extensionCommandPayload, key string, character string) (string, string, bool) {
 	label := keyEventPunctuationLabel(req, key, character)
 	if label == "" {
 		return "", "", false
 	}
 	config := session.Config()
+	if label == ";" && config.DoublePinyin && strings.EqualFold(config.DoublePinyinScheme, "microsoft") {
+		return "", "", false
+	}
 	if strings.EqualFold(config.Punctuation, "half") {
 		if value := punctuationShapeValue(config.PunctuationHalfShape, label); value != "" {
 			return value, label, true
@@ -802,7 +923,7 @@ func keyEventPunctuationLabel(req extensionCommandPayload, key string, character
 		}
 	}
 	switch source {
-	case ",", "<", ".", ">", ";", ":", "/", "?", "[", "{", "]", "}", "'", "\"", "-", "_", "!", "^", "(", ")":
+	case ",", "<", ".", ">", ";", ":", "/", "?", "[", "{", "]", "}", "'", "\"", "-", "_", "=", "+", "!", "^", "(", ")":
 		return source
 	default:
 		return ""

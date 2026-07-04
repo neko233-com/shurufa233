@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -832,6 +833,103 @@ func TestExecuteExtensionCommandKeyEventUsesConfiguredRimePunctuationShape(t *te
 	result, ok := got.(keyEventResult)
 	if !ok || !result.OK || !result.Handled || result.Committed != "，自定义" {
 		t.Fatalf("key-event configured punctuation = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventQuickSelectsSecondAndThirdCandidate(t *testing.T) {
+	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(t.TempDir(), "user-scores.json"))
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{
+		{Reading: "quick", Text: "候一", Weight: 100},
+		{Reading: "quick", Text: "候二", Weight: 90},
+		{Reading: "quick", Text: "候三", Weight: 80},
+	})
+	session.Preview("quick")
+
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":";","character":";"}`)
+	if !handled {
+		t.Fatal("key-event-json semicolon was not handled")
+	}
+	second, ok := got.(keyEventResult)
+	if !ok || !second.OK || !second.Handled || second.Action != "commit-candidate" || second.Index != 1 || second.Committed != "候二" || second.Reason != "quick-select" {
+		t.Fatalf("semicolon quick select = %#v", got)
+	}
+
+	session.Preview("quick")
+	got, handled = executeSessionExtensionCommand(session, "key-event-json", `{"key":"'","character":"'"}`)
+	if !handled {
+		t.Fatal("key-event-json quote was not handled")
+	}
+	third, ok := got.(keyEventResult)
+	if !ok || !third.OK || !third.Handled || third.Action != "commit-candidate" || third.Index != 2 || third.Committed != "候三" || third.Reason != "quick-select" {
+		t.Fatalf("quote quick select = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventRimeProfilePagesWithCommaPeriod(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.KeyProfile = "rime"
+	session := engine.New(config)
+	for i := 0; i < 10; i++ {
+		session.AddEntries([]engine.Entry{{Reading: "page", Text: "候" + strconv.Itoa(i), Weight: 100 - i}})
+	}
+	session.Preview("page")
+
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":".","character":".","limit":5}`)
+	if !handled {
+		t.Fatal("key-event-json period was not handled")
+	}
+	next, ok := got.(keyEventResult)
+	if !ok || !next.OK || !next.Handled || next.Action != "page-candidates" || next.PageDelta != 1 {
+		t.Fatalf("rime period page = %#v", got)
+	}
+
+	got, handled = executeSessionExtensionCommand(session, "key-event-json", `{"key":",","character":",","limit":5}`)
+	if !handled {
+		t.Fatal("key-event-json comma was not handled")
+	}
+	prev, ok := got.(keyEventResult)
+	if !ok || !prev.OK || !prev.Handled || prev.Action != "page-candidates" || prev.PageDelta != -1 {
+		t.Fatalf("rime comma page = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventNavigationIntent(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{
+		{Reading: "move", Text: "候一", Weight: 100},
+		{Reading: "move", Text: "候二", Weight: 90},
+	})
+	session.Preview("move")
+
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"right"}`)
+	if !handled {
+		t.Fatal("key-event-json right was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || !result.Handled || result.Action != "move-selection" || result.MoveDelta != 1 {
+		t.Fatalf("right navigation intent = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventMicrosoftDoublePinyinKeepsSemicolonInput(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.DoublePinyin = true
+	config.DoublePinyinScheme = "microsoft"
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{
+		{Reading: "quick", Text: "候一", Weight: 100},
+		{Reading: "quick", Text: "候二", Weight: 90},
+	})
+	session.Preview("quick")
+
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":";","character":";"}`)
+	if !handled {
+		t.Fatal("key-event-json semicolon was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || !result.Handled || result.Action == "commit-candidate" || result.Committed == "候二" {
+		t.Fatalf("microsoft double pinyin semicolon should not quick-select: %#v", got)
 	}
 }
 
