@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <msctf.h>
 #include <cstdio>
+#include <cwchar>
 
 namespace {
 
@@ -21,6 +22,12 @@ constexpr LANGID kLanguage = MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
 int PrintResult(const char *action, HRESULT hr) {
   std::printf("%s=0x%08X\n", action, static_cast<unsigned int>(hr));
   return SUCCEEDED(hr) ? 0 : 1;
+}
+
+void PrintGuid(const char *name, REFGUID guid) {
+  wchar_t value[64]{};
+  StringFromGUID2(guid, value, ARRAYSIZE(value));
+  std::wprintf(L"%hs=%ls\n", name, value);
 }
 
 }  // namespace
@@ -98,7 +105,31 @@ int main(int argc, char **argv) {
     return PrintResult("probe", hr);
   }
 
-  std::fprintf(stderr, "usage: Shurufa233ProfileCtl.exe [activate|enable|probe]\n");
+  if (_stricmp(command, "current") == 0) {
+    ITfInputProcessorProfileMgr *mgr = nullptr;
+    hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                          IID_ITfInputProcessorProfileMgr,
+                          reinterpret_cast<void **>(&mgr));
+    TF_INPUTPROCESSORPROFILE profile{};
+    if (SUCCEEDED(hr) && mgr) {
+      hr = mgr->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &profile);
+      mgr->Release();
+    }
+    if (SUCCEEDED(hr)) {
+      const bool isShurufa = IsEqualGUID(profile.clsid, kClsidTextService) &&
+                             IsEqualGUID(profile.guidProfile, kProfileGuid);
+      std::printf("current=%s\n", isShurufa ? "shurufa233" : "other");
+      std::printf("langid=0x%04X\n", static_cast<unsigned int>(profile.langid));
+      PrintGuid("clsid", profile.clsid);
+      PrintGuid("profile", profile.guidProfile);
+    }
+    if (didCoInit) {
+      CoUninitialize();
+    }
+    return PrintResult("current", hr);
+  }
+
+  std::fprintf(stderr, "usage: Shurufa233ProfileCtl.exe [enable|activate|current|probe]\n");
   if (didCoInit) {
     CoUninitialize();
   }
