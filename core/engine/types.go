@@ -9,6 +9,7 @@ type Config struct {
 	CandidateLayout       string    `json:"candidateLayout"`
 	ShowCandidateComments bool      `json:"showCandidateComments"`
 	FuzzyInitials         []string  `json:"fuzzyInitials"`
+	SpellerAlgebra        []string  `json:"spellerAlgebra,omitempty"`
 	DoublePinyin          bool      `json:"doublePinyin"`
 	DoublePinyinScheme    string    `json:"doublePinyinScheme"`
 	Language              string    `json:"language"`

@@ -730,6 +730,33 @@ patch:
 	}
 }
 
+func TestApplyRimeCustomYAMLMapsSpellerAlgebraToFuzzyRules(t *testing.T) {
+	config := DefaultConfig()
+	config.FuzzyInitials = nil
+	result, err := ApplyRimeCustomYAML(config, []byte(`
+patch:
+  speller/algebra:
+    - derive/^zh/z/
+    - derive/^([nl])ue$/$1ve/
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Config.SpellerAlgebra) != 2 {
+		t.Fatalf("speller algebra was not preserved: %#v", result.Config.SpellerAlgebra)
+	}
+	if !containsString(result.Config.FuzzyInitials, "zh=z") || !containsString(result.Config.FuzzyInitials, "ue=ve") {
+		t.Fatalf("fuzzy rules were not derived: %#v", result.Config.FuzzyInitials)
+	}
+
+	e := New(result.Config)
+	e.AddEntries([]Entry{{Reading: "zhong", Text: "中", Weight: 20000}})
+	state := e.Preview("zong")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "中" {
+		t.Fatalf("speller-derived fuzzy candidate missing: %#v", state.Candidates)
+	}
+}
+
 func TestResolveAppContextUsesPasswordRule(t *testing.T) {
 	decision := ResolveAppContext(DefaultConfig(), AppContext{PasswordField: true, ProcessName: "chrome.exe"})
 	if !decision.OK || !decision.Matched || decision.Rule == nil {
@@ -1185,4 +1212,13 @@ func TestBundledZhDictionaryHasPagingCandidates(t *testing.T) {
 	if state.Candidates[0].Text != "是" {
 		t.Fatalf("expected top bundled shi candidate 是, got %#v", state.Candidates)
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

@@ -83,6 +83,12 @@ func ApplyRimeCustomYAML(base Config, data []byte) (RimeCustomResult, error) {
 			applied = append(applied, "style/vertical:true")
 		}
 	}
+	if raw, ok := rimeLookup(patch, "speller/algebra"); ok {
+		next, algebraApplied, algebraWarnings := applyRimeSpellerAlgebra(config, raw)
+		config = next
+		applied = append(applied, algebraApplied...)
+		warnings = append(warnings, algebraWarnings...)
+	}
 	if raw, ok := rimeLookup(patch, "switches"); ok {
 		next, appliedSwitches, switchWarnings := applyRimeSwitches(config, raw)
 		config = next
@@ -181,6 +187,59 @@ func applyRimeSchemaList(config *Config, raw any) (string, string, string) {
 		}
 	}
 	return "", "", "schema_list contains no supported schema"
+}
+
+func applyRimeSpellerAlgebra(config Config, raw any) (Config, []string, []string) {
+	applied := []string{}
+	warnings := []string{}
+	rules := []string{}
+	for _, item := range rimeSlice(raw) {
+		rule := strings.TrimSpace(rimeString(item))
+		if rule == "" {
+			continue
+		}
+		rules = append(rules, rule)
+		if fuzzy := rimeAlgebraFuzzyRule(rule); fuzzy != "" {
+			config.FuzzyInitials = appendUnique(config.FuzzyInitials, fuzzy)
+			applied = append(applied, "speller/algebra:"+rule)
+		}
+	}
+	if len(rules) > 0 {
+		config.SpellerAlgebra = appendUnique(config.SpellerAlgebra, rules...)
+		if len(applied) == 0 {
+			applied = append(applied, "speller/algebra")
+			warnings = append(warnings, "speller/algebra stored; no immediately supported fuzzy derive rule found")
+		}
+	}
+	return config, applied, warnings
+}
+
+func rimeAlgebraFuzzyRule(rule string) string {
+	rule = strings.TrimSpace(rule)
+	switch rule {
+	case "derive/^([zcs])h/$1/":
+		return "zh=z,ch=c,sh=s"
+	case "derive/^zh/z/", "derive/^z/zh/":
+		return "zh=z"
+	case "derive/^ch/c/", "derive/^c/ch/":
+		return "ch=c"
+	case "derive/^sh/s/", "derive/^s/sh/":
+		return "sh=s"
+	case "derive/^([nl])ue$/$1ve/", "derive/^([nl])ve$/$1ue/":
+		return "ue=ve"
+	case "derive/un$/uen/", "derive/uen$/un/":
+		return "un=uen"
+	case "derive/ui$/uei/", "derive/uei$/ui/":
+		return "ui=uei"
+	case "derive/iu$/iou/", "derive/iou$/iu/":
+		return "iu=iou"
+	case "derive/ong$/on/", "derive/on$/ong/":
+		return "ong=on"
+	case "derive/ao$/oa/", "derive/oa$/ao/":
+		return "ao=oa"
+	default:
+		return ""
+	}
 }
 
 func applyRimeSwitches(config Config, raw any) (Config, []string, []string) {
@@ -374,6 +433,23 @@ func uniqueStrings(values []string) []string {
 		}
 		seen[value] = true
 		out = append(out, value)
+	}
+	return out
+}
+
+func appendUnique(values []string, additions ...string) []string {
+	return uniqueStrings(append(values, splitCommaRules(additions)...))
+}
+
+func splitCommaRules(values []string) []string {
+	out := []string{}
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				out = append(out, part)
+			}
+		}
 	}
 	return out
 }

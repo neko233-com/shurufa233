@@ -256,11 +256,14 @@ field mapping and future switch expansion.
 `ShurufaApplyRimeCustomJSON` reserve the Rime `*.custom.yaml` patch import
 surface. Payloads may contain `{"yaml":"patch: ..."}` or raw YAML text. The Go
 core maps common Rime patch fields such as `schema_list`, `menu/page_size`,
-`switches`, `style/horizontal`, `punctuator/import_preset`,
+`speller/algebra`, `switches`, `style/horizontal`, `punctuator/import_preset`,
 `key_binder/import_preset`, `key_binder/bindings`, and
 `ascii_composer/switch_key` into the shared config, persists it, and returns
 `applied` plus `warnings`. Native glue should prefer this JSON command instead
-of learning individual Rime YAML concepts in C++.
+of learning individual Rime YAML concepts in C++. The raw spelling algebra is
+kept as `config.spellerAlgebra`, and common fuzzy `derive` rules are folded
+into active `fuzzyInitials` pairs so native callers get behavior changes through
+the existing config reload path.
 
 `app-rules-json`, `resolve-app-context-json`, `ShurufaAppRulesJSON`, and
 `ShurufaResolveAppContextJSON` reserve the app-aware behavior surface that

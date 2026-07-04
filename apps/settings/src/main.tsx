@@ -43,6 +43,7 @@ type Config = {
   candidateLayout: "horizontal" | "vertical" | "auto";
   showCandidateComments: boolean;
   fuzzyInitials: string[];
+  spellerAlgebra?: string[];
   doublePinyin: boolean;
   doublePinyinScheme: "xiaohe" | "microsoft";
   language: string;
@@ -387,6 +388,7 @@ const defaultConfig: Config = {
   candidateLayout: "horizontal",
   showCandidateComments: true,
   fuzzyInitials: ["zh=z", "ch=c", "sh=s"],
+  spellerAlgebra: [],
   doublePinyin: false,
   doublePinyinScheme: "xiaohe",
   language: "zh-CN",
@@ -1157,6 +1159,8 @@ function App() {
       }
       setRimeCustomText(
         `${data.schema ?? data.config?.schema ?? "已应用"} · ${data.applied?.length ?? 0} 项${
+          data.config?.spellerAlgebra?.length ? ` · algebra ${data.config.spellerAlgebra.length}` : ""
+        }${
           data.warnings?.length ? ` · ${data.warnings.length} 个警告` : ""
         }`,
       );

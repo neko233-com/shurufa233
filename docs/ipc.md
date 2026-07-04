@@ -125,13 +125,16 @@ settings into the shared config. It accepts either raw YAML or JSON:
 ```
 
 Supported patch fields include `schema_list`, `schema/schema_id`,
-`menu/page_size`, `style/horizontal`, `style/vertical`, `switches`,
-`translator/enable_sentence`, `punctuator/import_preset`,
+`menu/page_size`, `style/horizontal`, `style/vertical`, `speller/algebra`,
+`switches`, `translator/enable_sentence`, `punctuator/import_preset`,
 `punctuator/half_shape`, `key_binder/import_preset`, `key_binder/bindings`, and
 `ascii_composer/switch_key/Shift_L|Shift_R`. The response contains the applied
 config plus `applied` and `warnings` arrays so GUI, CLI, Wails, and native
 debugging tools can show which Rime fields were accepted without adding
-platform-specific glue.
+platform-specific glue. Original `speller/algebra` strings are stored in
+`config.spellerAlgebra`; common fuzzy `derive` forms such as `derive/^zh/z/`
+and `derive/^([nl])ue$/$1ve/` are also converted into active fuzzy spelling
+pairs such as `zh=z` and `ue=ve`.
 
 `GET /wordbook` returns learned user word scores. `PUT /wordbook` accepts
 `{"userScores":{"reading|text":1000},"merge":true}` for JSON import or

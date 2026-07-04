@@ -586,7 +586,7 @@ func TestExecuteExtensionCommandSchemaPresets(t *testing.T) {
 func TestExecuteExtensionCommandRimeCustomYAML(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 
-	got, handled := executeSessionExtensionCommand(session, "rime-custom-json", `{"yaml":"patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n  menu/page_size: 8\n  style/horizontal: false\n"}`)
+	got, handled := executeSessionExtensionCommand(session, "rime-custom-json", `{"yaml":"patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n  menu/page_size: 8\n  style/horizontal: false\n  speller/algebra:\n    - derive/^zh/z/\n"}`)
 	if !handled {
 		t.Fatal("rime-custom-json command was not handled")
 	}
@@ -596,6 +596,9 @@ func TestExecuteExtensionCommandRimeCustomYAML(t *testing.T) {
 	}
 	if session.Config().Schema != "double-pinyin-xiaohe" || session.Config().CandidatePageSize != 8 || session.Config().CandidateLayout != "vertical" {
 		t.Fatalf("rime custom did not update session config: %#v", session.Config())
+	}
+	if len(session.Config().SpellerAlgebra) != 1 || !containsString(session.Config().FuzzyInitials, "zh=z") {
+		t.Fatalf("rime speller algebra did not update session config: %#v", session.Config())
 	}
 }
 
@@ -765,4 +768,13 @@ func TestComposeAgentABIUsesContextForRewrite(t *testing.T) {
 	if !strings.Contains(got.Items[0].Text, "这段话有点啰嗦") {
 		t.Fatalf("expected context in rewrite prompt, got %#v", got.Items[0])
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
