@@ -33,6 +33,8 @@ constexpr wchar_t kDescription[] = L"shurufa233";
 constexpr wchar_t kModel[] = L"Apartment";
 constexpr LANGID kLanguage = MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
 constexpr int kCandidatesPerPage = 7;
+constexpr DWORD kSkinConfigPollMs = 250;
+constexpr DWORD kHttpSkinPollMs = 2000;
 
 long g_dllRefCount = 0;
 HINSTANCE g_instance = nullptr;
@@ -696,6 +698,9 @@ class CandidateWindow {
   COLORREF border_ = RGB(209, 213, 219);
   COLORREF highlightText_ = RGB(255, 255, 255);
   std::string theme_ = "system";
+  std::wstring skinConfigPath_;
+  bool skinConfigPathResolved_ = false;
+  DWORD lastLocalSkinCheckTick_ = 0;
   DWORD lastHttpSkinRefreshTick_ = 0;
   FILETIME lastSkinConfigWriteTime_{};
   bool hasSkinConfigWriteTime_ = false;
@@ -906,13 +911,18 @@ class CandidateWindow {
     return MixColor(accent_, RGB(255, 255, 255), IsDarkSkin() ? 18 : 10);
   }
 
-  static std::wstring SkinConfigPath() {
+  std::wstring SkinConfigPath() {
+    if (skinConfigPathResolved_) {
+      return skinConfigPath_;
+    }
+    skinConfigPathResolved_ = true;
     wchar_t appData[MAX_PATH]{};
     const DWORD len = GetEnvironmentVariableW(L"APPDATA", appData, ARRAYSIZE(appData));
     if (len == 0 || len >= ARRAYSIZE(appData)) {
       return L"";
     }
-    return std::wstring(appData) + L"\\shurufa233\\config.json";
+    skinConfigPath_ = std::wstring(appData) + L"\\shurufa233\\config.json";
+    return skinConfigPath_;
   }
 
   static bool SameFileTime(const FILETIME &left, const FILETIME &right) {
@@ -1019,6 +1029,11 @@ class CandidateWindow {
     if (path.empty()) {
       return false;
     }
+    const DWORD now = GetTickCount();
+    if (lastLocalSkinCheckTick_ != 0 && now - lastLocalSkinCheckTick_ < kSkinConfigPollMs) {
+      return hasSkinConfigWriteTime_;
+    }
+    lastLocalSkinCheckTick_ = now;
     WIN32_FILE_ATTRIBUTE_DATA attrs{};
     if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attrs)) {
       return false;
@@ -1381,7 +1396,7 @@ class CandidateWindow {
       return;
     }
     const DWORD now = GetTickCount();
-    if (lastHttpSkinRefreshTick_ != 0 && now - lastHttpSkinRefreshTick_ < 2000) {
+    if (lastHttpSkinRefreshTick_ != 0 && now - lastHttpSkinRefreshTick_ < kHttpSkinPollMs) {
       return;
     }
     lastHttpSkinRefreshTick_ = now;
