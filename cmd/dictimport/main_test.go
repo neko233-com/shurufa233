@@ -69,6 +69,63 @@ name: tone
 	}
 }
 
+func TestParseRimeDictionaryHonorsInlineColumns(t *testing.T) {
+	input := `---
+name: reordered
+columns: [text, weight, code]
+...
+列序	3200	lie xu
+`
+	entries, err := parseRimeDictionary(strings.NewReader(input), "rime-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v, want 1", entries)
+	}
+	if entries[0].Text != "列序" || entries[0].Reading != "liexu" || entries[0].Weight != 3200 {
+		t.Fatalf("entry = %#v", entries[0])
+	}
+}
+
+func TestParseRimeDictionaryHonorsBlockColumns(t *testing.T) {
+	input := `---
+name: block_columns
+columns:
+  - code
+  - text
+  - weight
+...
+dao ru	导入	2800
+`
+	entries, err := parseRimeDictionary(strings.NewReader(input), "rime-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v, want 1", entries)
+	}
+	if entries[0].Text != "导入" || entries[0].Reading != "daoru" || entries[0].Weight != 2800 {
+		t.Fatalf("entry = %#v", entries[0])
+	}
+}
+
+func TestParseRimeDictionaryIgnoresStemColumn(t *testing.T) {
+	input := `---
+name: stem
+columns: [text, code, weight, stem]
+...
+测试	ce shi	900	c-sh
+`
+	entries, err := parseRimeDictionary(strings.NewReader(input), "rime-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Text != "测试" || entries[0].Reading != "ceshi" || entries[0].Weight != 900 {
+		t.Fatalf("entries = %#v", entries)
+	}
+}
+
 func TestParseRimeDocumentCollectsImportTables(t *testing.T) {
 	input := `---
 name: rime_ice

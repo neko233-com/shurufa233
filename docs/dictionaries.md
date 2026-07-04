@@ -23,6 +23,24 @@ Rime dictionaries usually use `.dict.yaml` files with a YAML header ending in
 词条<TAB>pin yin<TAB>weight
 ```
 
+When a Rime dictionary declares `columns`, the importer follows that column
+layout instead of assuming the default order. Inline and block styles are both
+accepted:
+
+```yaml
+columns: [text, code, weight, stem]
+```
+
+```yaml
+columns:
+  - code
+  - text
+  - weight
+```
+
+The optional `stem` column is ignored safely; `text`, `code`, and `weight` are
+used to produce shurufa233 entries.
+
 Rime user phrases such as `custom_phrase.txt` are also supported. These files
 often have no YAML header and use the same table shape:
 

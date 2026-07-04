@@ -188,9 +188,11 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	inBody := false
 	sawYAMLHeader := false
+	columns := defaultRimeColumns()
 	var entries []engine.Entry
 	var imports []string
 	importList := false
+	columnList := false
 	for scanner.Scan() {
 		line := strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "\ufeff"))
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -199,18 +201,21 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 		if line == "---" {
 			sawYAMLHeader = true
 			importList = false
+			columnList = false
 			continue
 		}
 		if !inBody {
 			if line == "..." {
 				inBody = true
 				importList = false
+				columnList = false
 				continue
 			}
 			nextImports, ok := parseImportTablesLine(line)
 			if ok {
 				imports = append(imports, nextImports...)
 				importList = len(nextImports) == 0
+				columnList = false
 				continue
 			}
 			if importList {
@@ -219,6 +224,23 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 					continue
 				}
 				importList = false
+			}
+			nextColumns, ok := parseColumnsLine(line)
+			if ok {
+				if len(nextColumns) > 0 {
+					columns = columnsFromNames(nextColumns)
+				} else {
+					columns = blankRimeColumns()
+				}
+				columnList = len(nextColumns) == 0
+				continue
+			}
+			if columnList {
+				if column, ok := parseColumnItem(line); ok {
+					columns = columns.withColumn(column)
+					continue
+				}
+				columnList = false
 			}
 			if symbolEntries, ok := parseRimeSymbolLine(line, source); ok {
 				entries = append(entries, symbolEntries...)
@@ -234,7 +256,7 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 			}
 			continue
 		}
-		entry, ok := parseRimeEntry(line, source)
+		entry, ok := parseRimeEntryWithColumns(line, source, columns)
 		if ok {
 			entries = append(entries, entry)
 		}
@@ -437,6 +459,46 @@ func parseImportTableItem(line string) (string, bool) {
 	return table, table != ""
 }
 
+func parseColumnsLine(line string) ([]string, bool) {
+	if line != "columns:" && !strings.HasPrefix(line, "columns:") {
+		return nil, false
+	}
+	value := strings.TrimSpace(strings.TrimPrefix(line, "columns:"))
+	if value == "" {
+		return nil, true
+	}
+	return normalizeColumnNames(parseYAMLFlowValues(value)), true
+}
+
+func parseColumnItem(line string) (string, bool) {
+	if !strings.HasPrefix(line, "-") {
+		return "", false
+	}
+	column := normalizeColumnName(strings.TrimSpace(strings.TrimPrefix(line, "-")))
+	return column, column != ""
+}
+
+func normalizeColumnNames(values []string) []string {
+	columns := make([]string, 0, len(values))
+	for _, value := range values {
+		if column := normalizeColumnName(value); column != "" {
+			columns = append(columns, column)
+		}
+	}
+	return columns
+}
+
+func normalizeColumnName(value string) string {
+	value = cleanYAMLScalar(stripYAMLInlineComment(value))
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case "text", "code", "weight", "stem":
+		return value
+	default:
+		return ""
+	}
+}
+
 func normalizeImportTable(value string) string {
 	value = strings.TrimSpace(value)
 	value = strings.Trim(value, `"'`)
@@ -482,21 +544,26 @@ func resolveImportTable(baseDir string, table string) (string, bool, error) {
 }
 
 func parseRimeEntry(line string, source string) (engine.Entry, bool) {
+	return parseRimeEntryWithColumns(line, source, defaultRimeColumns())
+}
+
+func parseRimeEntryWithColumns(line string, source string, columns rimeColumns) (engine.Entry, bool) {
+	columns = columns.normalized()
 	fields, ok := splitRimeEntryFields(line)
 	if !ok {
 		return engine.Entry{}, false
 	}
-	if len(fields) < 2 {
+	if len(fields) <= columns.textIndex || len(fields) <= columns.codeIndex {
 		return engine.Entry{}, false
 	}
-	text := strings.TrimSpace(fields[0])
-	reading := normalizeRimeReading(stripRimeInlineComment(fields[1]))
+	text := strings.TrimSpace(fields[columns.textIndex])
+	reading := normalizeRimeReading(stripRimeInlineComment(fields[columns.codeIndex]))
 	if text == "" || reading == "" {
 		return engine.Entry{}, false
 	}
 	weight := 1000
-	if len(fields) >= 3 {
-		if parsed, err := strconv.Atoi(strings.TrimSpace(stripRimeInlineComment(fields[2]))); err == nil && parsed > 0 {
+	if columns.weightIndex >= 0 && len(fields) > columns.weightIndex {
+		if parsed, err := strconv.Atoi(strings.TrimSpace(stripRimeInlineComment(fields[columns.weightIndex]))); err == nil && parsed > 0 {
 			weight = parsed
 		}
 	}
@@ -506,6 +573,63 @@ func parseRimeEntry(line string, source string) (engine.Entry, bool) {
 		Source:  source,
 		Weight:  weight,
 	}, true
+}
+
+type rimeColumns struct {
+	textIndex   int
+	codeIndex   int
+	weightIndex int
+	nextIndex   int
+}
+
+func defaultRimeColumns() rimeColumns {
+	return rimeColumns{
+		textIndex:   0,
+		codeIndex:   1,
+		weightIndex: 2,
+		nextIndex:   3,
+	}
+}
+
+func columnsFromNames(names []string) rimeColumns {
+	columns := blankRimeColumns()
+	for _, name := range names {
+		columns = columns.withColumn(name)
+	}
+	return columns.normalized()
+}
+
+func blankRimeColumns() rimeColumns {
+	return rimeColumns{
+		textIndex:   -1,
+		codeIndex:   -1,
+		weightIndex: -1,
+		nextIndex:   0,
+	}
+}
+
+func (columns rimeColumns) normalized() rimeColumns {
+	if columns.textIndex < 0 {
+		columns.textIndex = 0
+	}
+	if columns.codeIndex < 0 {
+		columns.codeIndex = 1
+	}
+	return columns
+}
+
+func (columns rimeColumns) withColumn(name string) rimeColumns {
+	switch normalizeColumnName(name) {
+	case "text":
+		columns.textIndex = columns.nextIndex
+	case "code":
+		columns.codeIndex = columns.nextIndex
+	case "weight":
+		columns.weightIndex = columns.nextIndex
+	case "stem":
+	}
+	columns.nextIndex++
+	return columns
 }
 
 func splitRimeEntryFields(line string) ([]string, bool) {
