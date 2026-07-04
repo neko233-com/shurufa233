@@ -4,13 +4,16 @@
 #include <strsafe.h>
 
 #include <algorithm>
+#include <vector>
 #include <cwchar>
 
 namespace {
 
 constexpr wchar_t kClassName[] = L"Shurufa233SmokeEditWindow";
 constexpr UINT_PTR kStatsTimer = 1;
-constexpr int kEditTop = 332;
+constexpr int kEditTop = 396;
+constexpr int kRecentKeyWindow = 256;
+constexpr int kLatencyWindow = 512;
 
 const CLSID kClsidTextService = {
     0x3d7b8d06,
@@ -38,6 +41,13 @@ struct Metrics {
   int imeEnds = 0;
   double latencyTotalMs = 0.0;
   int latencySamples = 0;
+  double peakKeysPerSecond = 0.0;
+  LARGE_INTEGER recentKeys[kRecentKeyWindow]{};
+  int recentKeyCursor = 0;
+  int recentKeyCount = 0;
+  double latencyWindow[kLatencyWindow]{};
+  int latencyCursor = 0;
+  int latencyCount = 0;
   bool started = false;
 };
 
@@ -83,6 +93,52 @@ void EnsureStarted() {
     g_metrics.startedAt = Now();
     g_metrics.started = true;
   }
+}
+
+void RecordKeyDown() {
+  EnsureStarted();
+  const LARGE_INTEGER now = Now();
+  g_metrics.keyDowns++;
+  g_metrics.lastKeyAt = now;
+  g_metrics.recentKeys[g_metrics.recentKeyCursor] = now;
+  g_metrics.recentKeyCursor = (g_metrics.recentKeyCursor + 1) % kRecentKeyWindow;
+  if (g_metrics.recentKeyCount < kRecentKeyWindow) {
+    g_metrics.recentKeyCount++;
+  }
+
+  int inWindow = 0;
+  for (int i = 0; i < g_metrics.recentKeyCount; ++i) {
+    if (MsSince(g_metrics.recentKeys[i], now) <= 1000.0) {
+      inWindow++;
+    }
+  }
+  g_metrics.peakKeysPerSecond =
+      std::max(g_metrics.peakKeysPerSecond, static_cast<double>(inWindow));
+}
+
+void RecordLatencySample(double latencyMs) {
+  g_metrics.latencyTotalMs += latencyMs;
+  g_metrics.latencySamples++;
+  g_metrics.latencyWindow[g_metrics.latencyCursor] = latencyMs;
+  g_metrics.latencyCursor = (g_metrics.latencyCursor + 1) % kLatencyWindow;
+  if (g_metrics.latencyCount < kLatencyWindow) {
+    g_metrics.latencyCount++;
+  }
+}
+
+double PercentileLatency(double percentile) {
+  if (g_metrics.latencyCount <= 0) {
+    return 0.0;
+  }
+  std::vector<double> samples;
+  samples.reserve(g_metrics.latencyCount);
+  for (int i = 0; i < g_metrics.latencyCount; ++i) {
+    samples.push_back(g_metrics.latencyWindow[i]);
+  }
+  std::sort(samples.begin(), samples.end());
+  const double scaled = percentile * static_cast<double>(samples.size() - 1);
+  const size_t index = static_cast<size_t>(std::clamp(scaled, 0.0, static_cast<double>(samples.size() - 1)));
+  return samples[index];
 }
 
 HRESULT GetActiveKeyboardProfile(TF_INPUTPROCESSORPROFILE *profile) {
@@ -214,6 +270,18 @@ void DrawBadge(HDC dc, RECT rect, const wchar_t *text, COLORREF fill, COLORREF b
                DT_SINGLELINE | DT_VCENTER | DT_CENTER);
 }
 
+void DrawSegment(HDC dc, RECT rect, const wchar_t *label, const wchar_t *value,
+                 const wchar_t *hint, COLORREF accent) {
+  RECT marker{rect.left, rect.top + 8, rect.left + 4, rect.bottom - 8};
+  RoundedFill(dc, marker, accent, accent, 4);
+  RECT labelRect{rect.left + 14, rect.top + 6, rect.right - 6, rect.top + 26};
+  RECT valueRect{rect.left + 14, rect.top + 27, rect.right - 6, rect.top + 55};
+  RECT hintRect{rect.left + 14, rect.top + 55, rect.right - 6, rect.bottom - 4};
+  DrawTextLine(dc, label, labelRect, g_bodyFont, Rgb(100, 116, 139));
+  DrawTextLine(dc, value, valueRect, g_titleFont, accent);
+  DrawTextLine(dc, hint, hintRect, g_bodyFont, Rgb(107, 114, 128));
+}
+
 void Paint(HWND hwnd) {
   PAINTSTRUCT ps{};
   HDC dc = BeginPaint(hwnd, &ps);
@@ -252,6 +320,10 @@ void Paint(HWND hwnd) {
   const double avgLatency = g_metrics.latencySamples > 0
                                 ? g_metrics.latencyTotalMs / g_metrics.latencySamples
                                 : 0.0;
+  const double p95Latency = PercentileLatency(0.95);
+  const int compositionCycles = std::max(0, g_metrics.imeEnds);
+  const bool latencyExcellent = g_metrics.latencySamples > 0 && p95Latency <= 16.0;
+  const bool latencyGood = g_metrics.latencySamples > 0 && p95Latency <= 33.0;
 
   wchar_t value[64]{};
   const int cardTop = 150;
@@ -278,12 +350,36 @@ void Paint(HWND hwnd) {
   StringCchPrintfW(value, ARRAYSIZE(value), L"%d", g_metrics.changes);
   DrawMetric(dc, card, L"Text changes", value, Rgb(8, 145, 178));
 
-  RECT editFrame{24, 248, client.right - 24, client.bottom - 24};
+  RECT perfPanel{24, 244, client.right - 24, 334};
+  RoundedFill(dc, perfPanel, Rgb(255, 255, 255), Rgb(211, 219, 232), 16);
+  RECT perfTitle{perfPanel.left + 18, perfPanel.top + 10, perfPanel.right - 18, perfPanel.top + 32};
+  DrawTextLine(dc, L"电竞性能雷达", perfTitle, g_bodyFont, Rgb(55, 65, 81));
+  const int segmentTop = perfPanel.top + 34;
+  const int segmentGap = 16;
+  const int segmentWidth = std::max(150, (static_cast<int>(perfPanel.right - perfPanel.left) - 36 - segmentGap * 3) / 4);
+  RECT segment{perfPanel.left + 18, segmentTop, perfPanel.left + 18 + segmentWidth, perfPanel.bottom - 10};
+  StringCchPrintfW(value, ARRAYSIZE(value), L"%.1f ms", p95Latency);
+  DrawSegment(dc, segment, L"P95 latency", value,
+              g_metrics.latencySamples > 0 ? L"越低越适合高速连击" : L"等待候选上屏样本",
+              latencyExcellent ? Rgb(5, 150, 105) : Rgb(217, 119, 6));
+  OffsetRect(&segment, segmentWidth + segmentGap, 0);
+  StringCchPrintfW(value, ARRAYSIZE(value), L"%.0f keys/s", g_metrics.peakKeysPerSecond);
+  DrawSegment(dc, segment, L"Peak burst", value, L"1 秒滑窗峰值", Rgb(37, 99, 235));
+  OffsetRect(&segment, segmentWidth + segmentGap, 0);
+  StringCchPrintfW(value, ARRAYSIZE(value), L"%d cycles", compositionCycles);
+  DrawSegment(dc, segment, L"IME compose", value, L"候选生命周期", Rgb(124, 58, 237));
+  OffsetRect(&segment, segmentWidth + segmentGap, 0);
+  DrawSegment(dc, segment, L"Stability",
+              g_metrics.latencySamples == 0 ? L"Standby" : (latencyGood ? L"Ready" : L"Watch"),
+              g_shurufaActive ? L"TSF profile active" : L"F6 激活后再测",
+              latencyGood ? Rgb(5, 150, 105) : Rgb(220, 38, 38));
+
+  RECT editFrame{24, 350, client.right - 24, client.bottom - 24};
   RoundedFill(dc, editFrame, Rgb(255, 255, 255), Rgb(211, 219, 232), 16);
   RECT editTitle{editFrame.left + 18, editFrame.top + 12, editFrame.right - 18, editFrame.top + 42};
   DrawTextLine(dc, L"原生输入轨道", editTitle, g_titleFont, Rgb(31, 41, 55));
   RECT hint{editFrame.left + 128, editFrame.top + 14, editFrame.right - 18, editFrame.top + 40};
-  DrawTextLine(dc, L"建议测试：nihao / shurufa / zan / kaixin / 12345 连续高速输入",
+  DrawTextLine(dc, L"建议测试：nihao / shurufa / zan / kaixin / shengluehao / 12345 连续高速输入",
                hint, g_bodyFont, Rgb(100, 116, 139),
                DT_SINGLELINE | DT_VCENTER | DT_RIGHT);
   RECT imeHint{editFrame.left + 18, editFrame.top + 44, editFrame.right - 18, editFrame.top + 70};
@@ -305,9 +401,7 @@ LRESULT CALLBACK EditProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
           return 0;
         }
       }
-      EnsureStarted();
-      g_metrics.keyDowns++;
-      g_metrics.lastKeyAt = Now();
+      RecordKeyDown();
       break;
     case WM_CHAR:
       EnsureStarted();
@@ -338,8 +432,7 @@ void UpdateTextMetrics(HWND hwnd) {
     LARGE_INTEGER now = Now();
     const double latency = MsSince(g_metrics.lastKeyAt, now);
     if (latency >= 0.0 && latency < 1000.0) {
-      g_metrics.latencyTotalMs += latency;
-      g_metrics.latencySamples++;
+      RecordLatencySample(latency);
     }
   }
   InvalidateRect(hwnd, nullptr, FALSE);

@@ -183,7 +183,7 @@ verbose lifecycle and commit diagnostics.
 
 ## Input Performance Lab
 
-Native packages include `Shurufa233SmokeEdit.exe`. It is a polished Win32 EDIT-based esports typing and performance lab rather than a React surface, because it validates the real TSF path used by native Windows apps and latency-sensitive games. It tracks WPM, key events per second, average key-to-text-change latency, IME composition state, committed character count, and text-change events.
+Native packages include `Shurufa233SmokeEdit.exe`. It is a polished Win32 EDIT-based esports typing and performance lab rather than a React surface, because it validates the real TSF path used by native Windows apps and latency-sensitive games. It tracks WPM, key events per second, average key-to-text-change latency, P95 latency, one-second burst peak keys/s, IME composition cycles, committed character count, and text-change events.
 
 Inside SmokeEdit, press `F6` to activate the shurufa233 TSF profile for the current test session and immediately refocus the native edit control. This is intended for local validation and does not change the Windows default input method. Press `F5` to clear the test buffer and reset metrics.
 
