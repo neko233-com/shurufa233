@@ -20,6 +20,8 @@ import (
 )
 
 const listenAddr = "127.0.0.1:23333"
+const dictionaryAutoUpdateInterval = 6 * time.Hour
+const dictionaryAutoUpdateInitialDelay = 30 * time.Second
 
 type AppState struct {
 	mu       sync.RWMutex
@@ -68,6 +70,13 @@ type updateCheck struct {
 	Manifest        dictionaryManifest `json:"manifest,omitempty"`
 }
 
+type updateApplyResult struct {
+	OK          bool     `json:"ok"`
+	ManifestURL string   `json:"manifestUrl"`
+	Version     string   `json:"version"`
+	Applied     []string `json:"applied"`
+}
+
 type userScoreStore struct {
 	Version   int            `json:"version"`
 	UpdatedAt time.Time      `json:"updatedAt"`
@@ -100,6 +109,7 @@ func main() {
 	if err := state.load(); err != nil {
 		log.Fatal(err)
 	}
+	go state.runDictionaryAutoUpdater()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", state.withCORS(state.health))
@@ -396,24 +406,12 @@ func (s *AppState) agentCompose(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *AppState) checkUpdates(w http.ResponseWriter, _ *http.Request) {
-	s.mu.RLock()
-	config := s.config
-	s.mu.RUnlock()
-
-	manifest, manifestURL, err := s.fetchManifest(config.Update.ManifestURLs)
+	check, err := s.checkLatestDictionaries()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-
-	current := config.Update.InstalledVersion
-	writeJSON(w, updateCheck{
-		CurrentVersion:  current,
-		LatestVersion:   manifest.Version,
-		UpdateAvailable: manifest.Version != "" && manifest.Version != current,
-		ManifestURL:     manifestURL,
-		Manifest:        manifest,
-	})
+	writeJSON(w, check)
 }
 
 func composeAgentResponse(input string, context string) agentResponse {
@@ -452,51 +450,96 @@ func composeAgentResponse(input string, context string) agentResponse {
 }
 
 func (s *AppState) applyUpdates(w http.ResponseWriter, _ *http.Request) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	manifest, manifestURL, err := s.fetchManifest(s.config.Update.ManifestURLs)
+	result, err := s.applyLatestDictionaries(true)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	writeJSON(w, result)
+}
+
+func (s *AppState) checkLatestDictionaries() (updateCheck, error) {
+	s.mu.RLock()
+	config := s.config
+	s.mu.RUnlock()
+
+	manifest, manifestURL, err := s.fetchManifest(config.Update.ManifestURLs)
+	if err != nil {
+		return updateCheck{}, err
+	}
+	current := config.Update.InstalledVersion
+	return updateCheck{
+		CurrentVersion:  current,
+		LatestVersion:   manifest.Version,
+		UpdateAvailable: manifest.Version != "" && manifest.Version != current,
+		ManifestURL:     manifestURL,
+		Manifest:        manifest,
+	}, nil
+}
+
+func (s *AppState) applyLatestDictionaries(force bool) (updateApplyResult, error) {
+	s.mu.RLock()
+	config := s.config
+	s.mu.RUnlock()
+
+	manifest, manifestURL, err := s.fetchManifest(config.Update.ManifestURLs)
+	if err != nil {
+		return updateApplyResult{}, err
+	}
+	if !force && manifest.Version != "" && manifest.Version == config.Update.InstalledVersion {
+		return updateApplyResult{
+			OK:          true,
+			ManifestURL: manifestURL,
+			Version:     manifest.Version,
+			Applied:     []string{},
+		}, nil
+	}
 	if len(manifest.Dictionaries) == 0 {
-		http.Error(w, "manifest has no dictionaries", http.StatusBadGateway)
-		return
+		return updateApplyResult{}, errors.New("manifest has no dictionaries")
 	}
 
 	dir := s.dictionaryDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return updateApplyResult{}, err
 	}
 
+	type downloadedDictionary struct {
+		item dictionaryDescriptor
+		data []byte
+	}
+	downloaded := make([]downloadedDictionary, 0, len(manifest.Dictionaries))
 	applied := make([]string, 0, len(manifest.Dictionaries))
 	for _, item := range manifest.Dictionaries {
-		if s.config.Language != "" && item.Language != s.config.Language {
+		if config.Language != "" && item.Language != config.Language {
 			continue
 		}
-		data, err := s.downloadDictionary(item)
+		data, err := s.downloadDictionaryWithConfig(config, item)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
+			return updateApplyResult{}, err
 		}
 		if item.SHA256 != "" {
 			sum := sha256.Sum256(data)
 			if !strings.EqualFold(fmt.Sprintf("%x", sum[:]), item.SHA256) {
-				http.Error(w, "dictionary sha256 mismatch", http.StatusBadGateway)
-				return
+				return updateApplyResult{}, errors.New("dictionary sha256 mismatch")
 			}
 		}
+		downloaded = append(downloaded, downloadedDictionary{item: item, data: data})
+	}
+	if len(downloaded) == 0 {
+		return updateApplyResult{}, fmt.Errorf("manifest has no dictionary for language %s", config.Language)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, file := range downloaded {
+		item := file.item
 		filePath := filepath.Join(dir, item.Language+"."+item.Version+".json")
-		if err := os.WriteFile(filePath, data, 0o644); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		if err := os.WriteFile(filePath, file.data, 0o644); err != nil {
+			return updateApplyResult{}, err
 		}
-		loaded, err := s.loadDictionaryIntoSessionsLocked(data)
+		loaded, err := s.loadDictionaryIntoSessionsLocked(file.data)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
+			return updateApplyResult{}, err
 		}
 		applied = append(applied, loaded.Language+"@"+loaded.Version)
 	}
@@ -505,15 +548,52 @@ func (s *AppState) applyUpdates(w http.ResponseWriter, _ *http.Request) {
 	_ = os.WriteFile(filepath.Join(dir, "manifest.json"), manifestData, 0o644)
 	s.config.Update.InstalledVersion = manifest.Version
 	if err := s.saveLocked(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return updateApplyResult{}, err
+	}
+	return updateApplyResult{
+		OK:          true,
+		ManifestURL: manifestURL,
+		Version:     manifest.Version,
+		Applied:     applied,
+	}, nil
+}
+
+func (s *AppState) runDictionaryAutoUpdater() {
+	timer := time.NewTimer(dictionaryAutoUpdateInitialDelay)
+	defer timer.Stop()
+	for {
+		<-timer.C
+		s.runDictionaryAutoUpdateOnce()
+		timer.Reset(dictionaryAutoUpdateInterval)
+	}
+}
+
+func (s *AppState) runDictionaryAutoUpdateOnce() {
+	s.mu.RLock()
+	config := s.config
+	s.mu.RUnlock()
+	if !config.Update.AutoCheck {
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":          true,
-		"manifestUrl": manifestURL,
-		"version":     manifest.Version,
-		"applied":     applied,
-	})
+	check, err := s.checkLatestDictionaries()
+	if err != nil {
+		log.Printf("dictionary auto update check failed: %v", err)
+		return
+	}
+	if !check.UpdateAvailable {
+		log.Printf("dictionary auto update check: current=%s latest=%s", check.CurrentVersion, check.LatestVersion)
+		return
+	}
+	log.Printf("dictionary update available: current=%s latest=%s manifest=%s", check.CurrentVersion, check.LatestVersion, check.ManifestURL)
+	if !config.Update.AutoApply {
+		return
+	}
+	result, err := s.applyLatestDictionaries(false)
+	if err != nil {
+		log.Printf("dictionary auto update apply failed: %v", err)
+		return
+	}
+	log.Printf("dictionary auto update applied: version=%s applied=%s", result.Version, strings.Join(result.Applied, ","))
 }
 
 func (s *AppState) saveLocked() error {
@@ -561,8 +641,8 @@ func (s *AppState) fetchManifest(urls []string) (dictionaryManifest, string, err
 	return dictionaryManifest{}, "", lastErr
 }
 
-func (s *AppState) downloadDictionary(item dictionaryDescriptor) ([]byte, error) {
-	urls := s.dictionaryURLs(item.URL)
+func (s *AppState) downloadDictionaryWithConfig(config engine.Config, item dictionaryDescriptor) ([]byte, error) {
+	urls := dictionaryURLs(config, item.URL)
 	var lastErr error
 	for _, url := range urls {
 		resp, err := s.client.Get(url)
@@ -585,10 +665,10 @@ func (s *AppState) downloadDictionary(item dictionaryDescriptor) ([]byte, error)
 	return nil, lastErr
 }
 
-func (s *AppState) dictionaryURLs(rawURL string) []string {
+func dictionaryURLs(config engine.Config, rawURL string) []string {
 	urls := []string{rawURL}
 	name := filepath.Base(strings.ReplaceAll(rawURL, "\\", "/"))
-	for _, base := range s.config.Update.MirrorBaseURLs {
+	for _, base := range config.Update.MirrorBaseURLs {
 		base = strings.TrimRight(strings.TrimSpace(base), "/")
 		if base == "" {
 			continue

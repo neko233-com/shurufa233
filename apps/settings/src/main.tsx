@@ -690,6 +690,16 @@ function App() {
                 />
                 <span>自动检查</span>
               </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.update.autoApply}
+                  onChange={(event) =>
+                    setConfig({ ...config, update: { ...config.update, autoApply: event.target.checked } })
+                  }
+                />
+                <span>自动应用</span>
+              </label>
               <button className="secondary" onClick={checkUpdates}>
                 <RefreshCw size={18} />
                 检查更新

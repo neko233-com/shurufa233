@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -220,4 +221,87 @@ func TestNewSessionLoadsLocalDictionaries(t *testing.T) {
 	if len(got.Candidates) < 8 {
 		t.Fatalf("expected local dictionary candidates in new session, got %#v", got.Candidates)
 	}
+}
+
+func TestDictionaryURLsPreferConfiguredMirrors(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.Update.MirrorBaseURLs = []string{
+		" https://cdn.example.com/shurufa233/ ",
+		"https://mirror.example.cn/releases",
+	}
+
+	got := dictionaryURLs(config, "https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.2026.07.04.json")
+	want := []string{
+		"https://mirror.example.cn/releases/zh-CN.2026.07.04.json",
+		"https://cdn.example.com/shurufa233/zh-CN.2026.07.04.json",
+		"https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.2026.07.04.json",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("dictionaryURLs = %#v, want %#v", got, want)
+	}
+}
+
+func TestDictionaryAutoUpdateAppliesConfiguredRelease(t *testing.T) {
+	dictionary := `{
+		"language": "zh-CN",
+		"version": "remote-test",
+		"entries": [
+			{ "reading": "ceshi", "text": "测试热更", "weight": 20000 }
+		]
+	}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/dictionary-manifest.json":
+			_, _ = fmt.Fprintf(w, `{
+				"version": "remote-test",
+				"channel": "stable",
+				"generatedAt": "2026-07-04T00:00:00Z",
+				"dictionaries": [
+					{ "language": "zh-CN", "version": "remote-test", "url": "%s/zh-CN.remote-test.json" }
+				]
+			}`, serverURL(r))
+		case "/zh-CN.remote-test.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(dictionary))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	config := engine.DefaultConfig()
+	config.Update.ManifestURLs = []string{server.URL + "/dictionary-manifest.json"}
+	config.Update.AutoCheck = true
+	config.Update.AutoApply = true
+	config.Update.InstalledVersion = "builtin"
+
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+		client:   server.Client(),
+	}
+	state.sessions["default"] = state.engine
+
+	state.runDictionaryAutoUpdateOnce()
+
+	got := state.engine.Preview("ceshi")
+	if len(got.Candidates) == 0 || got.Candidates[0].Text != "测试热更" {
+		t.Fatalf("auto-updated candidates = %#v", got.Candidates)
+	}
+	if state.config.Update.InstalledVersion != "remote-test" {
+		t.Fatalf("installed version = %q, want remote-test", state.config.Update.InstalledVersion)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(state.path), "dictionaries", "zh-CN.remote-test.json")); err != nil {
+		t.Fatalf("expected downloaded dictionary file: %v", err)
+	}
+}
+
+func serverURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
 }

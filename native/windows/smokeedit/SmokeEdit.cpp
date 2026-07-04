@@ -12,7 +12,7 @@ namespace {
 constexpr wchar_t kClassName[] = L"Shurufa233SmokeEditWindow";
 constexpr wchar_t kSingletonName[] = L"Local\\Shurufa233SmokeEditSingleton";
 constexpr UINT_PTR kStatsTimer = 1;
-constexpr int kEditTop = 602;
+constexpr int kEditTop = 628;
 constexpr int kRecentKeyWindow = 256;
 constexpr int kLatencyWindow = 512;
 constexpr int kRecentKeyLabels = 14;
@@ -100,18 +100,48 @@ void EnsureStarted() {
   }
 }
 
-void RecordKeyLabel(WPARAM key, LPARAM lparam) {
-  wchar_t label[32]{};
-  LONG keyInfo = static_cast<LONG>(lparam);
-  if (GetKeyNameTextW(keyInfo, label, ARRAYSIZE(label)) == 0) {
-    StringCchPrintfW(label, ARRAYSIZE(label), L"VK %02X", static_cast<unsigned int>(key));
-  }
+void PushKeyLabel(const wchar_t *label) {
   StringCchCopyW(g_metrics.recentKeyLabels[g_metrics.recentKeyLabelCursor],
                  ARRAYSIZE(g_metrics.recentKeyLabels[g_metrics.recentKeyLabelCursor]), label);
   g_metrics.recentKeyLabelCursor = (g_metrics.recentKeyLabelCursor + 1) % kRecentKeyLabels;
   if (g_metrics.recentKeyLabelCount < kRecentKeyLabels) {
     g_metrics.recentKeyLabelCount++;
   }
+}
+
+void RecordKeyLabel(WPARAM key, LPARAM lparam) {
+  wchar_t label[32]{};
+  if (key >= L'A' && key <= L'Z') {
+    StringCchPrintfW(label, ARRAYSIZE(label), L"%c", static_cast<wchar_t>(key));
+    PushKeyLabel(label);
+    return;
+  }
+  if (key >= L'0' && key <= L'9') {
+    StringCchPrintfW(label, ARRAYSIZE(label), L"%c", static_cast<wchar_t>(key));
+    PushKeyLabel(label);
+    return;
+  }
+  switch (key) {
+    case VK_PROCESSKEY:
+      PushKeyLabel(L"IME");
+      return;
+    case VK_SPACE:
+      PushKeyLabel(L"Space");
+      return;
+    case VK_BACK:
+      PushKeyLabel(L"Backspace");
+      return;
+    case VK_RETURN:
+      PushKeyLabel(L"Enter");
+      return;
+    default:
+      break;
+  }
+  LONG keyInfo = static_cast<LONG>(lparam);
+  if (GetKeyNameTextW(keyInfo, label, ARRAYSIZE(label)) == 0) {
+    StringCchPrintfW(label, ARRAYSIZE(label), L"VK %02X", static_cast<unsigned int>(key));
+  }
+  PushKeyLabel(label);
 }
 
 void RecordKeyDown(WPARAM key, LPARAM lparam) {
@@ -294,9 +324,9 @@ void DrawSegment(HDC dc, RECT rect, const wchar_t *label, const wchar_t *value,
                  const wchar_t *hint, COLORREF accent) {
   RECT marker{rect.left, rect.top + 8, rect.left + 4, rect.bottom - 8};
   RoundedFill(dc, marker, accent, accent, 4);
-  RECT labelRect{rect.left + 14, rect.top + 6, rect.right - 6, rect.top + 26};
-  RECT valueRect{rect.left + 14, rect.top + 27, rect.right - 6, rect.top + 55};
-  RECT hintRect{rect.left + 14, rect.top + 55, rect.right - 6, rect.bottom - 4};
+  RECT labelRect{rect.left + 14, rect.top + 4, rect.right - 6, rect.top + 24};
+  RECT valueRect{rect.left + 14, rect.top + 22, rect.right - 6, rect.top + 50};
+  RECT hintRect{rect.left + 14, rect.top + 49, rect.right - 6, rect.bottom - 2};
   DrawTextLine(dc, label, labelRect, g_bodyFont, Rgb(100, 116, 139));
   DrawTextLine(dc, value, valueRect, g_titleFont, accent);
   DrawTextLine(dc, hint, hintRect, g_bodyFont, Rgb(107, 114, 128));
@@ -459,14 +489,14 @@ void Paint(HWND hwnd) {
   StringCchPrintfW(value, ARRAYSIZE(value), L"%d", g_metrics.changes);
   DrawMetric(dc, card, L"Text changes", value, Rgb(8, 145, 178));
 
-  RECT perfPanel{24, 244, client.right - 24, 374};
+  RECT perfPanel{24, 244, client.right - 24, 400};
   RoundedFill(dc, perfPanel, Rgb(255, 255, 255), Rgb(211, 219, 232), 16);
   RECT perfTitle{perfPanel.left + 18, perfPanel.top + 10, perfPanel.right - 18, perfPanel.top + 32};
   DrawTextLine(dc, L"电竞性能雷达", perfTitle, g_bodyFont, Rgb(55, 65, 81));
   const int segmentTop = perfPanel.top + 34;
   const int segmentGap = 16;
   const int segmentWidth = std::max(150, (static_cast<int>(perfPanel.right - perfPanel.left) - 36 - segmentGap * 3) / 4);
-  RECT segment{perfPanel.left + 18, segmentTop, perfPanel.left + 18 + segmentWidth, perfPanel.bottom - 10};
+  RECT segment{perfPanel.left + 18, segmentTop, perfPanel.left + 18 + segmentWidth, perfPanel.bottom - 58};
   StringCchPrintfW(value, ARRAYSIZE(value), L"%.1f ms", p95Latency);
   DrawSegment(dc, segment, L"P95 latency", value,
               g_metrics.latencySamples > 0 ? L"越低越适合高速连击" : L"等待候选上屏样本",
@@ -483,17 +513,17 @@ void Paint(HWND hwnd) {
               g_shurufaActive ? L"TSF profile active" : L"F6 激活后再测",
               latencyGood ? Rgb(5, 150, 105) : Rgb(220, 38, 38));
 
-  RECT bar{perfPanel.left + 18, perfPanel.bottom - 30, perfPanel.left + segmentWidth - 8,
-           perfPanel.bottom - 18};
+  RECT bar{perfPanel.left + 18, perfPanel.bottom - 48, perfPanel.left + segmentWidth - 8,
+           perfPanel.bottom - 36};
   DrawBar(dc, bar, g_metrics.latencySamples > 0 ? p95Latency : 0.0, 16.0, 50.0);
-  RECT spark{perfPanel.left + 18 + segmentWidth + segmentGap, perfPanel.bottom - 38,
+  RECT spark{perfPanel.left + 18 + segmentWidth + segmentGap, perfPanel.bottom - 46,
              perfPanel.right - 18, perfPanel.bottom - 10};
   DrawKeyTrail(dc, spark);
 
-  RECT sparkPanel{24, 388, client.right - 24, 494};
+  RECT sparkPanel{24, 414, client.right - 24, 520};
   DrawSparkline(dc, sparkPanel);
 
-  RECT editFrame{24, 510, client.right - 24, client.bottom - 24};
+  RECT editFrame{24, 536, client.right - 24, client.bottom - 24};
   RoundedFill(dc, editFrame, Rgb(255, 255, 255), Rgb(211, 219, 232), 16);
   RECT editTitle{editFrame.left + 18, editFrame.top + 12, editFrame.right - 18, editFrame.top + 42};
   DrawTextLine(dc, L"原生输入轨道", editTitle, g_titleFont, Rgb(31, 41, 55));
@@ -623,7 +653,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
     case WM_GETMINMAXINFO: {
       auto *info = reinterpret_cast<MINMAXINFO *>(lparam);
       info->ptMinTrackSize.x = 920;
-      info->ptMinTrackSize.y = 760;
+      info->ptMinTrackSize.y = 800;
       return 0;
     }
     case WM_KEYDOWN:
@@ -696,7 +726,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
 
   HWND hwnd = CreateWindowExW(0, kClassName, L"shurufa233 input performance lab",
                               WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
-                              1040, 860, nullptr, nullptr, instance, nullptr);
+                              1040, 900, nullptr, nullptr, instance, nullptr);
   if (!hwnd) {
     if (didCoInit) {
       CoUninitialize();
