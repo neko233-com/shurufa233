@@ -9,6 +9,7 @@ $ErrorActionPreference = "Stop"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\shurufa233"
 $NativeInstallDir = Join-Path $env:ProgramFiles "shurufa233"
 $ConfigDir = Join-Path $env:APPDATA "shurufa233"
+$StartMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\shurufa233"
 $InputMethodBackupPath = Join-Path $ConfigDir "input-method-backup.json"
 $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $RunName = "shurufa233-daemon"
@@ -190,6 +191,7 @@ Restore-InputMethods
 
 Remove-DirectoryTree -Path $InstallDir -ExpectedParent (Join-Path $env:LOCALAPPDATA "Programs")
 Remove-DirectoryTree -Path $NativeInstallDir -ExpectedParent $env:ProgramFiles
+Remove-DirectoryTree -Path $StartMenuDir -ExpectedParent (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs")
 if ($RemoveUserData) {
   Remove-DirectoryTree -Path $ConfigDir -ExpectedParent $env:APPDATA
 }

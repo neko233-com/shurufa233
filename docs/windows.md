@@ -75,6 +75,7 @@ The installer:
 - copies `Shurufa233ProfileCtl.exe` for current-session enable/activate/probe operations
 - copies `Shurufa233SmokeEdit.exe` for native TSF and typing performance validation
 - copies the React settings UI bundle and serves it from `http://127.0.0.1:23333/settings/`
+- creates Start Menu shortcuts under `shurufa233` for the settings panel and input performance lab
 - starts the daemon and verifies `http://127.0.0.1:23333/health`
 - registers the TSF DLL through UAC because TSF profiles live under HKLM
 - enables the profile for the current user
@@ -99,6 +100,7 @@ http://127.0.0.1:23333/settings/
 ```
 
 The settings panel is served by the local daemon from the installed static bundle, so it does not require a Vite development server after installation.
+After installation, it is also available from Start Menu > `shurufa233` > `Settings`.
 
 For focused development testing only, pass `-ActivateProfile`:
 
@@ -119,6 +121,7 @@ The uninstaller:
 - stops the daemon process
 - restores `%APPDATA%\shurufa233\input-method-backup.json` when present
 - removes `%LOCALAPPDATA%\Programs\shurufa233` and `C:\Program Files\shurufa233`
+- removes the Start Menu `shurufa233` shortcuts
 
 Pass `-RemoveUserData` to also remove `%APPDATA%\shurufa233`.
 

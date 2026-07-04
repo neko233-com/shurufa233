@@ -219,6 +219,60 @@ function Stop-TextServiceHost {
   }
 }
 
+function Get-StartMenuDir {
+  return Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\shurufa233"
+}
+
+function New-ShurufaShortcut {
+  param(
+    [string]$Path,
+    [string]$TargetPath,
+    [string]$Arguments,
+    [string]$IconLocation,
+    [string]$WorkingDirectory
+  )
+
+  $shell = New-Object -ComObject WScript.Shell
+  $shortcut = $shell.CreateShortcut($Path)
+  $shortcut.TargetPath = $TargetPath
+  if ($Arguments) {
+    $shortcut.Arguments = $Arguments
+  }
+  if ($IconLocation -and (Test-Path $IconLocation)) {
+    $shortcut.IconLocation = $IconLocation
+  }
+  if ($WorkingDirectory -and (Test-Path $WorkingDirectory)) {
+    $shortcut.WorkingDirectory = $WorkingDirectory
+  }
+  $shortcut.Save()
+}
+
+function Install-StartMenuShortcuts {
+  param([string]$InstallDir)
+
+  try {
+    $startMenuDir = Get-StartMenuDir
+    New-Item -ItemType Directory -Force $startMenuDir | Out-Null
+
+    $settingsIcon = Join-Path $InstallDir "Shurufa233ProfileCtl.exe"
+    New-ShurufaShortcut `
+      -Path (Join-Path $startMenuDir "Settings.lnk") `
+      -TargetPath (Join-Path $env:WINDIR "explorer.exe") `
+      -Arguments "http://127.0.0.1:23333/settings/" `
+      -IconLocation $settingsIcon `
+      -WorkingDirectory $InstallDir
+
+    $smokeEdit = Join-Path $InstallDir "Shurufa233SmokeEdit.exe"
+    New-ShurufaShortcut `
+      -Path (Join-Path $startMenuDir "Input Performance Lab.lnk") `
+      -TargetPath $smokeEdit `
+      -IconLocation $smokeEdit `
+      -WorkingDirectory $InstallDir
+  } catch {
+    Write-Warning "Could not create Start Menu shortcuts: $($_.Exception.Message)"
+  }
+}
+
 function ConvertTo-PowerShellLiteral {
   param([string]$Value)
   return "'" + ($Value -replace "'", "''") + "'"
@@ -391,6 +445,7 @@ if (-not $RegisterOnly) {
     New-Item -ItemType Directory -Force $UserDictionaryDir | Out-Null
     Copy-Item -Force (Join-Path $BundledDictionaryDir "*.json") $UserDictionaryDir
   }
+  Install-StartMenuShortcuts -InstallDir $InstallDir
 } else {
   $TsfDll = $TsfDllPath
   if ($CoreDllPath) {
@@ -490,5 +545,6 @@ Write-Host "Installed shurufa233 to $InstallDir"
 Write-Host "Registered $NativeArch TSF DLL for the current user."
 Write-Host "Daemon is configured for startup through HKCU Run."
 Write-Host "Settings UI is served at http://127.0.0.1:23333/settings/."
+Write-Host "Start Menu shortcuts are installed under shurufa233."
 Write-Host "Input performance lab installed at $(Join-Path $InstallDir 'Shurufa233SmokeEdit.exe')."
 Write-Host "Open Windows Settings > Time & language > Typing > Advanced keyboard settings to select shurufa233, or rerun with -ActivateProfile when testing."
