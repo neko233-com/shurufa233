@@ -81,6 +81,7 @@ The installer:
 - starts `ctfmon.exe`
 - registers a versioned TSF DLL path so loaded DLLs do not block updates
 - installs a matching versioned `shurufa_core-<arch>-<stamp>.dll` beside the TSF DLL so the in-process core can update even when the legacy `shurufa_core.dll` is locked
+- removes stale versioned native artifacts when possible and schedules locked stale DLLs for deletion on reboot
 - keeps the existing Microsoft/Windows input method as the default input method
 - saves the pre-install input method list to `%APPDATA%\shurufa233\input-method-backup.json` if no backup exists yet
 

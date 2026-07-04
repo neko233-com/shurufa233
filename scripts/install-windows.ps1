@@ -3,7 +3,8 @@ param(
   [switch]$RegisterOnly,
   [switch]$ActivateProfile,
   [string]$TsfDllPath,
-  [string]$CoreDllPath
+  [string]$CoreDllPath,
+  [string]$CleanupReportPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,8 +14,15 @@ $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\shurufa233"
 $NativeInstallDir = Join-Path $env:ProgramFiles "shurufa233"
 $ConfigDir = Join-Path $env:APPDATA "shurufa233"
 $InputMethodBackupPath = Join-Path $ConfigDir "input-method-backup.json"
+$NativeCleanupReportPath = if ($CleanupReportPath) { $CleanupReportPath } else { Join-Path $ConfigDir "native-cleanup-report.json" }
 $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $Tip = "0804:{3D7B8D06-9872-4C31-B77D-3B87327CBF64}{B68911A2-4478-491C-A624-978441648E20}"
+$NativeCleanupStats = [ordered]@{
+  attempted = 0
+  removed = 0
+  scheduledOnReboot = 0
+  failed = 0
+}
 
 function Test-IsAdmin {
   $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -78,13 +86,107 @@ function Remove-StaleNativeArtifacts {
   Get-ChildItem $NativeInstallDir -Filter "Shurufa233Tsf-*.dll" -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -ne $KeepTsfDll } |
     ForEach-Object {
-      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {}
+      Remove-OrScheduleFile -Path $_.FullName
     }
   Get-ChildItem $NativeInstallDir -Filter "shurufa_core-*.dll" -ErrorAction SilentlyContinue |
     Where-Object { -not $KeepCoreDll -or $_.FullName -ne $KeepCoreDll } |
     ForEach-Object {
-      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {}
+      Remove-OrScheduleFile -Path $_.FullName
     }
+}
+
+function Initialize-NativeCleanupApi {
+  if ("Shurufa233.NativeCleanup" -as [type]) {
+    return
+  }
+  Add-Type -TypeDefinition @"
+namespace Shurufa233 {
+  using System;
+  using System.Runtime.InteropServices;
+
+  public static class NativeCleanup {
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern bool MoveFileEx(string existingFileName, string newFileName, int flags);
+  }
+}
+"@
+}
+
+function Write-NativeCleanupReport {
+  param(
+    [string]$Phase,
+    [string]$KeepTsfDll,
+    [string]$KeepCoreDll
+  )
+
+  try {
+    New-Item -ItemType Directory -Force $ConfigDir | Out-Null
+    [pscustomobject]@{
+      generatedAt = (Get-Date).ToString("o")
+      phase = $Phase
+      isAdmin = Test-IsAdmin
+      nativeInstallDir = $NativeInstallDir
+      keepTsfDll = $KeepTsfDll
+      keepCoreDll = $KeepCoreDll
+      attempted = $NativeCleanupStats["attempted"]
+      removed = $NativeCleanupStats["removed"]
+      scheduledOnReboot = $NativeCleanupStats["scheduledOnReboot"]
+      failed = $NativeCleanupStats["failed"]
+    } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $NativeCleanupReportPath
+  } catch {}
+}
+
+function Write-NativeCleanupSummary {
+  if (-not (Test-Path $NativeCleanupReportPath)) {
+    return
+  }
+  try {
+    $report = Get-Content $NativeCleanupReportPath -Raw | ConvertFrom-Json
+    if ($report.attempted -gt 0) {
+      Write-Host "Native cleanup: removed $($report.removed) stale DLL(s), scheduled $($report.scheduledOnReboot) locked DLL(s) for deletion on reboot, kept $($report.failed) locked DLL(s)."
+    }
+  } catch {}
+}
+
+function Remove-OrScheduleFile {
+  param([string]$Path)
+
+  if (-not (Test-Path $Path)) {
+    return
+  }
+  $NativeCleanupStats["attempted"]++
+  try {
+    Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+    $NativeCleanupStats["removed"]++
+    Write-Verbose "Removed stale native artifact $Path"
+    return
+  } catch {
+    try {
+      Initialize-NativeCleanupApi
+      $deleteOnReboot = 0x4
+      if ([Shurufa233.NativeCleanup]::MoveFileEx($Path, $null, $deleteOnReboot)) {
+        $NativeCleanupStats["scheduledOnReboot"]++
+        Write-Verbose "Scheduled stale native artifact for deletion on reboot: $Path"
+        return
+      }
+    } catch {}
+    $NativeCleanupStats["failed"]++
+    Write-Verbose "Could not remove stale native artifact $Path; it may still be locked by Windows."
+  }
+}
+
+function Copy-OptionalFile {
+  param(
+    [string]$Source,
+    [string]$Destination
+  )
+
+  try {
+    Copy-Item -Force $Source $Destination -ErrorAction Stop
+  } catch {
+    Write-Verbose "Could not update optional compatibility file $Destination; it may be locked by Windows."
+    Remove-OrScheduleFile -Path $Destination
+  }
 }
 
 function Test-DaemonHealth {
@@ -108,6 +210,15 @@ function Write-DaemonDiagnostics {
   }
 }
 
+function Stop-TextServiceHost {
+  Get-Process -Name ctfmon -ErrorAction SilentlyContinue |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+  for ($i = 0; $i -lt 20; $i++) {
+    if (-not (Get-Process -Name ctfmon -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 250
+  }
+}
+
 function ConvertTo-PowerShellLiteral {
   param([string]$Value)
   return "'" + ($Value -replace "'", "''") + "'"
@@ -116,12 +227,18 @@ function ConvertTo-PowerShellLiteral {
 function New-ElevatedRegisterArguments {
   $scriptPath = ConvertTo-PowerShellLiteral $PSCommandPath
   $tsfPath = ConvertTo-PowerShellLiteral $TsfDll
+  $cleanupReportPath = ConvertTo-PowerShellLiteral $NativeCleanupReportPath
   $command = @"
 `$ErrorActionPreference = 'Stop'
 try {
-  & $scriptPath -SkipBuild -RegisterOnly -TsfDllPath $tsfPath
+  & $scriptPath -SkipBuild -RegisterOnly -TsfDllPath $tsfPath -CleanupReportPath $cleanupReportPath
   exit 0
 } catch {
+  [pscustomobject]@{
+    generatedAt = (Get-Date).ToString('o')
+    phase = 'register-only-error'
+    error = (`$_ | Out-String)
+  } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $cleanupReportPath
   Write-Error `$_
   exit 1
 }
@@ -131,9 +248,14 @@ try {
     $command = @"
 `$ErrorActionPreference = 'Stop'
 try {
-  & $scriptPath -SkipBuild -RegisterOnly -TsfDllPath $tsfPath -CoreDllPath $corePath
+  & $scriptPath -SkipBuild -RegisterOnly -TsfDllPath $tsfPath -CoreDllPath $corePath -CleanupReportPath $cleanupReportPath
   exit 0
 } catch {
+  [pscustomobject]@{
+    generatedAt = (Get-Date).ToString('o')
+    phase = 'register-only-error'
+    error = (`$_ | Out-String)
+  } | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $cleanupReportPath
   Write-Error `$_
   exit 1
 }
@@ -164,6 +286,45 @@ function Start-DaemonAndWait {
   throw "shurufa-daemon did not become healthy on http://127.0.0.1:23333/health"
 }
 
+function Register-NativeArtifacts {
+  param(
+    [string]$SourceTsfDll,
+    [string]$SourceCoreDll
+  )
+
+  if (-not (Test-IsAdmin)) {
+    throw "Register-NativeArtifacts requires an elevated PowerShell session."
+  }
+
+  New-Item -ItemType Directory -Force $NativeInstallDir | Out-Null
+  $RegisteredTsfDll = Join-Path $NativeInstallDir (Split-Path $SourceTsfDll -Leaf)
+  Copy-Item -Force $SourceTsfDll $RegisteredTsfDll
+  if ($SourceCoreDll -and (Test-Path $SourceCoreDll)) {
+    Copy-Item -Force $SourceCoreDll (Join-Path $NativeInstallDir (Split-Path $SourceCoreDll -Leaf))
+    Copy-OptionalFile -Source $SourceCoreDll -Destination (Join-Path $NativeInstallDir "shurufa_core.dll")
+  } else {
+    Remove-OrScheduleFile -Path (Join-Path $NativeInstallDir "shurufa_core.dll")
+  }
+  Write-NativeCleanupReport -Phase "native-copied" -KeepTsfDll $RegisteredTsfDll -KeepCoreDll $SourceCoreDll
+
+  $regsvr = Start-Process -FilePath "regsvr32.exe" -ArgumentList @("/s", "`"$RegisteredTsfDll`"") -Wait -PassThru
+  $RegisteredComPath = (Get-ItemProperty "HKLM:\Software\Classes\CLSID\{3D7B8D06-9872-4C31-B77D-3B87327CBF64}\InprocServer32")."(default)"
+  if ($RegisteredComPath -ne $RegisteredTsfDll) {
+    throw "TSF registration did not update HKLM. Expected $RegisteredTsfDll but found $RegisteredComPath"
+  }
+  if ($regsvr.ExitCode -ne 0) {
+    Write-Verbose "regsvr32 exited with code $($regsvr.ExitCode), but HKLM registration verification passed."
+  }
+
+  $RegisteredCoreDll = if ($SourceCoreDll -and (Test-Path $SourceCoreDll)) {
+    Join-Path $NativeInstallDir (Split-Path $SourceCoreDll -Leaf)
+  } else {
+    $null
+  }
+  Remove-StaleNativeArtifacts -KeepTsfDll $RegisteredTsfDll -KeepCoreDll $RegisteredCoreDll
+  Write-NativeCleanupReport -Phase "native-cleaned" -KeepTsfDll $RegisteredTsfDll -KeepCoreDll $RegisteredCoreDll
+}
+
 $NativeArch = Get-CurrentNativeArch
 $GoArch = Get-CurrentGoArch
 
@@ -190,6 +351,7 @@ if (-not $RegisterOnly) {
 
 if (-not $RegisterOnly) {
   New-Item -ItemType Directory -Force $InstallDir | Out-Null
+  Stop-TextServiceHost
   Get-Process -Name shurufa-daemon -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   Get-Process -Name Shurufa233SmokeEdit -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   for ($i = 0; $i -lt 20; $i++) {
@@ -206,9 +368,9 @@ if (-not $RegisterOnly) {
   if (Test-Path $CoreSource) {
     $LocalCoreDll = Join-Path $InstallDir "shurufa_core-$NativeArch-$stamp.dll"
     Copy-Item -Force $CoreSource $LocalCoreDll
-    Copy-Item -Force $CoreSource (Join-Path $InstallDir "shurufa_core.dll")
+    Copy-OptionalFile -Source $CoreSource -Destination (Join-Path $InstallDir "shurufa_core.dll")
   } else {
-    Remove-Item -Force (Join-Path $InstallDir "shurufa_core.dll") -ErrorAction SilentlyContinue
+    Remove-OrScheduleFile -Path (Join-Path $InstallDir "shurufa_core.dll")
     Write-Warning "shurufa_core.dll was not found for $GoArch; TSF will use daemon IPC fallback."
   }
   Copy-Item -Force $ProfileCtlSource (Join-Path $InstallDir "Shurufa233ProfileCtl.exe")
@@ -225,6 +387,13 @@ if (-not $RegisterOnly) {
   if ($CoreDllPath) {
     $LocalCoreDll = $CoreDllPath
   }
+  Write-NativeCleanupReport -Phase "register-only-start" -KeepTsfDll $TsfDll -KeepCoreDll $LocalCoreDll
+}
+
+if ($RegisterOnly) {
+  Register-NativeArtifacts -SourceTsfDll $TsfDll -SourceCoreDll $LocalCoreDll
+  Write-Host "Registered native TSF artifacts under $NativeInstallDir"
+  exit 0
 }
 
 $Daemon = Join-Path $InstallDir "shurufa-daemon.exe"
@@ -237,9 +406,11 @@ if (-not $RegisterOnly) {
 }
 
 if (-not (Test-IsAdmin)) {
+  Remove-Item -LiteralPath $NativeCleanupReportPath -Force -ErrorAction SilentlyContinue
   $args = New-ElevatedRegisterArguments
   $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $args -Verb RunAs -Wait -PassThru
   $ElevatedExitCode = $proc.ExitCode
+  Write-NativeCleanupSummary
   $ExpectedRegisteredTsfDll = Join-Path $NativeInstallDir (Split-Path $TsfDll -Leaf)
   $RegisteredComPath = (Get-ItemProperty "HKLM:\Software\Classes\CLSID\{3D7B8D06-9872-4C31-B77D-3B87327CBF64}\InprocServer32")."(default)"
   if ($RegisteredComPath -ne $ExpectedRegisteredTsfDll) {
@@ -266,34 +437,7 @@ if (-not (Test-IsAdmin)) {
     Write-Verbose "Elevated TSF registration exited with code $ElevatedExitCode, but HKLM registration and core DLL verification passed."
   }
 } else {
-  New-Item -ItemType Directory -Force $NativeInstallDir | Out-Null
-  $RegisteredTsfDll = Join-Path $NativeInstallDir (Split-Path $TsfDll -Leaf)
-  Copy-Item -Force $TsfDll $RegisteredTsfDll
-  if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
-    Copy-Item -Force $LocalCoreDll (Join-Path $NativeInstallDir (Split-Path $LocalCoreDll -Leaf))
-    Copy-Item -Force $LocalCoreDll (Join-Path $NativeInstallDir "shurufa_core.dll") -ErrorAction SilentlyContinue
-  } else {
-    Remove-Item -Force (Join-Path $NativeInstallDir "shurufa_core.dll") -ErrorAction SilentlyContinue
-  }
-  $regsvr = Start-Process -FilePath "regsvr32.exe" -ArgumentList @("/s", "`"$RegisteredTsfDll`"") -Wait -PassThru
-  $RegisteredComPath = (Get-ItemProperty "HKLM:\Software\Classes\CLSID\{3D7B8D06-9872-4C31-B77D-3B87327CBF64}\InprocServer32")."(default)"
-  if ($RegisteredComPath -ne $RegisteredTsfDll) {
-    throw "TSF registration did not update HKLM. Expected $RegisteredTsfDll but found $RegisteredComPath"
-  }
-  if ($regsvr.ExitCode -ne 0) {
-    Write-Verbose "regsvr32 exited with code $($regsvr.ExitCode), but HKLM registration verification passed."
-  }
-  $RegisteredCoreDll = if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
-    Join-Path $NativeInstallDir (Split-Path $LocalCoreDll -Leaf)
-  } else {
-    $null
-  }
-  Remove-StaleNativeArtifacts -KeepTsfDll $RegisteredTsfDll -KeepCoreDll $RegisteredCoreDll
-}
-
-if ($RegisterOnly) {
-  Write-Host "Registered native TSF artifacts under $NativeInstallDir"
-  exit 0
+  Register-NativeArtifacts -SourceTsfDll $TsfDll -SourceCoreDll $LocalCoreDll
 }
 
 if (-not $RegisterOnly) {
@@ -302,12 +446,12 @@ if (-not $RegisterOnly) {
   Get-ChildItem $InstallDir -Filter "Shurufa233Tsf-*.dll" -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -ne $TsfDll } |
     ForEach-Object {
-      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {}
+      Remove-OrScheduleFile -Path $_.FullName
     }
   Get-ChildItem $InstallDir -Filter "shurufa_core-*.dll" -ErrorAction SilentlyContinue |
     Where-Object { -not $LocalCoreDll -or $_.FullName -ne $LocalCoreDll } |
     ForEach-Object {
-      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {}
+      Remove-OrScheduleFile -Path $_.FullName
     }
 }
 
