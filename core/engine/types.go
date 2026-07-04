@@ -73,6 +73,19 @@ type CatalogResponse struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+type ReverseLookupRequest struct {
+	Query string `json:"query,omitempty"`
+	Text  string `json:"text,omitempty"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+type ReverseLookupResponse struct {
+	Query     string    `json:"query"`
+	Count     int       `json:"count"`
+	Entries   []Entry   `json:"entries"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 const (
 	UserPhraseKind   = "phrase"
 	UserPhraseSource = "user-phrase"

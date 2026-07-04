@@ -328,6 +328,32 @@ func TestApplySchemaUpdatesConfigAndSessions(t *testing.T) {
 	}
 }
 
+func TestReverseLookupEndpointReturnsReading(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{{Reading: "shurufa", Text: "输入法", Kind: "phrase", Source: "test", Weight: 20000}})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/engine/reverse?q=%E8%BE%93%E5%85%A5%E6%B3%95&limit=5", nil)
+	rec := httptest.NewRecorder()
+	state.reverseLookup(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got engine.ReverseLookupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Entries) == 0 || got.Entries[0].Reading != "shurufa" {
+		t.Fatalf("reverse lookup = %#v", got)
+	}
+}
+
 func TestImeCandidatesReturnsMetadataAndPagedRows(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.MaxCandidates = 42

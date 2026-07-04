@@ -72,6 +72,18 @@ func ShurufaCatalogJSON(id C.uint64_t, payload *C.char) *C.char {
 	}))
 }
 
+//export ShurufaReverseLookupJSON
+func ShurufaReverseLookupJSON(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(getSession(uint64(id)).ReverseLookup(engine.ReverseLookupRequest{
+		Query: firstNonEmpty(req.Query, req.Text, req.Input, req.Context),
+		Limit: req.Limit,
+	}))
+}
+
 //export ShurufaConfigJSON
 func ShurufaConfigJSON() *C.char {
 	return jsonCString(configEnvelope())

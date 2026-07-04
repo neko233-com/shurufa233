@@ -108,6 +108,7 @@ char* ShurufaCandidatePayloadV2(uint64_t session, int start, int limit);
 char* ShurufaAssociate(uint64_t session, const char* json);
 char* ShurufaCandidateAction(uint64_t session, const char* json);
 char* ShurufaCatalogJSON(uint64_t session, const char* json);
+char* ShurufaReverseLookupJSON(uint64_t session, const char* json);
 char* ShurufaConfigJSON(void);
 char* ShurufaApplyConfigJSON(char* json);
 char* ShurufaSchemaPresetsJSON(void);
@@ -146,7 +147,7 @@ C++ export on developer machines that only consume packaged builds.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `commit-text`, `agent-compose`,
+`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -181,6 +182,7 @@ toggle-mode
 candidate-payload-v2    {"start":0,"limit":7}
 associate               {"context":"你好","limit":7}
 catalog-json            {"kind":"emoji","query":"zan","limit":20}
+reverse-lookup-json     {"query":"你好","limit":20}
 candidate-action        {"action":"next-page","start":0,"limit":7}
 candidate-action        {"action":"associate","context":"微信","limit":7}
 candidate-action        {"action":"forget","index":0}
@@ -239,6 +241,12 @@ queries such as `/fs` are normalized to the stored Rime code. The response is:
   "updatedAt": "2026-07-05T00:00:00Z"
 }
 ```
+
+`reverse-lookup-json` and `ShurufaReverseLookupJSON` reserve the shared Rime-style
+reverse lookup surface. The payload accepts `query`, `text`, or `input` plus
+`limit`, and returns matching dictionary entries with readings, weights, source,
+kind, and comment metadata. Native panels can use this to show pinyin for a
+selected Chinese word without parsing dictionaries in C++.
 
 Imported Rime `symbols.yaml`, `symbols.custom.yaml`, and OpenCC emoji resources
 use the same `kind`/`source` metadata, so Windows and macOS glue can draw a

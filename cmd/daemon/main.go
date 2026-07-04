@@ -249,6 +249,8 @@ func main() {
 	mux.HandleFunc("PUT /config", state.withCORS(state.putConfig))
 	mux.HandleFunc("POST /engine/preview", state.withCORS(state.preview))
 	mux.HandleFunc("POST /engine/associate", state.withCORS(state.associate))
+	mux.HandleFunc("GET /engine/reverse", state.withCORS(state.reverseLookup))
+	mux.HandleFunc("POST /engine/reverse", state.withCORS(state.reverseLookup))
 	mux.HandleFunc("GET /wordbook", state.withCORS(state.wordbook))
 	mux.HandleFunc("PUT /wordbook", state.withCORS(state.wordbook))
 	mux.HandleFunc("DELETE /wordbook", state.withCORS(state.wordbook))
@@ -456,6 +458,29 @@ func (s *AppState) associate(w http.ResponseWriter, r *http.Request) {
 		limit = s.config.CandidatePageSize
 	}
 	writeJSON(w, s.engine.Associate(context, limit))
+}
+
+func (s *AppState) reverseLookup(w http.ResponseWriter, r *http.Request) {
+	req := engine.ReverseLookupRequest{
+		Query: strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("q"), r.URL.Query().Get("query"), r.URL.Query().Get("text"))),
+		Limit: parseBoundedInt(r.URL.Query().Get("limit"), 0, 500),
+	}
+	if r.Method == http.MethodPost {
+		var body engine.ReverseLookupRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(body.Query) != "" || strings.TrimSpace(body.Text) != "" {
+			req.Query = firstNonEmpty(body.Query, body.Text)
+		}
+		if body.Limit > 0 {
+			req.Limit = body.Limit
+		}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	writeJSON(w, s.engine.ReverseLookup(req))
 }
 
 func (s *AppState) wordbook(w http.ResponseWriter, r *http.Request) {

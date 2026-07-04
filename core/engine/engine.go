@@ -311,6 +311,77 @@ func (e *Engine) CatalogEntries(req CatalogRequest) CatalogResponse {
 	}
 }
 
+func (e *Engine) ReverseLookup(req ReverseLookupRequest) ReverseLookupResponse {
+	query := strings.TrimSpace(firstNonEmpty(req.Query, req.Text))
+	limit := normalizeCatalogLimit(req.Limit)
+
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	type reverseCandidate struct {
+		entry Entry
+		exact bool
+		score int
+	}
+	matches := make([]reverseCandidate, 0, limit)
+	seen := map[string]bool{}
+	for _, entries := range e.dict {
+		for _, entry := range entries {
+			if query == "" {
+				continue
+			}
+			text := convertScriptText(entry.Text, e.config.Script)
+			exact := entry.Text == query || text == query
+			if !exact && !strings.Contains(entry.Text, query) && !strings.Contains(text, query) {
+				continue
+			}
+			key := entry.Reading + "\x00" + entry.Text + "\x00" + entry.Kind + "\x00" + entry.Source
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			next := entry
+			next.Text = text
+			if next.Kind == "" {
+				next.Kind = "reverse"
+			}
+			if next.Comment == "" {
+				next.Comment = "反查"
+			}
+			matches = append(matches, reverseCandidate{
+				entry: next,
+				exact: exact,
+				score: e.entryScoreLocked(entry),
+			})
+		}
+	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].exact != matches[j].exact {
+			return matches[i].exact
+		}
+		if matches[i].score != matches[j].score {
+			return matches[i].score > matches[j].score
+		}
+		if matches[i].entry.Reading != matches[j].entry.Reading {
+			return matches[i].entry.Reading < matches[j].entry.Reading
+		}
+		return matches[i].entry.Text < matches[j].entry.Text
+	})
+	out := make([]Entry, 0, min(len(matches), limit))
+	for i, match := range matches {
+		if i >= limit {
+			break
+		}
+		out = append(out, match.entry)
+	}
+	return ReverseLookupResponse{
+		Query:     query,
+		Count:     len(out),
+		Entries:   out,
+		UpdatedAt: nowFunc().UTC(),
+	}
+}
+
 func normalizeUserPhraseEntries(entries []Entry) []Entry {
 	out := make([]Entry, 0, len(entries))
 	seen := map[string]int{}
@@ -1559,6 +1630,15 @@ func normalizeCatalogLimit(limit int) int {
 		return 500
 	}
 	return limit
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func isCatalogEntryKind(kind string) bool {

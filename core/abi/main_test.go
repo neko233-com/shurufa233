@@ -287,6 +287,15 @@ func TestCapabilitiesIncludeCatalogJSON(t *testing.T) {
 	t.Fatalf("capabilities missing catalog-json: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeReverseLookupJSON(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "reverse-lookup-json" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing reverse-lookup-json: %#v", abiFeatureList)
+}
+
 func TestCapabilitiesIncludeAssociationCandidates(t *testing.T) {
 	for _, feature := range abiFeatureList {
 		if feature == "association-candidates" {
@@ -441,6 +450,20 @@ func TestExecuteExtensionCommandCatalog(t *testing.T) {
 	result, ok := got.(engine.CatalogResponse)
 	if !ok || result.Kind != "symbol" || result.Count == 0 || result.Entries[0].Reading != "fs" {
 		t.Fatalf("catalog-json command = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandReverseLookup(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{{Reading: "shurufa", Text: "输入法", Kind: "phrase", Source: "test", Weight: 20000}})
+
+	got, handled := executeSessionExtensionCommand(session, "reverse-lookup-json", `{"query":"输入法","limit":5}`)
+	if !handled {
+		t.Fatal("reverse-lookup-json command was not handled")
+	}
+	result, ok := got.(engine.ReverseLookupResponse)
+	if !ok || len(result.Entries) == 0 || result.Entries[0].Reading != "shurufa" {
+		t.Fatalf("reverse-lookup-json command = %#v", got)
 	}
 }
 

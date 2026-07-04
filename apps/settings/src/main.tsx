@@ -186,6 +186,13 @@ type CatalogResponse = {
   updatedAt: string;
 };
 
+type ReverseLookupResponse = {
+  query: string;
+  count: number;
+  entries: PhraseEntry[];
+  updatedAt: string;
+};
+
 type Candidate = {
   text: string;
   reading: string;
@@ -535,6 +542,9 @@ function App() {
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogEntries, setCatalogEntries] = useState<PhraseEntry[]>([]);
   const [catalogText, setCatalogText] = useState("未读取");
+  const [reverseQuery, setReverseQuery] = useState("你好");
+  const [reverseEntries, setReverseEntries] = useState<PhraseEntry[]>([]);
+  const [reverseText, setReverseText] = useState("未查询");
   const [error, setError] = useState("");
   const [typingPromptId, setTypingPromptId] = useState(typingPrompts[0].id);
   const [typingText, setTypingText] = useState("");
@@ -555,12 +565,18 @@ function App() {
     void loadCatalog();
     void loadDictionarySources();
     void loadSchemas();
+    void runReverseLookup("你好");
   }, []);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadCatalog(), 160);
     return () => window.clearTimeout(timeout);
   }, [catalogKind, catalogQuery]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void runReverseLookup(reverseQuery), 180);
+    return () => window.clearTimeout(timeout);
+  }, [reverseQuery]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void runPreview(preview), 120);
@@ -1255,6 +1271,31 @@ function App() {
     void runPreview(code);
   }
 
+  async function runReverseLookup(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setReverseEntries([]);
+      setReverseText("未查询");
+      return;
+    }
+    try {
+      const query = new URLSearchParams({
+        q: trimmed,
+        limit: "20",
+      });
+      const res = await fetch(`${apiBase}/engine/reverse?${query.toString()}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as ReverseLookupResponse;
+      setReverseEntries(data.entries ?? []);
+      setReverseText(`${data.count ?? data.entries?.length ?? 0} 条读音`);
+      setError("");
+    } catch (err) {
+      setReverseEntries([]);
+      setReverseText("反查失败");
+      setError(err instanceof Error ? err.message : "reverse lookup failed");
+    }
+  }
+
   function exportTypingReport() {
     const report = {
       generatedAt: new Date().toISOString(),
@@ -1922,6 +1963,41 @@ function App() {
                 </button>
               ))}
               {catalogEntries.length === 0 && <div className="emptyWordbook">暂无资源</div>}
+            </div>
+          </section>
+
+          <section className="panel reversePanel">
+            <div className="panelHeader">
+              <h2>拼音反查</h2>
+              <span>{reverseText}</span>
+            </div>
+            <label className="field">
+              <span>中文词</span>
+              <input
+                value={reverseQuery}
+                placeholder="你好 / 输入法"
+                onChange={(event) => setReverseQuery(event.target.value)}
+              />
+            </label>
+            <div className="reverseList">
+              {reverseEntries.slice(0, 10).map((entry, index) => (
+                <button
+                  key={`${entry.reading}-${entry.text}-${entry.source}-${index}`}
+                  className="reverseRow"
+                  onClick={() => {
+                    setPreview(entry.reading);
+                    void runPreview(entry.reading);
+                  }}
+                  title={entry.source ?? ""}
+                >
+                  <strong>{entry.text}</strong>
+                  <span>{entry.reading}</span>
+                  <em>
+                    {entry.comment || kindLabel(entry.kind) || entry.source || "反查"}
+                  </em>
+                </button>
+              ))}
+              {reverseEntries.length === 0 && <div className="emptyWordbook">暂无反查结果</div>}
             </div>
           </section>
 

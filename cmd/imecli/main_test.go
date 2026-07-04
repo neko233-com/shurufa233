@@ -488,6 +488,41 @@ func TestCatalogCallsEndpoint(t *testing.T) {
 	}
 }
 
+func TestReverseLookupCallsEndpoint(t *testing.T) {
+	var called bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/engine/reverse" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		called = true
+		if r.URL.Query().Get("q") != "你好" || r.URL.Query().Get("limit") != "3" {
+			t.Fatalf("query = %s", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode(reverseLookupResponse{
+			Query: "你好",
+			Count: 1,
+			Entries: []phraseEntry{{
+				Reading: "nihao",
+				Text:    "你好",
+				Kind:    "reverse",
+				Source:  "builtin",
+				Weight:  15000,
+			}},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := reverseLookup(server.Client(), []string{"你好", "--limit=3"}); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("reverse lookup endpoint was not called")
+	}
+}
+
 func TestReadWordbookFileAcceptsRawScores(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wordbook.json")
 	if err := os.WriteFile(path, []byte(`{"ceshi|测试":50}`), 0o644); err != nil {

@@ -711,6 +711,50 @@ h2 {
   padding: 2px 5px;
 }
 
+.reverseList {
+  display: grid;
+  gap: 8px;
+}
+
+.reverseRow {
+  display: grid;
+  grid-template-columns: minmax(56px, 0.9fr) minmax(80px, 1.1fr) minmax(70px, 0.9fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  cursor: pointer;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.reverseRow:hover {
+  border-color: var(--accent);
+}
+
+.reverseRow strong,
+.reverseRow span,
+.reverseRow em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reverseRow span {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.reverseRow em {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+}
+
 .sourceHeader {
   display: flex;
   align-items: center;

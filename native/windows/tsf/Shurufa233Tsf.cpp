@@ -65,6 +65,7 @@ using CoreStringFn = char *(*)();
 using SessionStringFn = char *(*)(uint64_t);
 using CandidatePayloadV2Fn = char *(*)(uint64_t, int, int);
 using AssociateFn = char *(*)(uint64_t, const char *);
+using ReverseLookupFn = char *(*)(uint64_t, const char *);
 using ApplyConfigJsonFn = char *(*)(char *);
 using ImportUserScoresJsonFn = char *(*)(uint64_t, char *);
 using ImportUserPhrasesJsonFn = char *(*)(uint64_t, char *);
@@ -99,6 +100,7 @@ struct CoreApi {
   SessionStringFn stateJson = nullptr;
   CandidatePayloadV2Fn candidatePayloadV2 = nullptr;
   AssociateFn associate = nullptr;
+  ReverseLookupFn reverseLookup = nullptr;
   CoreStringFn configJson = nullptr;
   ApplyConfigJsonFn applyConfigJson = nullptr;
   CoreStringFn reloadConfig = nullptr;
@@ -419,6 +421,7 @@ bool TryLoadInProcessCore() {
   api.stateJson = LoadCoreProc<SessionStringFn>(module, "ShurufaState");
   api.candidatePayloadV2 = LoadCoreProc<CandidatePayloadV2Fn>(module, "ShurufaCandidatePayloadV2");
   api.associate = LoadCoreProc<AssociateFn>(module, "ShurufaAssociate");
+  api.reverseLookup = LoadCoreProc<ReverseLookupFn>(module, "ShurufaReverseLookupJSON");
   api.configJson = LoadCoreProc<CoreStringFn>(module, "ShurufaConfigJSON");
   api.applyConfigJson = LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplyConfigJSON");
   api.reloadConfig = LoadCoreProc<CoreStringFn>(module, "ShurufaReloadConfig");

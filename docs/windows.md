@@ -163,6 +163,7 @@ shurufa-imecli rejects add ceshi "错词"
 shurufa-imecli candidates ceshi forget --index 0
 shurufa-imecli symbols emoji zan --limit 12
 shurufa-imecli symbols symbol /fs
+shurufa-imecli reverse "你好"
 shurufa-imecli schemas
 shurufa-imecli schema apply double-pinyin-microsoft
 shurufa-imecli update-sources
@@ -222,6 +223,7 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 - short initial input such as `nh`, `wx`, `srf`, and `zgr` is handled by the Go core abbreviation index, with exact full-pinyin candidates still kept ahead
 - apostrophe-separated pinyin such as `xi'an` is preserved in the Go preedit buffer and uses the separator to force syllable boundaries, so shared daemon, CLI, Wails preview, and future native glue can rank `西安` ahead of plain `xian` exact candidates without duplicating segmentation logic
 - Rime-style slash symbol prefixes such as `/fs` and `/xh` are preserved by the Go core, daemon IPC, CLI, and C ABI while lookup uses imported Rime symbol codes and filters out ordinary words; the current Windows TSF slash key remains part of punctuation handling until a non-conflicting native key mapping is selected
+- Rime-style reverse lookup is exposed through daemon `/engine/reverse`, CLI `reverse`, settings UI, and C ABI `reverse-lookup-json`; it scans the shared Go dictionaries and keeps source/comment metadata so imported Luna/Rime Ice entries can be audited without platform-specific code
 - emoji, kaomoji, symbol, and agent resources are exposed through the shared catalog API (`GET /catalog`, `shurufa-imecli symbols`, and `catalog-json` in the C ABI), so Rime `symbols.yaml` and OpenCC emoji imports can power future native symbol panels without adding more Windows C++ glue
 - Rime-style fixed user phrases are managed through the Go core, daemon IPC, CLI, and reserved C ABI as `kind=phrase`, `source=user-phrase`, stored in `user-phrases.json` separately from learned word scores so personal `custom_phrase.txt` rows can outrank ordinary dictionary candidates without rebuilding a release dictionary
 - wrong candidates can be hidden through `candidate-action=forget`, `ShurufaRejectCandidate`, `ShurufaExecuteCommand(..., "candidate-action", ...)`, daemon `/rejects`, CLI `rejects`, and the React settings panel; records are stored in `user-rejects.json` and remove matching learned scores so bad candidates do not keep returning after user learning

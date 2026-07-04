@@ -102,6 +102,20 @@ func TestBuiltinSchemaPresetsIncludeRimeAndDoublePinyin(t *testing.T) {
 	}
 }
 
+func TestReverseLookupFindsReadingsAndSources(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{{Reading: "shurufa", Text: "输入法", Kind: "phrase", Source: "rime-test", Comment: "测试", Weight: 22000}})
+
+	got := e.ReverseLookup(ReverseLookupRequest{Query: "输入法", Limit: 5})
+
+	if got.Query != "输入法" || len(got.Entries) == 0 {
+		t.Fatalf("reverse lookup = %#v", got)
+	}
+	if got.Entries[0].Reading != "shurufa" || got.Entries[0].Source != "rime-test" {
+		t.Fatalf("reverse lookup entry = %#v", got.Entries[0])
+	}
+}
+
 func TestApplySchemaPresetConfigEnablesMicrosoftDoublePinyin(t *testing.T) {
 	config, ok := ApplySchemaPresetConfig(DefaultConfig(), "double-pinyin-microsoft")
 	if !ok {

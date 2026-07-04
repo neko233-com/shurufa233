@@ -270,6 +270,33 @@ active sessions. Native code only needs to keep reading the same normalized
 `doublePinyin`, `doublePinyinScheme`, `candidateLayout`, punctuation, and skin
 fields; new schemes can be added in Go without changing the TSF DLL.
 
+## Reverse Lookup
+
+`GET /engine/reverse?q=你好&limit=20` or `POST /engine/reverse` with
+`{"query":"你好","limit":20}` returns dictionary readings for Chinese text:
+
+```json
+{
+  "query": "你好",
+  "count": 1,
+  "entries": [
+    {
+      "reading": "nihao",
+      "text": "你好",
+      "kind": "reverse",
+      "source": "builtin",
+      "comment": "反查",
+      "weight": 15000
+    }
+  ]
+}
+```
+
+The lookup scans the shared Go dictionary index, including hot-updated Rime
+imports and user phrases. Results keep original source/comment metadata when it
+exists, which makes Luna/Rime Ice provenance visible in CLI, settings UI, and
+future native reverse-lookup panels without adding C++ parsing logic.
+
 ## Dictionary Hot Updates
 
 The default source is GitHub Releases:

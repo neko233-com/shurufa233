@@ -171,6 +171,13 @@ type catalogResponse struct {
 	UpdatedAt string        `json:"updatedAt"`
 }
 
+type reverseLookupResponse struct {
+	Query     string        `json:"query"`
+	Count     int           `json:"count"`
+	Entries   []phraseEntry `json:"entries"`
+	UpdatedAt string        `json:"updatedAt"`
+}
+
 type agentResponse struct {
 	Input      string           `json:"input"`
 	Context    string           `json:"context,omitempty"`
@@ -224,6 +231,8 @@ func main() {
 		err = rejects(client, os.Args[2:])
 	case "catalog", "symbols", "symbol":
 		err = catalog(client, os.Args[2:])
+	case "reverse", "lookup", "fancha":
+		err = reverseLookup(client, os.Args[2:])
 	case "agent":
 		err = agent(client, os.Args[2:])
 	case "candidates", "candidate-action":
@@ -265,6 +274,7 @@ Usage:
   shurufa-imecli rejects delete "ceshi|错词"
   shurufa-imecli rejects clear
   shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]
+  shurufa-imecli reverse "你好" [--limit N]
   shurufa-imecli update-sources
   shurufa-imecli update-source shurufa233-github
   shurufa-imecli schemas
@@ -1015,6 +1025,70 @@ func printCatalog(response catalogResponse) {
 			meta += "/" + entry.Comment
 		}
 		fmt.Printf("%s\t%s\t%s\t%d\t%s\n", entry.Reading, entry.Text, meta, entry.Weight, entry.Source)
+	}
+}
+
+func reverseLookup(client *http.Client, args []string) error {
+	query, limit, err := parseReverseLookupArgs(args)
+	if err != nil {
+		return err
+	}
+	if query == "" {
+		return fmt.Errorf("missing reverse lookup text")
+	}
+	values := url.Values{"q": []string{query}}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	var response reverseLookupResponse
+	if err := getJSON(client, "/engine/reverse?"+values.Encode(), &response); err != nil {
+		return err
+	}
+	printReverseLookup(response)
+	return nil
+}
+
+func parseReverseLookupArgs(args []string) (string, int, error) {
+	limit := 20
+	var query []string
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		if arg == "" {
+			continue
+		}
+		if arg == "--limit" || arg == "-n" {
+			if i+1 >= len(args) {
+				return "", 0, fmt.Errorf("%s requires a value", arg)
+			}
+			value, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return "", 0, err
+			}
+			limit = value
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--limit=") {
+			value, err := strconv.Atoi(strings.TrimPrefix(arg, "--limit="))
+			if err != nil {
+				return "", 0, err
+			}
+			limit = value
+			continue
+		}
+		query = append(query, arg)
+	}
+	return strings.TrimSpace(strings.Join(query, " ")), limit, nil
+}
+
+func printReverseLookup(response reverseLookupResponse) {
+	fmt.Printf("query=%s count=%d\n", response.Query, response.Count)
+	for _, entry := range response.Entries {
+		meta := entry.Kind
+		if entry.Comment != "" {
+			meta += "/" + entry.Comment
+		}
+		fmt.Printf("%s\t%s\t%s\t%d\t%s\n", entry.Text, entry.Reading, meta, entry.Weight, entry.Source)
 	}
 }
 

@@ -20,6 +20,7 @@ var abiFeatureList = []string{
 	"dictionary-source-presets",
 	"schema-presets-json",
 	"apply-schema-json",
+	"reverse-lookup-json",
 	"user-scores-json",
 	"user-phrases-json",
 	"user-rejects-json",
@@ -448,6 +449,11 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return session.CatalogEntries(engine.CatalogRequest{
 			Kind:  req.Kind,
 			Query: firstNonEmpty(req.Query, req.Input, req.Reading),
+			Limit: req.Limit,
+		}), true
+	case "reverse", "reverse-lookup", "reverse-lookup-json", "lookup-reading":
+		return session.ReverseLookup(engine.ReverseLookupRequest{
+			Query: firstNonEmpty(req.Query, req.Text, req.Input, req.Context),
 			Limit: req.Limit,
 		}), true
 	case "select", "commit-candidate":
