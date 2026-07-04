@@ -115,6 +115,33 @@ the `fs` candidate code. Imported rows are tagged as `symbol`, `emoji`, or
 `kaomoji` where possible so native and React candidate strips can keep showing
 the same readable badges.
 
+Rime OpenCC emoji/symbol tables are also accepted. Projects such as
+`rime/rime-emoji` and Rime Ice ship files like `opencc/emoji_word.txt` or
+`opencc/emoji.txt` with rows shaped as:
+
+```text
+微笑<TAB>微笑 😊 [微笑]
+ID<TAB>ID 🆔️ 🪪
+```
+
+ASCII keys such as `ID` are imported directly as `id` candidates. For Chinese
+keys such as `微笑`, pass a Rime dictionary first so `shurufa-dictimport` can
+reuse its text-to-pinyin readings and then convert the OpenCC emoji rows into
+real pinyin candidates:
+
+```powershell
+go run ./cmd/dictimport `
+  -language zh-CN `
+  -version rime-ice-opencc-emoji-2026-07-05 `
+  -source rime-ice-opencc `
+  -out data\dictionaries\zh-CN.rime-opencc-emoji.json.gz `
+  path\to\rime_ice.dict.yaml `
+  path\to\opencc\emoji.txt
+```
+
+This keeps emoji and symbol expansion sourced from maintained Rime GitHub
+projects instead of hand-maintaining a separate shurufa233-only table.
+
 By default, `shurufa-dictimport` resolves Rime `import_tables` recursively, so
 an entry dictionary such as Rime Ice's `rime_ice.dict.yaml` can pull concrete
 tables from folders like `cn_dicts/` automatically:

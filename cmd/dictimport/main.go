@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/neko233-com/shurufa233/core/engine"
@@ -19,6 +20,7 @@ import (
 
 const customPhraseWeightBase = 50000
 const rimeSymbolWeightBase = 48000
+const openCCWeightBase = 47000
 
 func main() {
 	language := flag.String("language", "zh-CN", "dictionary language")
@@ -96,6 +98,7 @@ type rimeCollector struct {
 	missingPolicy  string
 	warnTo         io.Writer
 	visited        map[string]bool
+	readingsByText map[string][]string
 }
 
 func newRimeCollector(source string, includeImports bool, missingPolicy string, warnTo io.Writer) *rimeCollector {
@@ -105,6 +108,7 @@ func newRimeCollector(source string, includeImports bool, missingPolicy string, 
 		missingPolicy:  strings.ToLower(strings.TrimSpace(missingPolicy)),
 		warnTo:         warnTo,
 		visited:        make(map[string]bool),
+		readingsByText: make(map[string][]string),
 	}
 }
 
@@ -127,7 +131,9 @@ func (collector *rimeCollector) collectResolved(path string) ([]engine.Entry, er
 	if err != nil {
 		return nil, err
 	}
-	entries, imports, parseErr := parseRimeDocument(file, collector.source)
+	entries, imports, parseErr := parseRimeDocumentWithHints(file, collector.source, rimeParseHints{
+		ReadingsByText: collector.readingsByText,
+	})
 	closeErr := file.Close()
 	if parseErr != nil {
 		return nil, fmt.Errorf("%s: %w", cleanPath, parseErr)
@@ -137,6 +143,7 @@ func (collector *rimeCollector) collectResolved(path string) ([]engine.Entry, er
 	}
 
 	if !collector.includeImports {
+		collector.indexReadings(entries)
 		return entries, nil
 	}
 	var out []engine.Entry
@@ -158,7 +165,21 @@ func (collector *rimeCollector) collectResolved(path string) ([]engine.Entry, er
 		out = append(out, imported...)
 	}
 	out = append(out, entries...)
+	collector.indexReadings(out)
 	return out, nil
+}
+
+func (collector *rimeCollector) indexReadings(entries []engine.Entry) {
+	for _, entry := range entries {
+		text := strings.TrimSpace(entry.Text)
+		reading := normalizeRimeReading(entry.Reading)
+		if text == "" || reading == "" {
+			continue
+		}
+		if !containsString(collector.readingsByText[text], reading) {
+			collector.readingsByText[text] = append(collector.readingsByText[text], reading)
+		}
+	}
 }
 
 func (collector *rimeCollector) handleMissingImport(path string, table string) error {
@@ -184,6 +205,14 @@ func parseRimeDictionary(reader io.Reader, source string) ([]engine.Entry, error
 }
 
 func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []string, error) {
+	return parseRimeDocumentWithHints(reader, source, rimeParseHints{})
+}
+
+type rimeParseHints struct {
+	ReadingsByText map[string][]string
+}
+
+func parseRimeDocumentWithHints(reader io.Reader, source string, hints rimeParseHints) ([]engine.Entry, []string, error) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	inBody := false
@@ -261,6 +290,10 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 				entries = append(entries, symbolEntries...)
 				continue
 			}
+			if openCCEntries, ok := parseOpenCCTextLine(line, source, hints); ok {
+				entries = append(entries, openCCEntries...)
+				continue
+			}
 			if sawYAMLHeader {
 				continue
 			}
@@ -277,6 +310,84 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 		}
 	}
 	return entries, imports, scanner.Err()
+}
+
+func parseOpenCCTextLine(line string, source string, hints rimeParseHints) ([]engine.Entry, bool) {
+	if !strings.Contains(line, "\t") {
+		return nil, false
+	}
+	fields := strings.Split(line, "\t")
+	if len(fields) < 2 {
+		return nil, false
+	}
+	key := strings.TrimSpace(fields[0])
+	value := strings.TrimSpace(strings.Join(fields[1:], " "))
+	if key == "" || value == "" || !strings.HasPrefix(value, key) {
+		return nil, false
+	}
+	readings := readingsForOpenCCKey(key, hints)
+	if len(readings) == 0 {
+		return nil, false
+	}
+	values := splitOpenCCValues(value)
+	if len(values) == 0 {
+		return nil, false
+	}
+	var entries []engine.Entry
+	for valueIndex, text := range values {
+		if text == key || !looksLikeOpenCCSupplement(text) {
+			continue
+		}
+		for _, reading := range readings {
+			entries = append(entries, engine.Entry{
+				Reading: reading,
+				Text:    text,
+				Kind:    symbolKind(text),
+				Source:  source,
+				Weight:  openCCWeightBase - valueIndex,
+			})
+		}
+	}
+	return entries, len(entries) > 0
+}
+
+func readingsForOpenCCKey(key string, hints rimeParseHints) []string {
+	var readings []string
+	if reading := normalizeRimeReading(key); reading != "" {
+		readings = append(readings, reading)
+	}
+	for _, reading := range hints.ReadingsByText[key] {
+		reading = normalizeRimeReading(reading)
+		if reading != "" && !containsString(readings, reading) {
+			readings = append(readings, reading)
+		}
+	}
+	return readings
+}
+
+func splitOpenCCValues(value string) []string {
+	fields := strings.Fields(value)
+	values := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field != "" {
+			values = append(values, field)
+		}
+	}
+	return values
+}
+
+func looksLikeOpenCCSupplement(text string) bool {
+	kind := symbolKind(text)
+	if kind == "emoji" || kind == "kaomoji" {
+		return true
+	}
+	for _, r := range text {
+		if unicode.IsSymbol(r) || unicode.IsPunct(r) {
+			return true
+		}
+	}
+	return false
 }
 
 type rimeSymbolListState struct {
@@ -809,4 +920,13 @@ func mergeEntries(entries []engine.Entry) []engine.Entry {
 		out = append(out, entry)
 	}
 	return out
+}
+
+func containsString(items []string, value string) bool {
+	for _, item := range items {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }

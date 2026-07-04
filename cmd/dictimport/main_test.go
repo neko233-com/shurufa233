@@ -321,6 +321,78 @@ func TestRimeSymbolsImportIntoEngine(t *testing.T) {
 	}
 }
 
+func TestParseOpenCCEmojiTextWithASCIIKey(t *testing.T) {
+	input := "ID\tID 🆔️ 🪪\nWIFI\tWIFI 🛜\n"
+	entries, imports, err := parseRimeDocument(strings.NewReader(input), "rime-opencc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(imports) != 0 {
+		t.Fatalf("imports = %#v, want none", imports)
+	}
+	got := map[string][]engine.Entry{}
+	for _, entry := range entries {
+		got[entry.Reading] = append(got[entry.Reading], entry)
+	}
+	if len(got["id"]) != 2 || got["id"][0].Text != "🆔️" || got["id"][1].Text != "🪪" {
+		t.Fatalf("id opencc entries = %#v", got["id"])
+	}
+	if got["id"][0].Kind != "emoji" || got["id"][0].Weight != openCCWeightBase-1 {
+		t.Fatalf("id opencc metadata = %#v", got["id"][0])
+	}
+	if len(got["wifi"]) != 1 || got["wifi"][0].Text != "🛜" {
+		t.Fatalf("wifi opencc entries = %#v", got["wifi"])
+	}
+}
+
+func TestParseOpenCCEmojiTextUsesReadingHints(t *testing.T) {
+	input := "微笑\t微笑 😊 [微笑]\n"
+	entries, imports, err := parseRimeDocumentWithHints(strings.NewReader(input), "rime-opencc", rimeParseHints{
+		ReadingsByText: map[string][]string{
+			"微笑": {"weixiao"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(imports) != 0 {
+		t.Fatalf("imports = %#v, want none", imports)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %#v, want 2", entries)
+	}
+	if entries[0].Reading != "weixiao" || entries[0].Text != "😊" || entries[0].Kind != "emoji" {
+		t.Fatalf("first hinted opencc entry = %#v", entries[0])
+	}
+	if entries[1].Reading != "weixiao" || entries[1].Text != "[微笑]" || entries[1].Kind != "kaomoji" {
+		t.Fatalf("second hinted opencc entry = %#v", entries[1])
+	}
+}
+
+func TestCollectorOpenCCRowsUsePreviouslyImportedRimeDictionary(t *testing.T) {
+	root := t.TempDir()
+	dictPath := filepath.Join(root, "base.dict.yaml")
+	openCCPath := filepath.Join(root, "emoji.txt")
+	writeFile(t, dictPath, `---
+name: base
+...
+微笑	wei xiao	900
+`)
+	writeFile(t, openCCPath, "微笑\t微笑 😊\n")
+
+	collector := newRimeCollector("rime-opencc", true, "error", nil)
+	if _, err := collector.collect(dictPath); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := collector.collect(openCCPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Reading != "weixiao" || entries[0].Text != "😊" {
+		t.Fatalf("opencc entries = %#v", entries)
+	}
+}
+
 func TestParseRimeYAMLHeaderIsNotImportedAsCustomPhrase(t *testing.T) {
 	input := `---
 name: rime_ice
