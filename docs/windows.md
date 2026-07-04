@@ -213,6 +213,7 @@ Current skin fields come from the settings UI:
 
 The daemon normalizes skin colors before saving config. Invalid color strings fall back to defaults, and low-contrast candidate text, muted text, or highlighted text is automatically corrected to a readable black/white value. This keeps custom skins from producing an unreadable candidate strip during live typing.
 The native Windows candidate renderer also detects dark skins from the configured surface color, so custom dark themes do not need a special theme id to get dark-mode derived borders, idle candidate backgrounds, and preedit chrome.
+Candidate font metrics, spacing, radius, and page controls are scaled from the current Windows DPI so the strip stays readable on 125%/150% displays.
 
 The candidate window is local-only. It does not fetch remote UI assets or send input text to a cloud service.
 

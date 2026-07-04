@@ -468,7 +468,7 @@ class CandidateWindow {
     totalCount_ = 0;
     POINT anchor = CaretAnchor();
     const int width = MeasureStatusWidth();
-    const int height = max(42, fontSize_ + 28);
+    const int height = max(Scale(42), ScaledFontSize() + Scale(28));
     const POINT origin = FitToWorkArea(anchor, width, height);
     SetWindowPos(hwnd_, HWND_TOPMOST, origin.x, origin.y, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -608,18 +608,20 @@ class CandidateWindow {
       FillRect(dc, &candidateBand, candidateBg);
       DeleteObject(candidateBg);
 
-      HPEN separator = CreatePen(PS_SOLID, 1, MixColor(border_, CandidateBandColor(), 28));
+      HPEN separator = CreatePen(PS_SOLID, max(1, Scale(1)), MixColor(border_, CandidateBandColor(), 28));
       HGDIOBJ oldSeparator = SelectObject(dc, separator);
-      MoveToEx(dc, rect.left + 14, candidateBand.top, nullptr);
-      LineTo(dc, rect.right - 14, candidateBand.top);
+      MoveToEx(dc, rect.left + Scale(14), candidateBand.top, nullptr);
+      LineTo(dc, rect.right - Scale(14), candidateBand.top);
       SelectObject(dc, oldSeparator);
       DeleteObject(separator);
     }
 
-    HPEN border = CreatePen(PS_SOLID, 1, statusText_.empty() ? PreeditBorderColor() : border_);
+    HPEN border = CreatePen(PS_SOLID, max(1, Scale(1)),
+                            statusText_.empty() ? PreeditBorderColor() : border_);
     HGDIOBJ oldPen = SelectObject(dc, border);
     HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
-    RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, 12, 12);
+    const int windowRadius = Scale(12);
+    RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, windowRadius, windowRadius);
     SelectObject(dc, oldBrush);
     SelectObject(dc, oldPen);
     DeleteObject(border);
@@ -677,6 +679,7 @@ class CandidateWindow {
   HFONT font_ = nullptr;
   std::wstring fontFamilyKey_;
   int fontSizeKey_ = 0;
+  UINT fontDpiKey_ = 0;
   void *clickOwner_ = nullptr;
   CandidateClickHandler clickHandler_ = nullptr;
   void *selectOwner_ = nullptr;
@@ -685,21 +688,47 @@ class CandidateWindow {
   CandidatePageHandler pageHandler_ = nullptr;
 
   int CandidateWindowHeight() const {
-    return max(82, fontSize_ * 2 + 56);
+    return max(Scale(82), ScaledFontSize() * 2 + Scale(56));
   }
 
   int CandidateBandTop() const {
-    return fontSize_ + 24;
+    return ScaledFontSize() + Scale(24);
+  }
+
+  UINT CurrentDpi() const {
+    if (hwnd_) {
+      const UINT dpi = GetDpiForWindow(hwnd_);
+      if (dpi > 0) {
+        return dpi;
+      }
+    }
+    HDC dc = GetDC(nullptr);
+    const int dpi = dc ? GetDeviceCaps(dc, LOGPIXELSX) : 96;
+    if (dc) {
+      ReleaseDC(nullptr, dc);
+    }
+    return dpi > 0 ? static_cast<UINT>(dpi) : 96;
+  }
+
+  int Scale(int value) const {
+    return MulDiv(value, static_cast<int>(CurrentDpi()), 96);
+  }
+
+  int ScaledFontSize() const {
+    return max(1, Scale(fontSize_));
   }
 
   HFONT EnsureFont() {
-    if (font_ && fontFamilyKey_ == fontFamily_ && fontSizeKey_ == fontSize_) {
+    const UINT dpi = CurrentDpi();
+    if (font_ && fontFamilyKey_ == fontFamily_ && fontSizeKey_ == fontSize_ &&
+        fontDpiKey_ == dpi) {
       return font_;
     }
     ResetFont();
     fontFamilyKey_ = fontFamily_;
     fontSizeKey_ = fontSize_;
-    font_ = CreateFontW(-fontSize_, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+    fontDpiKey_ = dpi;
+    font_ = CreateFontW(-ScaledFontSize(), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
                         fontFamily_.c_str());
@@ -713,6 +742,7 @@ class CandidateWindow {
     }
     fontFamilyKey_.clear();
     fontSizeKey_ = 0;
+    fontDpiKey_ = 0;
   }
 
   int TextWidth(HDC dc, const std::wstring &value) const {
@@ -721,15 +751,15 @@ class CandidateWindow {
     }
     SIZE size{};
     if (!GetTextExtentPoint32W(dc, value.c_str(), static_cast<int>(value.size()), &size)) {
-      return static_cast<int>(value.size()) * fontSize_;
+      return static_cast<int>(value.size()) * ScaledFontSize();
     }
     return size.cx;
   }
 
   int CandidateItemWidth(HDC dc, const CandidateView &candidate, bool selected) const {
     const int textWidth = TextWidth(dc, candidate.text);
-    const int kindWidth = candidate.kind.empty() ? 0 : TextWidth(dc, CandidateKindLabel(candidate.kind)) + 18;
-    return max(66, min(280, 48 + textWidth + kindWidth));
+    const int kindWidth = candidate.kind.empty() ? 0 : TextWidth(dc, CandidateKindLabel(candidate.kind)) + Scale(18);
+    return max(Scale(66), min(Scale(280), Scale(48) + textWidth + kindWidth));
   }
 
   bool HasPageControls() const {
@@ -737,26 +767,26 @@ class CandidateWindow {
   }
 
   int PageControlsWidth() const {
-    return HasPageControls() ? 168 : 0;
+    return HasPageControls() ? Scale(168) : 0;
   }
 
   int MeasureWindowWidth() {
     HDC dc = GetDC(hwnd_);
     HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
-    int width = max(260, TextWidth(dc, composing_) + 44);
+    int width = max(Scale(260), TextWidth(dc, composing_) + Scale(44));
     for (size_t i = 0; i < candidates_.size() && i < kCandidatesPerPage; ++i) {
-      width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + 6;
+      width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(6);
     }
     width += PageControlsWidth();
     SelectObject(dc, oldFont);
     ReleaseDC(hwnd_, dc);
-    return max(180, min(780, width));
+    return max(Scale(180), min(Scale(780), width));
   }
 
   int MeasureStatusWidth() {
     HDC dc = GetDC(hwnd_);
     HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
-    const int width = max(92, min(180, TextWidth(dc, statusText_) + 40));
+    const int width = max(Scale(92), min(Scale(180), TextWidth(dc, statusText_) + Scale(40)));
     SelectObject(dc, oldFont);
     ReleaseDC(hwnd_, dc);
     return width;
@@ -772,12 +802,13 @@ class CandidateWindow {
     } else {
       SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
     }
-    POINT origin{anchor.x, anchor.y + 8};
-    origin.x = max(work.left + 8, min(origin.x, work.right - width - 8));
-    if (origin.y + height > work.bottom - 8) {
-      origin.y = anchor.y - height - 8;
+    const int margin = Scale(8);
+    POINT origin{anchor.x, anchor.y + margin};
+    origin.x = max(work.left + margin, min(origin.x, work.right - width - margin));
+    if (origin.y + height > work.bottom - margin) {
+      origin.y = anchor.y - height - margin;
     }
-    origin.y = max(work.top + 8, min(origin.y, work.bottom - height - 8));
+    origin.y = max(work.top + margin, min(origin.y, work.bottom - height - margin));
     return origin;
   }
 
@@ -1063,15 +1094,18 @@ class CandidateWindow {
       return;
     }
     SetTextColor(dc, PreeditTextColor());
-    RECT composeRect{rect.left + 16, rect.top + 7, rect.right - 16, rect.top + fontSize_ + 16};
+    RECT composeRect{rect.left + Scale(16), rect.top + Scale(7), rect.right - Scale(16),
+                     rect.top + ScaledFontSize() + Scale(16)};
     DrawTextW(dc, composing_.c_str(), static_cast<int>(composing_.size()), &composeRect,
               DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
 
-    HPEN accentPen = CreatePen(PS_SOLID, 2, PreeditUnderlineColor());
+    HPEN accentPen = CreatePen(PS_SOLID, max(1, Scale(2)), PreeditUnderlineColor());
     HGDIOBJ oldPen = SelectObject(dc, accentPen);
-    const int underlineY = composeRect.bottom - 2;
+    const int underlineY = composeRect.bottom - Scale(2);
     MoveToEx(dc, composeRect.left, underlineY, nullptr);
-    LineTo(dc, min(rect.right - 16, composeRect.left + max(28, TextWidth(dc, composing_))), underlineY);
+    LineTo(dc, min(rect.right - Scale(16),
+                   composeRect.left + max(Scale(28), TextWidth(dc, composing_))),
+           underlineY);
     SelectObject(dc, oldPen);
     DeleteObject(accentPen);
   }
@@ -1079,10 +1113,11 @@ class CandidateWindow {
   void DrawRoundedRect(HDC dc, const RECT &rect, COLORREF fill, COLORREF stroke,
                        int radius) const {
     HBRUSH brush = CreateSolidBrush(fill);
-    HPEN pen = CreatePen(PS_SOLID, 1, stroke);
+    HPEN pen = CreatePen(PS_SOLID, max(1, Scale(1)), stroke);
     HGDIOBJ oldBrush = SelectObject(dc, brush);
     HGDIOBJ oldPen = SelectObject(dc, pen);
-    RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, radius, radius);
+    const int scaledRadius = Scale(radius);
+    RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, scaledRadius, scaledRadius);
     SelectObject(dc, oldPen);
     SelectObject(dc, oldBrush);
     DeleteObject(pen);
@@ -1092,8 +1127,8 @@ class CandidateWindow {
   void DrawChevron(HDC dc, const RECT &rect, int delta, COLORREF color) const {
     const int midX = (rect.left + rect.right) / 2;
     const int midY = (rect.top + rect.bottom) / 2;
-    const int halfWidth = 4;
-    const int halfHeight = 6;
+    const int halfWidth = Scale(4);
+    const int halfHeight = Scale(6);
     POINT points[3]{};
     if (delta < 0) {
       points[0] = POINT{midX + halfWidth / 2, midY - halfHeight};
@@ -1104,7 +1139,7 @@ class CandidateWindow {
       points[1] = POINT{midX + halfWidth, midY};
       points[2] = POINT{midX - halfWidth / 2, midY + halfHeight};
     }
-    HPEN pen = CreatePen(PS_SOLID, 2, color);
+    HPEN pen = CreatePen(PS_SOLID, max(1, Scale(2)), color);
     HGDIOBJ oldPen = SelectObject(dc, pen);
     Polyline(dc, points, 3);
     SelectObject(dc, oldPen);
@@ -1121,17 +1156,17 @@ class CandidateWindow {
     candidateHits_.clear();
     pageHits_.clear();
     DrawComposition(dc, rect);
-    int x = rect.left + 15;
-    const int y = CandidateBandTop() + 8;
-    const int itemHeight = max(34, fontSize_ + 20);
-    const int candidateRight = HasPageControls() ? rect.right - PageControlsWidth() - 8
-                                                 : rect.right - 14;
+    int x = rect.left + Scale(15);
+    const int y = CandidateBandTop() + Scale(8);
+    const int itemHeight = max(Scale(34), ScaledFontSize() + Scale(20));
+    const int candidateRight = HasPageControls() ? rect.right - PageControlsWidth() - Scale(8)
+                                                 : rect.right - Scale(14);
     for (size_t i = 0; i < candidates_.size() && i < kCandidatesPerPage; ++i) {
       const CandidateView &candidate = candidates_[i];
       const bool selected = static_cast<int>(i) == selectedIndex_;
       const int itemWidth = CandidateItemWidth(dc, candidate, selected);
       RECT itemRect{x, y, x + itemWidth, y + itemHeight};
-      if (itemRect.left >= candidateRight - 56) {
+      if (itemRect.left >= candidateRight - Scale(56)) {
         break;
       }
       if (itemRect.right > candidateRight) {
@@ -1140,7 +1175,8 @@ class CandidateWindow {
       candidateHits_.push_back(CandidateHit{itemRect, pageStart_ + static_cast<int>(i)});
 
       if (selected) {
-        RECT shadowRect{itemRect.left + 1, itemRect.top + 2, itemRect.right + 1, itemRect.bottom + 2};
+        RECT shadowRect{itemRect.left + Scale(1), itemRect.top + Scale(2),
+                        itemRect.right + Scale(1), itemRect.bottom + Scale(2)};
         DrawRoundedRect(dc, shadowRect, MixColor(CandidateBandColor(), accent_, 18),
                         MixColor(CandidateBandColor(), accent_, 18), 12);
         DrawRoundedRect(dc, itemRect, accent_, CandidateAccentEdgeColor(), 12);
@@ -1151,17 +1187,17 @@ class CandidateWindow {
       wchar_t number[8]{};
       StringCchPrintfW(number, ARRAYSIZE(number), L"%d", candidate.index);
       SetTextColor(dc, selected ? highlightText_ : mutedText_);
-      RECT numberRect{itemRect.left + 10, itemRect.top, itemRect.left + 30, itemRect.bottom};
+      RECT numberRect{itemRect.left + Scale(10), itemRect.top, itemRect.left + Scale(30), itemRect.bottom};
       DrawTextW(dc, number, -1, &numberRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
 
       SetTextColor(dc, selected ? highlightText_ : text_);
-      RECT textRect{itemRect.left + 30, itemRect.top, itemRect.right - 10, itemRect.bottom};
+      RECT textRect{itemRect.left + Scale(30), itemRect.top, itemRect.right - Scale(10), itemRect.bottom};
       const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
       if (!kindLabel.empty()) {
-        const int badgeWidth = TextWidth(dc, kindLabel) + 14;
-        textRect.right = max(textRect.left + 24, itemRect.right - badgeWidth - 9);
-        RECT badgeRect{itemRect.right - badgeWidth - 7, itemRect.top + 7,
-                       itemRect.right - 7, itemRect.bottom - 7};
+        const int badgeWidth = TextWidth(dc, kindLabel) + Scale(14);
+        textRect.right = max(textRect.left + Scale(24), itemRect.right - badgeWidth - Scale(9));
+        RECT badgeRect{itemRect.right - badgeWidth - Scale(7), itemRect.top + Scale(7),
+                       itemRect.right - Scale(7), itemRect.bottom - Scale(7)};
         DrawRoundedRect(dc, badgeRect,
                         selected ? MixColor(accent_, highlightText_, 22)
                                  : MixColor(CandidateBandColor(), accent_, 10),
@@ -1175,8 +1211,8 @@ class CandidateWindow {
       }
       DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
                 DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
-      x += itemWidth + 7;
-      if (x > candidateRight - 56) {
+      x += itemWidth + Scale(7);
+      if (x > candidateRight - Scale(56)) {
         break;
       }
     }
@@ -1244,25 +1280,31 @@ class CandidateWindow {
     const int last = min(pageStart_ + static_cast<int>(candidates_.size()), totalCount_);
     wchar_t label[32]{};
     StringCchPrintfW(label, ARRAYSIZE(label), L"%d-%d/%d", first, last, totalCount_);
-    const int centerY = CandidateBandTop() + 8 + max(34, fontSize_ + 20) / 2;
-    RECT prevRect{rect.right - 156, centerY - 15, rect.right - 128, centerY + 15};
-    RECT nextRect{rect.right - 42, centerY - 15, rect.right - 14, centerY + 15};
+    const int centerY = CandidateBandTop() + Scale(8) +
+                        max(Scale(34), ScaledFontSize() + Scale(20)) / 2;
+    RECT prevRect{rect.right - Scale(156), centerY - Scale(15),
+                  rect.right - Scale(128), centerY + Scale(15)};
+    RECT nextRect{rect.right - Scale(42), centerY - Scale(15),
+                  rect.right - Scale(14), centerY + Scale(15)};
     DrawPageButton(dc, prevRect, -1);
     DrawPageButton(dc, nextRect, 1);
     pageHits_.push_back(PageHit{prevRect, -1});
     pageHits_.push_back(PageHit{nextRect, 1});
     SetTextColor(dc, mutedText_);
-    RECT labelRect{prevRect.right + 6, centerY - 15, nextRect.left - 6, centerY + 15};
+    RECT labelRect{prevRect.right + Scale(6), centerY - Scale(15),
+                   nextRect.left - Scale(6), centerY + Scale(15)};
     DrawTextW(dc, label, -1, &labelRect, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
   }
 
   void DrawStatus(HDC dc, const RECT &rect) {
-    RECT badge{rect.left + 10, rect.top + 7, rect.right - 10, rect.bottom - 7};
+    RECT badge{rect.left + Scale(10), rect.top + Scale(7),
+               rect.right - Scale(10), rect.bottom - Scale(7)};
     HBRUSH selected = CreateSolidBrush(accent_);
-    HPEN selectedPen = CreatePen(PS_SOLID, 1, accent_);
+    HPEN selectedPen = CreatePen(PS_SOLID, max(1, Scale(1)), accent_);
     HGDIOBJ oldBrush = SelectObject(dc, selected);
     HGDIOBJ oldPen = SelectObject(dc, selectedPen);
-    RoundRect(dc, badge.left, badge.top, badge.right, badge.bottom, 10, 10);
+    const int badgeRadius = Scale(10);
+    RoundRect(dc, badge.left, badge.top, badge.right, badge.bottom, badgeRadius, badgeRadius);
     SelectObject(dc, oldPen);
     SelectObject(dc, oldBrush);
     DeleteObject(selectedPen);
