@@ -21,6 +21,7 @@ type Engine struct {
 	prefix        map[string][]Entry
 	abbr          map[string][]Entry
 	user          map[string]int
+	rejects       map[string]Entry
 	buffer        string
 	maxReadingLen int
 }
@@ -85,11 +86,12 @@ func New(config Config) *Engine {
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
 	e := &Engine{
-		config: config,
-		dict:   make(map[string][]Entry),
-		prefix: make(map[string][]Entry),
-		abbr:   make(map[string][]Entry),
-		user:   make(map[string]int),
+		config:  config,
+		dict:    make(map[string][]Entry),
+		prefix:  make(map[string][]Entry),
+		abbr:    make(map[string][]Entry),
+		user:    make(map[string]int),
+		rejects: make(map[string]Entry),
 	}
 	e.AddEntries(defaultEntries)
 	return e
@@ -331,6 +333,46 @@ func normalizeUserPhraseEntries(entries []Entry) []Entry {
 	return out
 }
 
+func normalizeRejectEntries(entries []Entry) []Entry {
+	out := make([]Entry, 0, len(entries))
+	seen := map[string]int{}
+	for _, entry := range entries {
+		entry = normalizeRejectEntry(entry)
+		if entry.Reading == "" || entry.Text == "" {
+			continue
+		}
+		key := rejectKey(entry.Reading, entry.Text)
+		if index, ok := seen[key]; ok {
+			if entry.Weight > out[index].Weight {
+				out[index] = entry
+			}
+			continue
+		}
+		seen[key] = len(out)
+		out = append(out, entry)
+	}
+	return out
+}
+
+func normalizeRejectEntry(entry Entry) Entry {
+	entry.Reading = normalizeReading(entry.Reading)
+	entry.Text = strings.TrimSpace(entry.Text)
+	if entry.Reading == "" || entry.Text == "" {
+		return Entry{}
+	}
+	if entry.Source == "" {
+		entry.Source = UserRejectSource
+	}
+	if entry.Comment == "" {
+		entry.Comment = "已屏蔽"
+	}
+	return entry
+}
+
+func rejectKey(reading string, text string) string {
+	return normalizeReading(reading) + "|" + strings.TrimSpace(text)
+}
+
 func (e *Engine) rebuildPrefixLocked() {
 	e.prefix = make(map[string][]Entry, len(e.dict)*2)
 	e.abbr = make(map[string][]Entry, len(e.dict))
@@ -487,6 +529,33 @@ func (e *Engine) SelectChar(index int, side string) (State, error) {
 	return e.stateLocked(text), nil
 }
 
+func (e *Engine) RejectCandidate(index int) (State, Entry, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	candidates := e.candidatesLocked()
+	if index < 0 || index >= len(candidates) {
+		return e.stateLocked(""), Entry{}, errors.New("candidate index out of range")
+	}
+	selected := candidates[index]
+	entry := normalizeRejectEntry(Entry{
+		Reading: selected.Reading,
+		Text:    selected.Text,
+		Kind:    selected.Kind,
+		Source:  selected.Source,
+		Comment: selected.Comment,
+		Weight:  selected.Weight,
+	})
+	if entry.Reading == "" || entry.Text == "" {
+		return e.stateLocked(""), Entry{}, errors.New("candidate cannot be rejected")
+	}
+	if e.rejects == nil {
+		e.rejects = make(map[string]Entry)
+	}
+	e.rejects[rejectKey(entry.Reading, entry.Text)] = entry
+	delete(e.user, entry.Reading+"|"+entry.Text)
+	return e.stateLocked(""), entry, nil
+}
+
 func (e *Engine) State() State {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -538,6 +607,58 @@ func (e *Engine) DeleteUserScore(key string) {
 	delete(e.user, key)
 }
 
+func (e *Engine) UserRejects() []Entry {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	out := make([]Entry, 0, len(e.rejects))
+	for _, entry := range e.rejects {
+		out = append(out, entry)
+	}
+	sortEntries(out)
+	return out
+}
+
+func (e *Engine) AddUserRejects(entries []Entry) []Entry {
+	normalized := normalizeRejectEntries(entries)
+	if len(normalized) == 0 {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.rejects == nil {
+		e.rejects = make(map[string]Entry, len(normalized))
+	}
+	for _, entry := range normalized {
+		e.rejects[rejectKey(entry.Reading, entry.Text)] = entry
+		delete(e.user, entry.Reading+"|"+entry.Text)
+	}
+	return normalized
+}
+
+func (e *Engine) ReplaceUserRejects(entries []Entry) []Entry {
+	normalized := normalizeRejectEntries(entries)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.rejects = make(map[string]Entry, len(normalized))
+	for _, entry := range normalized {
+		e.rejects[rejectKey(entry.Reading, entry.Text)] = entry
+		delete(e.user, entry.Reading+"|"+entry.Text)
+	}
+	return normalized
+}
+
+func (e *Engine) DeleteUserReject(reading string, text string) {
+	reading = normalizeReading(reading)
+	text = strings.TrimSpace(text)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if reading == "" && text == "" {
+		e.rejects = make(map[string]Entry)
+		return
+	}
+	delete(e.rejects, rejectKey(reading, text))
+}
+
 func (e *Engine) stateLocked(committed string) State {
 	return State{
 		Buffer:     e.buffer,
@@ -563,6 +684,9 @@ func (e *Engine) candidatesLocked() []Candidate {
 	entries := e.lookupLocked(e.buffer)
 	candidates := make([]Candidate, 0, len(entries))
 	for _, entry := range entries {
+		if e.isRejectedLocked(entry) {
+			continue
+		}
 		candidates = append(candidates, Candidate{
 			Text:      entry.Text,
 			Reading:   entry.Reading,
@@ -591,6 +715,14 @@ func (e *Engine) candidatesLocked() []Candidate {
 		candidates = candidates[:max]
 	}
 	return candidates
+}
+
+func (e *Engine) isRejectedLocked(entry Entry) bool {
+	if len(e.rejects) == 0 {
+		return false
+	}
+	_, ok := e.rejects[rejectKey(entry.Reading, entry.Text)]
+	return ok
 }
 
 func (e *Engine) lookupLocked(reading string) []Entry {

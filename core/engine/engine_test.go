@@ -241,6 +241,39 @@ func TestUserPhrasesCanBeAddedListedAndDeleted(t *testing.T) {
 	}
 }
 
+func TestRejectCandidateHidesAndRestoresCandidate(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{
+		{Reading: "ceshi", Text: "错词", Weight: 20000},
+		{Reading: "ceshi", Text: "测试", Weight: 10000},
+	})
+
+	state := e.Preview("ceshi")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "错词" {
+		t.Fatalf("expected wrong candidate first, got %#v", state.Candidates)
+	}
+	state, rejected, err := e.RejectCandidate(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejected.Reading != "ceshi" || rejected.Text != "错词" {
+		t.Fatalf("rejected = %#v", rejected)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text == "错词" {
+		t.Fatalf("expected rejected candidate to disappear, got %#v", state.Candidates)
+	}
+	rejects := e.UserRejects()
+	if len(rejects) != 1 || rejects[0].Text != "错词" {
+		t.Fatalf("user rejects = %#v", rejects)
+	}
+
+	e.DeleteUserReject("ceshi", "错词")
+	state = e.Preview("ceshi")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "错词" {
+		t.Fatalf("expected restored candidate, got %#v", state.Candidates)
+	}
+}
+
 func TestReplaceUserPhrasesClearsOldPhrases(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddUserPhrases([]Entry{{Reading: "aaa", Text: "旧短语"}})

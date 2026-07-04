@@ -575,6 +575,18 @@ h2 {
   min-height: 118px;
 }
 
+.rejectPanel {
+  background:
+    linear-gradient(180deg, #ffffff, #fcfcfd 74%),
+    #ffffff;
+}
+
+.rejectList {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
 .catalogPanel {
   background: #ffffff;
 }

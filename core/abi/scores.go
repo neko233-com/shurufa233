@@ -29,6 +29,12 @@ type userPhraseStore struct {
 	Entries   []engine.Entry `json:"entries"`
 }
 
+type userRejectStore struct {
+	Version   int            `json:"version"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	Entries   []engine.Entry `json:"entries"`
+}
+
 func userScoresPath() (string, error) {
 	if override := os.Getenv("SHURUFA233_USER_SCORES"); override != "" {
 		return override, nil
@@ -57,6 +63,21 @@ func userPhrasesPath() (string, error) {
 		}
 	}
 	return filepath.Join(base, "shurufa233", "user-phrases.json"), nil
+}
+
+func userRejectsPath() (string, error) {
+	if override := os.Getenv("SHURUFA233_USER_REJECTS"); override != "" {
+		return override, nil
+	}
+	base := os.Getenv("APPDATA")
+	if base == "" {
+		var err error
+		base, err = os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
+	}
+	return filepath.Join(base, "shurufa233", "user-rejects.json"), nil
 }
 
 func loadUserScores() map[string]int {
@@ -95,6 +116,24 @@ func loadUserPhrases() []engine.Entry {
 	return store.Entries
 }
 
+func loadUserRejects() []engine.Entry {
+	scoresMu.Lock()
+	defer scoresMu.Unlock()
+	path, err := userRejectsPath()
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var store userRejectStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		return nil
+	}
+	return store.Entries
+}
+
 func persistUserScores(scores map[string]int) {
 	if len(scores) == 0 {
 		return
@@ -119,6 +158,39 @@ func persistUserPhrases(entries []engine.Entry) {
 		return
 	}
 	store := userPhraseStore{
+		Version:   1,
+		UpdatedAt: time.Now().UTC(),
+		Entries:   entries,
+	}
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			_ = os.Remove(path)
+			_ = os.Rename(tmp, path)
+		} else {
+			_ = os.Remove(tmp)
+		}
+	}
+}
+
+func persistUserRejects(entries []engine.Entry) {
+	scoresMu.Lock()
+	defer scoresMu.Unlock()
+	path, err := userRejectsPath()
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	store := userRejectStore{
 		Version:   1,
 		UpdatedAt: time.Now().UTC(),
 		Entries:   entries,
@@ -221,6 +293,45 @@ func persistUserScoresSync(scores map[string]int) {
 		Version:   1,
 		UpdatedAt: time.Now().UTC(),
 		Scores:    merged,
+	}
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			_ = os.Remove(path)
+			_ = os.Rename(tmp, path)
+		} else {
+			_ = os.Remove(tmp)
+		}
+	}
+}
+
+func persistUserScoresReplaceSync(scores map[string]int) {
+	scoresMu.Lock()
+	defer scoresMu.Unlock()
+	path, err := userScoresPath()
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	normalized := make(map[string]int, len(scores))
+	for key, value := range scores {
+		if key != "" && value > 0 {
+			normalized[key] = value
+		}
+	}
+	store := userScoreStore{
+		Version:   1,
+		UpdatedAt: time.Now().UTC(),
+		Scores:    normalized,
 	}
 	data, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {

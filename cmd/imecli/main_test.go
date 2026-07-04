@@ -110,6 +110,16 @@ func TestCandidateActionCallsPreviewThenActionEndpoint(t *testing.T) {
 	}
 }
 
+func TestCandidateActionAcceptsForgetAction(t *testing.T) {
+	input, req, err := parseCandidateActionArgs([]string{"ceshi", "forget", "--index", "0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input != "ceshi" || req.Action != "forget" || req.Index != 0 {
+		t.Fatalf("forget request = input:%q req:%#v", input, req)
+	}
+}
+
 func TestPreviewSendsSlashPrefixInput(t *testing.T) {
 	var previewCalled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +187,38 @@ func TestPhrasesAddCallsEndpoint(t *testing.T) {
 	}
 	if !phraseCalled {
 		t.Fatal("phrase endpoint was not called")
+	}
+}
+
+func TestRejectsAddCallsEndpoint(t *testing.T) {
+	var rejectCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rejects" || r.Method != http.MethodPut {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		rejectCalled = true
+		var req struct {
+			Entries []phraseEntry `json:"entries"`
+			Merge   bool          `json:"merge"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode reject request: %v", err)
+		}
+		if !req.Merge || len(req.Entries) != 1 || req.Entries[0].Reading != "ceshi" || req.Entries[0].Text != "错词" {
+			t.Fatalf("reject request = %#v", req)
+		}
+		_ = json.NewEncoder(w).Encode(rejectResponse{Count: 1})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := rejects(server.Client(), []string{"add", "ceshi", "错词"}); err != nil {
+		t.Fatal(err)
+	}
+	if !rejectCalled {
+		t.Fatal("reject endpoint was not called")
 	}
 }
 

@@ -62,6 +62,7 @@ type candidateActionResult struct {
 	Limit      int                  `json:"limit"`
 	Total      int                  `json:"total"`
 	Committed  string               `json:"committed,omitempty"`
+	Rejected   *engine.Entry        `json:"rejected,omitempty"`
 	State      engine.State         `json:"state"`
 	Candidates candidatePagePayload `json:"candidates"`
 	UpdatedAt  time.Time            `json:"updatedAt"`
@@ -153,6 +154,12 @@ type userPhraseStore struct {
 	Entries   []engine.Entry `json:"entries"`
 }
 
+type userRejectStore struct {
+	Version   int            `json:"version"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	Entries   []engine.Entry `json:"entries"`
+}
+
 type wordbookRequest struct {
 	UserScores map[string]int `json:"userScores,omitempty"`
 	Scores     map[string]int `json:"scores,omitempty"`
@@ -164,6 +171,18 @@ type phraseRequest struct {
 	Phrases []engine.Entry `json:"phrases,omitempty"`
 	Reading string         `json:"reading,omitempty"`
 	Text    string         `json:"text,omitempty"`
+	Comment string         `json:"comment,omitempty"`
+	Weight  int            `json:"weight,omitempty"`
+	Merge   bool           `json:"merge,omitempty"`
+}
+
+type rejectRequest struct {
+	Entries []engine.Entry `json:"entries,omitempty"`
+	Rejects []engine.Entry `json:"rejects,omitempty"`
+	Reading string         `json:"reading,omitempty"`
+	Text    string         `json:"text,omitempty"`
+	Kind    string         `json:"kind,omitempty"`
+	Source  string         `json:"source,omitempty"`
 	Comment string         `json:"comment,omitempty"`
 	Weight  int            `json:"weight,omitempty"`
 	Merge   bool           `json:"merge,omitempty"`
@@ -208,6 +227,9 @@ func main() {
 	mux.HandleFunc("GET /phrases", state.withCORS(state.phrases))
 	mux.HandleFunc("PUT /phrases", state.withCORS(state.phrases))
 	mux.HandleFunc("DELETE /phrases", state.withCORS(state.phrases))
+	mux.HandleFunc("GET /rejects", state.withCORS(state.rejects))
+	mux.HandleFunc("PUT /rejects", state.withCORS(state.rejects))
+	mux.HandleFunc("DELETE /rejects", state.withCORS(state.rejects))
 	mux.HandleFunc("GET /catalog", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /symbols", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /updates/check", state.withCORS(state.checkUpdates))
@@ -296,6 +318,7 @@ func (s *AppState) load() error {
 		return err
 	}
 	s.engine.AddUserPhrases(s.loadUserPhrases())
+	s.engine.AddUserRejects(s.loadUserRejects())
 	return s.saveLocked()
 }
 
@@ -465,6 +488,74 @@ func (s *AppState) phrases(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, phraseResponse(phrases))
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *AppState) rejects(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		writeJSON(w, rejectResponse(s.engine.UserRejects()))
+	case http.MethodPut:
+		var req rejectRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		entries := req.Entries
+		if len(entries) == 0 {
+			entries = req.Rejects
+		}
+		if len(entries) == 0 && strings.TrimSpace(req.Reading) != "" && strings.TrimSpace(req.Text) != "" {
+			entries = []engine.Entry{{
+				Reading: req.Reading,
+				Text:    req.Text,
+				Kind:    req.Kind,
+				Source:  req.Source,
+				Comment: req.Comment,
+				Weight:  req.Weight,
+			}}
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if req.Merge {
+			merged := s.engine.UserRejects()
+			merged = append(merged, entries...)
+			entries = merged
+		}
+		s.replaceUserRejectsLocked(entries)
+		rejects := s.engine.UserRejects()
+		if err := s.writeUserRejects(rejects); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, rejectResponse(rejects))
+	case http.MethodDelete:
+		reading := strings.TrimSpace(r.URL.Query().Get("reading"))
+		text := strings.TrimSpace(r.URL.Query().Get("text"))
+		if key := strings.TrimSpace(r.URL.Query().Get("key")); key != "" {
+			parts := strings.SplitN(key, "|", 2)
+			reading = parts[0]
+			if len(parts) > 1 {
+				text = parts[1]
+			}
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, session := range s.sessions {
+			if session != nil {
+				session.DeleteUserReject(reading, text)
+			}
+		}
+		rejects := s.engine.UserRejects()
+		if err := s.writeUserRejects(rejects); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, rejectResponse(rejects))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -685,6 +776,20 @@ func (s *AppState) executeCandidateAction(session *engine.Engine, req candidateA
 			return candidateActionResult{}, err
 		}
 		return buildCandidateActionResultWithState(session, action, 0, limit, state.Committed, state), nil
+	case "forget", "reject", "delete-candidate", "hide-candidate":
+		index := candidateActionIndex(req, start)
+		state, rejected, err := session.RejectCandidate(index)
+		if err != nil {
+			return candidateActionResult{}, err
+		}
+		if err := s.writeUserScores(session.UserScores()); err != nil {
+			return candidateActionResult{}, err
+		}
+		rejects := session.UserRejects()
+		if err := s.writeUserRejects(rejects); err != nil {
+			return candidateActionResult{}, err
+		}
+		return buildCandidateActionResultWithRejected(session, action, start, limit, state, rejected), nil
 	case "first-char", "commit-first-char":
 		return executeCandidateCharAction(session, req, start, limit, action, "first")
 	case "last-char", "commit-last-char":
@@ -717,6 +822,14 @@ func buildCandidateActionResult(session *engine.Engine, action string, start int
 }
 
 func buildCandidateActionResultWithState(session *engine.Engine, action string, start int, limit int, committed string, state engine.State) candidateActionResult {
+	return buildCandidateActionResultFull(session, action, start, limit, committed, state, nil)
+}
+
+func buildCandidateActionResultWithRejected(session *engine.Engine, action string, start int, limit int, state engine.State, rejected engine.Entry) candidateActionResult {
+	return buildCandidateActionResultFull(session, action, start, limit, "", state, &rejected)
+}
+
+func buildCandidateActionResultFull(session *engine.Engine, action string, start int, limit int, committed string, state engine.State, rejected *engine.Entry) candidateActionResult {
 	candidates := buildCandidatePagePayload(session, start, limit)
 	return candidateActionResult{
 		OK:         true,
@@ -725,6 +838,7 @@ func buildCandidateActionResultWithState(session *engine.Engine, action string, 
 		Limit:      candidates.Limit,
 		Total:      candidates.Total,
 		Committed:  committed,
+		Rejected:   rejected,
 		State:      state,
 		Candidates: candidates,
 		UpdatedAt:  time.Now().UTC(),
@@ -882,6 +996,7 @@ func (s *AppState) sessionForRequest(r *http.Request) *engine.Engine {
 			log.Printf("warning: could not load dictionaries into session %s: %v", id, err)
 		}
 		session.AddUserPhrases(s.loadUserPhrases())
+		session.AddUserRejects(s.loadUserRejects())
 		s.sessions[id] = session
 	}
 	return session
@@ -1336,6 +1451,10 @@ func (s *AppState) userPhrasesPath() string {
 	return filepath.Join(filepath.Dir(s.path), "user-phrases.json")
 }
 
+func (s *AppState) userRejectsPath() string {
+	return filepath.Join(filepath.Dir(s.path), "user-rejects.json")
+}
+
 func (s *AppState) loadUserScores() map[string]int {
 	data, err := os.ReadFile(s.userScoresPath())
 	if err != nil {
@@ -1354,6 +1473,18 @@ func (s *AppState) loadUserPhrases() []engine.Entry {
 		return nil
 	}
 	var store userPhraseStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		return nil
+	}
+	return store.Entries
+}
+
+func (s *AppState) loadUserRejects() []engine.Entry {
+	data, err := os.ReadFile(s.userRejectsPath())
+	if err != nil {
+		return nil
+	}
+	var store userRejectStore
 	if err := json.Unmarshal(data, &store); err != nil {
 		return nil
 	}
@@ -1383,6 +1514,18 @@ func phraseResponse(entries []engine.Entry) map[string]any {
 	}
 }
 
+func rejectResponse(entries []engine.Entry) map[string]any {
+	if entries == nil {
+		entries = []engine.Entry{}
+	}
+	return map[string]any{
+		"rejects":   entries,
+		"entries":   entries,
+		"count":     len(entries),
+		"updatedAt": time.Now().UTC(),
+	}
+}
+
 func (s *AppState) replaceUserScoresLocked(scores map[string]int) {
 	for _, session := range s.sessions {
 		if session != nil {
@@ -1395,6 +1538,14 @@ func (s *AppState) replaceUserPhrasesLocked(entries []engine.Entry) {
 	for _, session := range s.sessions {
 		if session != nil {
 			session.ReplaceUserPhrases(entries)
+		}
+	}
+}
+
+func (s *AppState) replaceUserRejectsLocked(entries []engine.Entry) {
+	for _, session := range s.sessions {
+		if session != nil {
+			session.ReplaceUserRejects(entries)
 		}
 	}
 }
@@ -1427,6 +1578,34 @@ func (s *AppState) writeUserPhrases(entries []engine.Entry) error {
 		return err
 	}
 	store := userPhraseStore{
+		Version:   1,
+		UpdatedAt: time.Now().UTC(),
+		Entries:   entries,
+	}
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(path)
+		if retryErr := os.Rename(tmp, path); retryErr != nil {
+			_ = os.Remove(tmp)
+			return retryErr
+		}
+	}
+	return nil
+}
+
+func (s *AppState) writeUserRejects(entries []engine.Entry) error {
+	path := s.userRejectsPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	store := userRejectStore{
 		Version:   1,
 		UpdatedAt: time.Now().UTC(),
 		Entries:   entries,

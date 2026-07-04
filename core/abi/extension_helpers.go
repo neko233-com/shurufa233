@@ -19,6 +19,7 @@ var abiFeatureList = []string{
 	"dictionary-manifest-json",
 	"user-scores-json",
 	"user-phrases-json",
+	"user-rejects-json",
 	"commit-text",
 	"agent-compose",
 	"rime-compatible-dictionaries",
@@ -85,6 +86,7 @@ type candidateActionResult struct {
 	Limit      int                `json:"limit"`
 	Total      int                `json:"total"`
 	Committed  string             `json:"committed,omitempty"`
+	Rejected   *engine.Entry      `json:"rejected,omitempty"`
 	State      engine.State       `json:"state"`
 	Candidates candidatePayloadV2 `json:"candidates"`
 	UpdatedAt  time.Time          `json:"updatedAt"`
@@ -112,6 +114,7 @@ type extensionCommandPayload struct {
 	Scores       map[string]int   `json:"scores,omitempty"`
 	Entries      []engine.Entry   `json:"entries,omitempty"`
 	Phrases      []engine.Entry   `json:"phrases,omitempty"`
+	Rejects      []engine.Entry   `json:"rejects,omitempty"`
 	Merge        bool             `json:"merge,omitempty"`
 	Raw          *json.RawMessage `json:"raw,omitempty"`
 }
@@ -283,6 +286,15 @@ func executeCandidateAction(session *engine.Engine, req extensionCommandPayload)
 		}
 		persistUserScores(session.UserScores())
 		return buildCandidateActionResultWithState(session, action, 0, limit, state.Committed, state)
+	case "forget", "reject", "delete-candidate", "hide-candidate":
+		index := candidateActionIndex(req, start)
+		state, rejected, err := session.RejectCandidate(index)
+		if err != nil {
+			return errorEnvelope(err.Error())
+		}
+		persistUserScoresReplaceSync(session.UserScores())
+		persistUserRejects(session.UserRejects())
+		return buildCandidateActionResultWithRejected(session, action, start, limit, state, rejected)
 	case "first-char", "commit-first-char":
 		return executeCandidateCharAction(session, req, start, limit, action, "first")
 	case "last-char", "commit-last-char":
@@ -315,6 +327,14 @@ func buildCandidateActionResult(session *engine.Engine, action string, start int
 }
 
 func buildCandidateActionResultWithState(session *engine.Engine, action string, start int, limit int, committed string, state engine.State) candidateActionResult {
+	return buildCandidateActionResultFull(session, action, start, limit, committed, state, nil)
+}
+
+func buildCandidateActionResultWithRejected(session *engine.Engine, action string, start int, limit int, state engine.State, rejected engine.Entry) candidateActionResult {
+	return buildCandidateActionResultFull(session, action, start, limit, "", state, &rejected)
+}
+
+func buildCandidateActionResultFull(session *engine.Engine, action string, start int, limit int, committed string, state engine.State, rejected *engine.Entry) candidateActionResult {
 	candidates := buildCandidatePayloadV2(session, start, limit)
 	return candidateActionResult{
 		OK:         true,
@@ -323,6 +343,7 @@ func buildCandidateActionResultWithState(session *engine.Engine, action string, 
 		Limit:      candidates.Limit,
 		Total:      candidates.Total,
 		Committed:  committed,
+		Rejected:   rejected,
 		State:      state,
 		Candidates: candidates,
 		UpdatedAt:  time.Now().UTC(),
@@ -443,6 +464,15 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"count":     len(phrases),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
+	case "user-rejects-json", "user-rejects":
+		rejects := session.UserRejects()
+		return map[string]any{
+			"ok":        true,
+			"rejects":   rejects,
+			"entries":   rejects,
+			"count":     len(rejects),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
 	case "import-user-scores-json", "import-user-scores":
 		scores := req.UserScores
 		if scores == nil {
@@ -493,6 +523,38 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"ok":        true,
 			"total":     len(phrases),
 			"phrases":   phrases,
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "import-user-rejects-json", "import-user-rejects":
+		entries := req.Entries
+		if len(entries) == 0 {
+			entries = req.Rejects
+		}
+		if req.Merge {
+			merged := session.UserRejects()
+			merged = append(merged, entries...)
+			entries = merged
+		}
+		session.ReplaceUserRejects(entries)
+		rejects := session.UserRejects()
+		persistUserRejects(rejects)
+		return map[string]any{
+			"ok":        true,
+			"imported":  len(entries),
+			"total":     len(rejects),
+			"rejects":   rejects,
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "delete-user-reject":
+		reading := normalizeABIReading(req.Reading)
+		text := strings.TrimSpace(req.Text)
+		session.DeleteUserReject(reading, text)
+		rejects := session.UserRejects()
+		persistUserRejects(rejects)
+		return map[string]any{
+			"ok":        true,
+			"total":     len(rejects),
+			"rejects":   rejects,
 			"updatedAt": session.State().UpdatedAt,
 		}, true
 	case "commit-text":

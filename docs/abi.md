@@ -67,11 +67,13 @@ char* ShurufaCandidatePayload(uint64_t session, int limit);
 char* ShurufaCandidatePayloadRange(uint64_t session, int start, int limit);
 char* ShurufaCommitCandidate(uint64_t session, int index);
 char* ShurufaCommitCandidateChar(uint64_t session, int index, const char* side);
+char* ShurufaRejectCandidate(uint64_t session, int index);
 ```
 
 `ShurufaCandidatePayload` returns up to `limit` UTF-8 rows separated by `\n` from the first candidate.
 `ShurufaCandidatePayloadRange` returns a paged slice beginning at `start`; Windows uses it for Microsoft IME-style candidate paging.
 `ShurufaCommitCandidateChar` commits `side=first` or `side=last` from the selected candidate and clears the active composition. It is reserved for Rime-style first/last-character actions without baking that behavior into platform glue.
+`ShurufaRejectCandidate` hides the selected candidate, removes any learned score for the same `reading|text`, persists `user-rejects.json`, and returns JSON with the rejected entry plus the refreshed state.
 Each row is:
 
 ```text
@@ -108,6 +110,8 @@ char* ShurufaUserScoresJSON(uint64_t session);
 char* ShurufaImportUserScoresJSON(uint64_t session, char* json);
 char* ShurufaUserPhrasesJSON(uint64_t session);
 char* ShurufaImportUserPhrasesJSON(uint64_t session, char* json);
+char* ShurufaUserRejectsJSON(uint64_t session);
+char* ShurufaImportUserRejectsJSON(uint64_t session, char* json);
 char* ShurufaCommitText(uint64_t session, char* reading, char* text);
 char* ShurufaAgentCompose(char* input, char* context);
 char* ShurufaSelectCandidateChar(uint64_t session, int index, const char* side);
@@ -124,7 +128,7 @@ comment text remains part of candidate payloads even when the UI hides it.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`user-scores-json`, `user-phrases-json`, `commit-text`, `agent-compose`,
+`user-scores-json`, `user-phrases-json`, `user-rejects-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -152,6 +156,7 @@ toggle-mode
 candidate-payload-v2    {"start":0,"limit":7}
 catalog-json            {"kind":"emoji","query":"zan","limit":20}
 candidate-action        {"action":"next-page","start":0,"limit":7}
+candidate-action        {"action":"forget","index":0}
 select                  {"index":0}
 select-candidate-char   {"index":0,"side":"first"}
 config-json
@@ -164,6 +169,9 @@ import-user-scores-json {"userScores":{"nihao|你好":25}}
 user-phrases-json
 import-user-phrases-json {"entries":[{"reading":"msd","text":"马上到！"}],"merge":true}
 delete-user-phrase      {"reading":"msd","text":"马上到！"}
+user-rejects-json
+import-user-rejects-json {"entries":[{"reading":"ceshi","text":"错词"}],"merge":true}
+delete-user-reject      {"reading":"ceshi","text":"错词"}
 commit-text             {"reading":"nihao","text":"你好"}
 agent-compose           {"input":"/rewrite","context":"optional text"}
 ```
@@ -171,9 +179,12 @@ agent-compose           {"input":"/rewrite","context":"optional text"}
 `candidate-action` and `ShurufaCandidateAction` reserve a richer Rime/WeChat-style
 candidate event surface without requiring new C++ callbacks. Supported actions
 currently include `view`, `next-page`, `prev-page`, `first-page`, `last-page`,
-`select`, `first-char`, `last-char`, and `select-char`. Selection accepts either
+`select`, `forget`, `first-char`, `last-char`, and `select-char`. Selection accepts either
 an absolute `index` or a page-relative `displayIndex` plus `start`; paging
 returns the same rich candidate payload used by `candidate-payload-v2`.
+`forget`/`reject`/`delete-candidate` persists a hidden candidate row in
+`user-rejects.json`, removes any learned score for that candidate, keeps the
+composition buffer active, and returns a `rejected` object for UI feedback.
 
 `catalog-json` and `ShurufaCatalogJSON` reserve the shared emoji, kaomoji,
 symbol, and agent resource surface for future native panels. The payload accepts
@@ -265,6 +276,15 @@ Rime-style user phrases. These are persisted separately from learned scores in
 
 ```json
 { "entries": [{ "reading": "msd", "text": "马上到！", "weight": 60000 }], "merge": true }
+```
+
+`ShurufaUserRejectsJSON`, `ShurufaImportUserRejectsJSON`, and
+`ShurufaRejectCandidate` reserve the bad-candidate hide/restore surface. These
+rows are persisted in `user-rejects.json` or `SHURUFA233_USER_REJECTS`, and the
+Go core filters them before ranking:
+
+```json
+{ "entries": [{ "reading": "ceshi", "text": "错词", "comment": "已屏蔽" }], "merge": true }
 ```
 
 `ShurufaAgentCompose` is the native bridge for agent-style input actions. It

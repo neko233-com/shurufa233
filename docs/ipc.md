@@ -14,6 +14,9 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /phrases`
 - `PUT /phrases`
 - `DELETE /phrases`
+- `GET /rejects`
+- `PUT /rejects`
+- `DELETE /rejects`
 - `GET /catalog`
 - `GET /symbols`
 - `GET /updates/check`
@@ -80,6 +83,14 @@ Rime `custom_phrase.txt` expectations. `PUT /phrases` accepts
 or a single `reading`/`text` pair. `DELETE /phrases?key=msd%7C马上到！` deletes
 one phrase; `DELETE /phrases` clears all fixed user phrases. The CLI mirrors
 this through `shurufa-imecli phrases list|add|import|export|delete|clear`.
+
+`GET /rejects` returns hidden candidate rows stored in `user-rejects.json`.
+These rows use the same `reading`/`text` shape as dictionary entries and are
+filtered out by the Go core before ranking candidates. `PUT /rejects` accepts
+`{"entries":[{"reading":"ceshi","text":"错词"}],"merge":true}` or a single
+`reading`/`text` pair. `DELETE /rejects?key=ceshi%7C错词` restores one hidden
+candidate; `DELETE /rejects` restores all hidden candidates. The CLI mirrors
+this through `shurufa-imecli rejects list|add|import|export|delete|clear`.
 
 `GET /catalog` returns the shared emoji, kaomoji, symbol, and agent resource
 catalog. Query parameters are `kind=all|emoji|kaomoji|symbol|agent`,
@@ -148,11 +159,14 @@ ABI command bus:
 ```
 
 Supported actions include `view`, `next-page`, `prev-page`, `first-page`,
-`last-page`, `select`, `first-char`, `last-char`, and `select-char`. Selection
+`last-page`, `select`, `forget`, `first-char`, `last-char`, and `select-char`. Selection
 can use either an absolute `index` or page-relative `displayIndex` plus `start`.
 The response includes `state`, optional `committed`, and a rich `candidates`
 page with metadata. This keeps React/Wails previews, daemon fallback clients,
 and native C++ glue aligned on the same candidate event model.
+`forget`/`reject`/`delete-candidate` hides the selected candidate, writes
+`user-rejects.json`, removes any learned score for the same `reading|text`, and
+returns `rejected` plus the refreshed candidate page.
 The CLI mirrors this endpoint through `shurufa-imecli candidates <input>
 [action]`, which first previews the input and then posts the action payload.
 It can therefore be used for separator and paging smoke checks, for example

@@ -251,6 +251,15 @@ func TestCapabilitiesIncludeUserPhrasesJSON(t *testing.T) {
 	t.Fatalf("capabilities missing user-phrases-json: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeUserRejectsJSON(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "user-rejects-json" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing user-rejects-json: %#v", abiFeatureList)
+}
+
 func TestCapabilitiesIncludeCandidateActionJSON(t *testing.T) {
 	for _, feature := range abiFeatureList {
 		if feature == "candidate-action-json" {
@@ -325,6 +334,38 @@ func TestExecuteExtensionCommandImportsUserPhrases(t *testing.T) {
 	listResult, ok := list.(map[string]any)
 	if !ok || listResult["count"] != 1 {
 		t.Fatalf("user-phrases = %#v", list)
+	}
+}
+
+func TestExecuteExtensionCommandRejectsCandidate(t *testing.T) {
+	t.Setenv("SHURUFA233_USER_REJECTS", filepath.Join(t.TempDir(), "user-rejects.json"))
+	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(t.TempDir(), "user-scores.json"))
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{
+		{Reading: "ceshi", Text: "错词", Weight: 20000},
+		{Reading: "ceshi", Text: "测试", Weight: 10000},
+	})
+	session.Preview("ceshi")
+
+	got, handled := executeSessionExtensionCommand(session, "candidate-action", `{"action":"forget","index":0}`)
+	if !handled {
+		t.Fatal("candidate-action forget was not handled")
+	}
+	result, ok := got.(candidateActionResult)
+	if !ok || !result.OK || result.Rejected == nil || result.Rejected.Text != "错词" {
+		t.Fatalf("candidate-action forget = %#v", got)
+	}
+	if state := session.Preview("ceshi"); len(state.Candidates) == 0 || state.Candidates[0].Text == "错词" {
+		t.Fatalf("expected rejected candidate to be hidden, got %#v", state.Candidates)
+	}
+
+	list, handled := executeSessionExtensionCommand(session, "user-rejects", `{}`)
+	if !handled {
+		t.Fatal("user-rejects command was not handled")
+	}
+	listResult, ok := list.(map[string]any)
+	if !ok || listResult["count"] != 1 {
+		t.Fatalf("user-rejects = %#v", list)
 	}
 }
 

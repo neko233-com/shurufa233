@@ -73,6 +73,7 @@ type CatalogResponse struct {
 const (
 	UserPhraseKind   = "phrase"
 	UserPhraseSource = "user-phrase"
+	UserRejectSource = "user-reject"
 )
 
 type Update struct {

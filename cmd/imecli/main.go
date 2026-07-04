@@ -105,6 +105,13 @@ type phraseResponse struct {
 	UpdatedAt string        `json:"updatedAt"`
 }
 
+type rejectResponse struct {
+	Rejects   []phraseEntry `json:"rejects"`
+	Entries   []phraseEntry `json:"entries"`
+	Count     int           `json:"count"`
+	UpdatedAt string        `json:"updatedAt"`
+}
+
 type catalogResponse struct {
 	Kind      string        `json:"kind"`
 	Query     string        `json:"query,omitempty"`
@@ -152,6 +159,8 @@ func main() {
 		err = wordbook(client, os.Args[2:])
 	case "phrases", "phrase":
 		err = phrases(client, os.Args[2:])
+	case "rejects", "reject":
+		err = rejects(client, os.Args[2:])
 	case "catalog", "symbols", "symbol":
 		err = catalog(client, os.Args[2:])
 	case "agent":
@@ -188,6 +197,11 @@ Usage:
   shurufa-imecli phrases export
   shurufa-imecli phrases delete "msd|马上到！"
   shurufa-imecli phrases clear
+  shurufa-imecli rejects list
+  shurufa-imecli rejects add ceshi "错词"
+  shurufa-imecli rejects import user-rejects.json [--replace]
+  shurufa-imecli rejects delete "ceshi|错词"
+  shurufa-imecli rejects clear
   shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]
   shurufa-imecli update-check
   shurufa-imecli update-apply
@@ -349,6 +363,7 @@ func isCandidateActionName(value string) bool {
 		"prev", "previous", "previous-page", "prev-page", "page-prev",
 		"home", "first-page", "end", "last-page",
 		"select", "commit", "commit-candidate",
+		"forget", "reject", "delete-candidate", "hide-candidate",
 		"first-char", "commit-first-char",
 		"last-char", "commit-last-char",
 		"select-char", "commit-char", "commit-candidate-char":
@@ -617,6 +632,89 @@ func readPhraseFile(path string) ([]phraseEntry, error) {
 		return nil, err
 	}
 	return entries, nil
+}
+
+func rejects(client *http.Client, args []string) error {
+	action := "list"
+	if len(args) > 0 {
+		action = strings.ToLower(strings.TrimSpace(args[0]))
+		args = args[1:]
+	}
+	switch action {
+	case "list":
+		var response rejectResponse
+		if err := getJSON(client, "/rejects", &response); err != nil {
+			return err
+		}
+		printPhrases(rejectEntries(response))
+		return nil
+	case "export":
+		var response rejectResponse
+		if err := getJSON(client, "/rejects", &response); err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(map[string]any{"entries": rejectEntries(response)}, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	case "add":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: rejects add <reading> <text>")
+		}
+		entry := phraseEntry{Reading: args[0], Text: args[1], Comment: "已屏蔽"}
+		var response rejectResponse
+		if err := putJSON(client, "/rejects", map[string]any{"entries": []phraseEntry{entry}, "merge": true}, &response); err != nil {
+			return err
+		}
+		fmt.Printf("rejects=%d\n", response.Count)
+		return nil
+	case "import":
+		if len(args) == 0 {
+			return fmt.Errorf("missing import file")
+		}
+		entries, err := readPhraseFile(args[0])
+		if err != nil {
+			return err
+		}
+		payload := map[string]any{"entries": entries, "merge": true}
+		if len(args) > 1 && args[1] == "--replace" {
+			payload["merge"] = false
+		}
+		var response rejectResponse
+		if err := putJSON(client, "/rejects", payload, &response); err != nil {
+			return err
+		}
+		fmt.Printf("rejects=%d\n", response.Count)
+		return nil
+	case "delete":
+		if len(args) == 0 {
+			return fmt.Errorf("missing reject key")
+		}
+		var response rejectResponse
+		if err := deleteJSON(client, "/rejects?key="+urlQueryEscape(args[0]), &response); err != nil {
+			return err
+		}
+		fmt.Printf("rejects=%d\n", response.Count)
+		return nil
+	case "clear":
+		var response rejectResponse
+		if err := deleteJSON(client, "/rejects", &response); err != nil {
+			return err
+		}
+		fmt.Printf("rejects=%d\n", response.Count)
+		return nil
+	default:
+		return fmt.Errorf("unknown rejects action %q", action)
+	}
+}
+
+func rejectEntries(response rejectResponse) []phraseEntry {
+	if response.Rejects != nil {
+		return response.Rejects
+	}
+	return response.Entries
 }
 
 func catalog(client *http.Client, args []string) error {

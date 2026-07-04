@@ -576,6 +576,49 @@ func TestPhrasesPutAndDeleteManageUserPhrases(t *testing.T) {
 	}
 }
 
+func TestRejectsEndpointAndCandidateActionHideCandidates(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{
+		{Reading: "ceshi", Text: "错词", Weight: 20000},
+		{Reading: "ceshi", Text: "测试", Weight: 10000},
+	})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	session.Preview("ceshi")
+
+	req := httptest.NewRequest(http.MethodPost, "/ime/candidate-action", strings.NewReader(`{"action":"forget","index":0}`))
+	rec := httptest.NewRecorder()
+	state.imeCandidateAction(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("forget status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result candidateActionResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Rejected == nil || result.Rejected.Text != "错词" {
+		t.Fatalf("forget result = %#v", result)
+	}
+	if got := session.Preview("ceshi"); len(got.Candidates) == 0 || got.Candidates[0].Text == "错词" {
+		t.Fatalf("expected rejected candidate to be hidden, got %#v", got.Candidates)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/rejects?key=ceshi%7C%E9%94%99%E8%AF%8D", nil)
+	rec = httptest.NewRecorder()
+	state.rejects(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete reject status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := session.Preview("ceshi"); len(got.Candidates) == 0 || got.Candidates[0].Text != "错词" {
+		t.Fatalf("expected restored candidate, got %#v", got.Candidates)
+	}
+}
+
 func TestCatalogEndpointReturnsSpecialResources(t *testing.T) {
 	config := engine.DefaultConfig()
 	session := engine.New(config)

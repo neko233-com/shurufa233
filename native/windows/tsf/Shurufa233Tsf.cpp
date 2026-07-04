@@ -59,6 +59,7 @@ using ToggleModeFn = char *(*)(uint64_t);
 using ModeFn = char *(*)(uint64_t);
 using CommitCandidateFn = char *(*)(uint64_t, int);
 using CommitCandidateCharFn = char *(*)(uint64_t, int, const char *);
+using RejectCandidateFn = char *(*)(uint64_t, int);
 using FreeFn = void (*)(char *);
 using CoreStringFn = char *(*)();
 using SessionStringFn = char *(*)(uint64_t);
@@ -66,6 +67,7 @@ using CandidatePayloadV2Fn = char *(*)(uint64_t, int, int);
 using ApplyConfigJsonFn = char *(*)(char *);
 using ImportUserScoresJsonFn = char *(*)(uint64_t, char *);
 using ImportUserPhrasesJsonFn = char *(*)(uint64_t, char *);
+using ImportUserRejectsJsonFn = char *(*)(uint64_t, char *);
 using CommitTextFn = char *(*)(uint64_t, char *, char *);
 using AgentComposeFn = char *(*)(char *, char *);
 using ExecuteCommandFn = char *(*)(uint64_t, const char *, const char *);
@@ -89,6 +91,7 @@ struct CoreApi {
   ModeFn mode = nullptr;
   CommitCandidateFn commitCandidate = nullptr;
   CommitCandidateCharFn commitCandidateChar = nullptr;
+  RejectCandidateFn rejectCandidate = nullptr;
   FreeFn freeValue = nullptr;
   CoreStringFn abiVersion = nullptr;
   CoreStringFn capabilities = nullptr;
@@ -103,6 +106,8 @@ struct CoreApi {
   ImportUserScoresJsonFn importUserScoresJson = nullptr;
   SessionStringFn userPhrasesJson = nullptr;
   ImportUserPhrasesJsonFn importUserPhrasesJson = nullptr;
+  SessionStringFn userRejectsJson = nullptr;
+  ImportUserRejectsJsonFn importUserRejectsJson = nullptr;
   CommitTextFn commitText = nullptr;
   AgentComposeFn agentCompose = nullptr;
   ExecuteCommandFn executeCommand = nullptr;
@@ -405,6 +410,7 @@ bool TryLoadInProcessCore() {
   api.commitCandidate = LoadCoreProc<CommitCandidateFn>(module, "ShurufaCommitCandidate");
   api.commitCandidateChar =
       LoadCoreProc<CommitCandidateCharFn>(module, "ShurufaCommitCandidateChar");
+  api.rejectCandidate = LoadCoreProc<RejectCandidateFn>(module, "ShurufaRejectCandidate");
   api.freeValue = LoadCoreProc<FreeFn>(module, "ShurufaFree");
   api.abiVersion = LoadCoreProc<CoreStringFn>(module, "ShurufaAbiVersion");
   api.capabilities = LoadCoreProc<CoreStringFn>(module, "ShurufaCapabilities");
@@ -422,6 +428,9 @@ bool TryLoadInProcessCore() {
   api.userPhrasesJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserPhrasesJSON");
   api.importUserPhrasesJson =
       LoadCoreProc<ImportUserPhrasesJsonFn>(module, "ShurufaImportUserPhrasesJSON");
+  api.userRejectsJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserRejectsJSON");
+  api.importUserRejectsJson =
+      LoadCoreProc<ImportUserRejectsJsonFn>(module, "ShurufaImportUserRejectsJSON");
   api.commitText = LoadCoreProc<CommitTextFn>(module, "ShurufaCommitText");
   api.agentCompose = LoadCoreProc<AgentComposeFn>(module, "ShurufaAgentCompose");
   api.executeCommand = LoadCoreProc<ExecuteCommandFn>(module, "ShurufaExecuteCommand");
@@ -459,6 +468,7 @@ void UseHttpCoreFallback() {
   g_core.mode = HttpModeValue;
   g_core.commitCandidate = HttpCommitCandidate;
   g_core.commitCandidateChar = nullptr;
+  g_core.rejectCandidate = nullptr;
   g_core.freeValue = HttpFree;
   g_core.abiVersion = nullptr;
   g_core.capabilities = nullptr;
@@ -471,6 +481,10 @@ void UseHttpCoreFallback() {
   g_core.dictionaryManifestJson = nullptr;
   g_core.userScoresJson = nullptr;
   g_core.importUserScoresJson = nullptr;
+  g_core.userPhrasesJson = nullptr;
+  g_core.importUserPhrasesJson = nullptr;
+  g_core.userRejectsJson = nullptr;
+  g_core.importUserRejectsJson = nullptr;
   g_core.commitText = nullptr;
   g_core.agentCompose = nullptr;
   g_core.executeCommand = nullptr;

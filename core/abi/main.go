@@ -42,6 +42,7 @@ func ShurufaDestroySession(id C.uint64_t) {
 	sessionsMu.Unlock()
 	if session != nil {
 		persistUserScoresSync(session.UserScores())
+		persistUserRejects(session.UserRejects())
 	}
 }
 
@@ -229,6 +230,23 @@ func ShurufaSelectCandidateChar(id C.uint64_t, index C.int, side *C.char) *C.cha
 	return jsonCString(state)
 }
 
+//export ShurufaRejectCandidate
+func ShurufaRejectCandidate(id C.uint64_t, index C.int) *C.char {
+	session := getSession(uint64(id))
+	state, rejected, err := session.RejectCandidate(int(index))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	persistUserScoresReplaceSync(session.UserScores())
+	persistUserRejects(session.UserRejects())
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"rejected":  rejected,
+		"state":     state,
+		"updatedAt": state.UpdatedAt,
+	})
+}
+
 //export ShurufaExecuteCommand
 func ShurufaExecuteCommand(id C.uint64_t, command *C.char, payload *C.char) *C.char {
 	return jsonCString(executeExtensionCommand(uint64(id), C.GoString(command), C.GoString(payload)))
@@ -306,6 +324,7 @@ func newEngine() *engine.Engine {
 		session.AddEntries(entry)
 	}
 	session.AddUserPhrases(loadUserPhrases())
+	session.AddUserRejects(loadUserRejects())
 	session.ImportUserScores(loadUserScores())
 	return session
 }

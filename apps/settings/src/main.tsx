@@ -103,6 +103,13 @@ type PhraseResponse = {
   updatedAt: string;
 };
 
+type RejectResponse = {
+  rejects?: PhraseEntry[];
+  entries?: PhraseEntry[];
+  count: number;
+  updatedAt: string;
+};
+
 type CatalogResponse = {
   kind: string;
   query?: string;
@@ -141,6 +148,7 @@ type CandidateActionResult = {
   limit: number;
   total: number;
   committed?: string;
+  rejected?: PhraseEntry;
   state: EngineState;
   candidates: {
     ok: boolean;
@@ -385,6 +393,12 @@ function phraseEntries(response: PhraseResponse): PhraseEntry[] {
   );
 }
 
+function rejectEntries(response: RejectResponse): PhraseEntry[] {
+  return [...(response.rejects ?? response.entries ?? [])].sort(
+    (left, right) => left.reading.localeCompare(right.reading) || left.text.localeCompare(right.text),
+  );
+}
+
 function hydrateConfig(config: Config): Config {
   return {
     ...defaultConfig,
@@ -432,6 +446,9 @@ function App() {
   const [phraseReading, setPhraseReading] = useState("msd");
   const [phraseValue, setPhraseValue] = useState("马上到！");
   const [phraseWeight, setPhraseWeight] = useState(60000);
+  const [rejects, setRejects] = useState<PhraseEntry[]>([]);
+  const [rejectDraft, setRejectDraft] = useState("{\n  \"entries\": []\n}");
+  const [rejectText, setRejectText] = useState("未读取");
   const [catalogKind, setCatalogKind] = useState("all");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogEntries, setCatalogEntries] = useState<PhraseEntry[]>([]);
@@ -452,6 +469,7 @@ function App() {
     void loadConfig();
     void loadWordbook();
     void loadPhrases();
+    void loadRejects();
     void loadCatalog();
   }, []);
 
@@ -660,6 +678,10 @@ function App() {
       if (data.committed) {
         setPreviewCommitted(data.committed);
         setStatus("ready");
+      }
+      if (data.rejected) {
+        setRejectText(`已屏蔽 ${data.rejected.reading}|${data.rejected.text}`);
+        void loadRejects();
       }
       setError("");
     } catch (err) {
@@ -940,6 +962,94 @@ function App() {
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = "shurufa233-user-phrases.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadRejects() {
+    try {
+      const res = await fetch(`${apiBase}/rejects`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as RejectResponse;
+      const entries = rejectEntries(data);
+      setRejects(entries);
+      setRejectDraft(JSON.stringify({ entries }, null, 2));
+      setRejectText(`${data.count ?? entries.length} 条已屏蔽`);
+      setError("");
+    } catch (err) {
+      setRejectText("读取失败");
+      setError(err instanceof Error ? err.message : "rejects load failed");
+    }
+  }
+
+  async function saveRejectEntries(entries: PhraseEntry[], merge: boolean, statusText: string) {
+    const res = await fetch(`${apiBase}/rejects`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entries, merge }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = (await res.json()) as RejectResponse;
+    const nextEntries = rejectEntries(data);
+    setRejects(nextEntries);
+    setRejectDraft(JSON.stringify({ entries: nextEntries }, null, 2));
+    setRejectText(`${statusText} ${data.count ?? nextEntries.length} 条`);
+    setError("");
+    return nextEntries;
+  }
+
+  async function importRejects(merge: boolean) {
+    try {
+      const parsed = JSON.parse(rejectDraft) as PhraseEntry[] | { entries?: PhraseEntry[]; rejects?: PhraseEntry[] };
+      const entries = Array.isArray(parsed) ? parsed : parsed.entries ?? parsed.rejects ?? [];
+      await saveRejectEntries(entries, merge, merge ? "已合并" : "已替换");
+      void runPreview(preview);
+    } catch (err) {
+      setRejectText("导入失败");
+      setError(err instanceof Error ? err.message : "reject import failed");
+    }
+  }
+
+  async function deleteReject(entry: PhraseEntry) {
+    try {
+      const key = `${entry.reading}|${entry.text}`;
+      const res = await fetch(`${apiBase}/rejects?key=${encodeURIComponent(key)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as RejectResponse;
+      const nextEntries = rejectEntries(data);
+      setRejects(nextEntries);
+      setRejectDraft(JSON.stringify({ entries: nextEntries }, null, 2));
+      setRejectText(`剩余 ${data.count ?? nextEntries.length} 条`);
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setRejectText("恢复失败");
+      setError(err instanceof Error ? err.message : "reject delete failed");
+    }
+  }
+
+  async function clearRejects() {
+    if (!window.confirm("恢复所有已屏蔽候选？")) return;
+    try {
+      const res = await fetch(`${apiBase}/rejects`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      setRejects([]);
+      setRejectDraft("{\n  \"entries\": []\n}");
+      setRejectText("已全部恢复");
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setRejectText("恢复失败");
+      setError(err instanceof Error ? err.message : "reject clear failed");
+    }
+  }
+
+  function exportRejects() {
+    const blob = new Blob([JSON.stringify({ entries: rejects }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "shurufa233-user-rejects.json";
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -1467,6 +1577,65 @@ function App() {
             </div>
           </section>
 
+          <section className="panel rejectPanel">
+            <div className="panelHeader">
+              <h2>候选屏蔽</h2>
+              <span>{rejectText}</span>
+            </div>
+            <div className="rejectList">
+              {rejects.slice(0, 8).map((entry) => (
+                <div className="phraseRow" key={`${entry.reading}|${entry.text}`}>
+                  <button
+                    className="phrasePreviewButton"
+                    onClick={() => {
+                      setPreview(entry.reading);
+                      void runPreview(entry.reading);
+                    }}
+                  >
+                    <strong>{entry.text}</strong>
+                    <span>
+                      {entry.reading}
+                      {entry.comment ? ` · ${entry.comment}` : ""}
+                    </span>
+                  </button>
+                  <button className="smallButton" title="恢复候选" onClick={() => void deleteReject(entry)}>
+                    恢复
+                  </button>
+                </div>
+              ))}
+              {rejects.length === 0 && <div className="emptyWordbook">暂无已屏蔽候选</div>}
+            </div>
+            <label className="field">
+              <span>批量 JSON</span>
+              <textarea
+                className="wordbookDraft phraseDraft"
+                spellCheck={false}
+                value={rejectDraft}
+                onChange={(event) => setRejectDraft(event.target.value)}
+              />
+            </label>
+            <div className="rowControls">
+              <button className="secondary" onClick={() => void loadRejects()}>
+                <RotateCcw size={18} />
+                刷新
+              </button>
+              <button className="secondary" onClick={exportRejects}>
+                <FileDown size={18} />
+                导出
+              </button>
+              <button className="secondary" onClick={() => void importRejects(true)}>
+                <FileUp size={18} />
+                合并导入
+              </button>
+              <button className="secondary" onClick={() => void importRejects(false)}>
+                替换
+              </button>
+              <button className="secondary danger" onClick={() => void clearRejects()}>
+                全部恢复
+              </button>
+            </div>
+          </section>
+
           <section className="panel catalogPanel">
             <div className="panelHeader">
               <div>
@@ -1538,6 +1707,11 @@ function App() {
                         key={`${candidate.reading}-${candidate.text}-${index}`}
                         className={index === 0 ? "candidatePill selected" : "candidatePill"}
                         onClick={() => void runCandidateAction("select", index + 1)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          void runCandidateAction("forget", index + 1);
+                        }}
+                        title="左键上屏，右键屏蔽候选"
                       >
                         <b>{index + 1}</b>
                         <span className="candidateText">{candidate.text}</span>
