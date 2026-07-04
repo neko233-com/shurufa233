@@ -314,6 +314,49 @@ func TestTraditionalRejectUsesConvertedCandidateText(t *testing.T) {
 	}
 }
 
+func TestAssociateReturnsNextWordCandidates(t *testing.T) {
+	e := New(DefaultConfig())
+
+	state := e.Associate("你好", 3)
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "世界" {
+		t.Fatalf("expected association candidates for 你好, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Kind != "association" || state.Candidates[0].Comment != "联想" {
+		t.Fatalf("association metadata = %#v", state.Candidates[0])
+	}
+}
+
+func TestSelectReturnsAssociationCandidates(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{{Reading: "weixin", Text: "微信", Weight: 20000}})
+
+	state := e.Preview("weixin")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "微信" {
+		t.Fatalf("expected 微信 candidate, got %#v", state.Candidates)
+	}
+	state, err := e.Select(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Committed != "微信" {
+		t.Fatalf("committed = %q, want 微信", state.Committed)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "输入法" {
+		t.Fatalf("expected association after select, got %#v", state.Candidates)
+	}
+}
+
+func TestAssociationsCanBeDisabled(t *testing.T) {
+	config := DefaultConfig()
+	config.Associations = false
+	e := New(config)
+
+	state := e.Associate("你好", 3)
+	if len(state.Candidates) != 0 {
+		t.Fatalf("associations should be disabled, got %#v", state.Candidates)
+	}
+}
+
 func TestReplaceUserPhrasesClearsOldPhrases(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddUserPhrases([]Entry{{Reading: "aaa", Text: "旧短语"}})

@@ -14,6 +14,7 @@ type Config struct {
 	Mode                  string   `json:"mode"`
 	Punctuation           string   `json:"punctuation"`
 	Script                string   `json:"script"`
+	Associations          bool     `json:"associations"`
 	Skin                  Skin     `json:"skin"`
 	Update                Update   `json:"update"`
 }

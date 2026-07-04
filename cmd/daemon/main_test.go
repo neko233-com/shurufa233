@@ -86,6 +86,31 @@ func TestPreviewAcceptsRimeSlashSymbolPrefix(t *testing.T) {
 	}
 }
 
+func TestAssociateReturnsNextWordCandidates(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/engine/associate", strings.NewReader(`{"context":"你好","limit":2}`))
+	rec := httptest.NewRecorder()
+	state.associate(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got engine.State
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Candidates) == 0 || got.Candidates[0].Text != "世界" {
+		t.Fatalf("associate = %#v", got)
+	}
+}
+
 func TestPutConfigNormalizesCandidatePool(t *testing.T) {
 	state := &AppState{
 		config:   engine.DefaultConfig(),
@@ -376,6 +401,31 @@ func TestImeCandidateActionPagesAndCommitsByDisplayIndex(t *testing.T) {
 	}
 	if commit.Committed != "测试四" || commit.State.Buffer != "" {
 		t.Fatalf("candidate action commit = %#v", commit)
+	}
+}
+
+func TestImeCandidateActionAssociateUsesContext(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/ime/candidate-action", strings.NewReader(`{"action":"associate","context":"微信","limit":2}`))
+	rec := httptest.NewRecorder()
+	state.imeCandidateAction(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result candidateActionResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.OK || result.Total == 0 || result.Candidates.Items[0].Text != "输入法" {
+		t.Fatalf("candidate association action = %#v", result)
 	}
 }
 

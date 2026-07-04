@@ -48,6 +48,7 @@ type engineState struct {
 
 type candidateActionRequest struct {
 	Action       string `json:"action,omitempty"`
+	Context      string `json:"context,omitempty"`
 	Index        int    `json:"index,omitempty"`
 	DisplayIndex int    `json:"displayIndex,omitempty"`
 	Start        int    `json:"start,omitempty"`
@@ -149,6 +150,8 @@ func main() {
 		err = status(client)
 	case "preview":
 		err = preview(client, strings.Join(os.Args[2:], " "))
+	case "associate", "associations", "predict":
+		err = associate(client, os.Args[2:])
 	case "update-check":
 		err = updateCheckCmd(client)
 	case "update-apply":
@@ -185,6 +188,7 @@ func usage() {
 Usage:
   shurufa-imecli status
   shurufa-imecli preview nihao
+  shurufa-imecli associate "你好"
   shurufa-imecli mode [zh|en|toggle]
   shurufa-imecli wordbook list
   shurufa-imecli wordbook export
@@ -245,14 +249,46 @@ func preview(client *http.Client, input string) error {
 	return nil
 }
 
+func associate(client *http.Client, args []string) error {
+	context := strings.TrimSpace(strings.Join(args, " "))
+	if context == "" {
+		return fmt.Errorf("missing association context")
+	}
+	var state engineState
+	if err := postJSON(client, "/engine/associate", map[string]any{"context": context}, &state); err != nil {
+		return err
+	}
+	fmt.Printf("context: %s\n", context)
+	for i, item := range state.Candidates {
+		meta := ""
+		if item.Kind != "" {
+			meta = " kind=" + item.Kind
+			if item.Source != "" {
+				meta += " source=" + item.Source
+			}
+		}
+		if item.Comment != "" {
+			meta += " comment=" + item.Comment
+		}
+		fmt.Printf("%d. %s [%s] score=%d%s\n", i+1, item.Text, item.Reading, item.Weight+item.UserScore, meta)
+	}
+	return nil
+}
+
 func candidateAction(client *http.Client, args []string) error {
 	input, request, err := parseCandidateActionArgs(args)
 	if err != nil {
 		return err
 	}
-	var previewState engineState
-	if err := postJSON(client, "/engine/preview", map[string]string{"input": input}, &previewState); err != nil {
-		return err
+	if isAssociationAction(request.Action) {
+		if request.Context == "" {
+			request.Context = input
+		}
+	} else {
+		var previewState engineState
+		if err := postJSON(client, "/engine/preview", map[string]string{"input": input}, &previewState); err != nil {
+			return err
+		}
 	}
 	var response candidateActionResponse
 	if err := postJSON(client, "/ime/candidate-action", request, &response); err != nil {
@@ -311,7 +347,7 @@ func parseCandidateActionArgs(args []string) (string, candidateActionRequest, er
 		input = append(input, arg)
 	}
 	joined := strings.TrimSpace(strings.Join(input, " "))
-	if joined == "" {
+	if joined == "" && !isAssociationAction(request.Action) && request.Context == "" {
 		return "", request, fmt.Errorf("missing candidate input")
 	}
 	return joined, request, nil
@@ -323,6 +359,9 @@ func applyCandidateActionOption(request *candidateActionRequest, option string, 
 	switch option {
 	case "--side":
 		request.Side = value
+		return nil
+	case "--context", "--input":
+		request.Context = value
 		return nil
 	case "--action":
 		if !isCandidateActionName(value) {
@@ -364,9 +403,19 @@ func isCandidateActionName(value string) bool {
 		"home", "first-page", "end", "last-page",
 		"select", "commit", "commit-candidate",
 		"forget", "reject", "delete-candidate", "hide-candidate",
+		"associate", "association", "associations", "predict", "suggest",
 		"first-char", "commit-first-char",
 		"last-char", "commit-last-char",
 		"select-char", "commit-char", "commit-candidate-char":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAssociationAction(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "associate", "association", "associations", "predict", "suggest":
 		return true
 	default:
 		return false

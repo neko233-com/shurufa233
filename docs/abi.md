@@ -105,6 +105,7 @@ char* ShurufaAbiVersion(void);
 char* ShurufaCapabilities(void);
 char* ShurufaState(uint64_t session);
 char* ShurufaCandidatePayloadV2(uint64_t session, int start, int limit);
+char* ShurufaAssociate(uint64_t session, const char* json);
 char* ShurufaCandidateAction(uint64_t session, const char* json);
 char* ShurufaCatalogJSON(uint64_t session, const char* json);
 char* ShurufaConfigJSON(void);
@@ -139,7 +140,14 @@ comment text remains part of candidate payloads even when the UI hides it.
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
-`candidate-comments`, `candidate-action-json`, and `extension-command-json`.
+`candidate-comments`, `association-candidates`, `candidate-action-json`, and
+`extension-command-json`.
+
+`ShurufaAssociate(session, {"context":"你好","limit":7})` returns a normal state
+object with post-commit association candidates. The same behavior is available
+through `ShurufaExecuteCommand(session, "associate", ...)` and through
+`candidate-action` with `{"action":"associate","context":"微信"}`. Candidate text
+is already script-converted, and rows are tagged `kind=association`.
 
 `ShurufaExecuteCommand` is the reserved forward-compatible command bus for
 future native glue. The first argument is the session id, the second is a stable
@@ -160,8 +168,10 @@ mode
 set-mode                {"mode":"en"} or {"toggle":true}
 toggle-mode
 candidate-payload-v2    {"start":0,"limit":7}
+associate               {"context":"你好","limit":7}
 catalog-json            {"kind":"emoji","query":"zan","limit":20}
 candidate-action        {"action":"next-page","start":0,"limit":7}
+candidate-action        {"action":"associate","context":"微信","limit":7}
 candidate-action        {"action":"forget","index":0}
 select                  {"index":0}
 select-candidate-char   {"index":0,"side":"first"}

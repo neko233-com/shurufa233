@@ -54,6 +54,7 @@ func DefaultConfig() Config {
 		Mode:               "zh",
 		Punctuation:        "full",
 		Script:             "simplified",
+		Associations:       true,
 		Skin: Skin{
 			FontFamily:    "Microsoft YaHei UI",
 			FontSize:      15,
@@ -517,6 +518,13 @@ func (e *Engine) Select(index int) (State, error) {
 	return e.stateLocked(selected.Text), nil
 }
 
+func (e *Engine) Associate(context string, limit int) State {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.buffer = ""
+	return e.associationStateLocked(context, limit)
+}
+
 func (e *Engine) SelectChar(index int, side string) (State, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -663,11 +671,24 @@ func (e *Engine) DeleteUserReject(reading string, text string) {
 }
 
 func (e *Engine) stateLocked(committed string) State {
+	candidates := e.candidatesLocked()
+	if len(candidates) == 0 && e.config.Associations && strings.TrimSpace(committed) != "" {
+		candidates = e.associationCandidatesLocked(committed, e.config.MaxCandidates)
+	}
 	return State{
 		Buffer:     e.buffer,
 		Mode:       normalizeMode(e.config.Mode),
-		Candidates: e.candidatesLocked(),
+		Candidates: candidates,
 		Committed:  committed,
+		UpdatedAt:  time.Now().UTC(),
+	}
+}
+
+func (e *Engine) associationStateLocked(context string, limit int) State {
+	return State{
+		Buffer:     "",
+		Mode:       normalizeMode(e.config.Mode),
+		Candidates: e.associationCandidatesLocked(context, limit),
 		UpdatedAt:  time.Now().UTC(),
 	}
 }

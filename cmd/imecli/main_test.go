@@ -55,10 +55,51 @@ func TestParseCandidateActionArgsSelectDisplayIndex(t *testing.T) {
 	}
 }
 
+func TestParseCandidateActionArgsAssociateContext(t *testing.T) {
+	input, req, err := parseCandidateActionArgs([]string{"associate", "--context", "你好", "--limit", "2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input != "" || req.Action != "associate" || req.Context != "你好" || req.Limit != 2 {
+		t.Fatalf("associate request = input:%q req:%#v", input, req)
+	}
+}
+
 func TestParseCandidateActionArgsRejectsBadOption(t *testing.T) {
 	_, _, err := parseCandidateActionArgs([]string{"nihao", "--wat", "1"})
 	if err == nil {
 		t.Fatal("expected unknown option error")
+	}
+}
+
+func TestAssociateCallsEndpoint(t *testing.T) {
+	var associateCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/engine/associate" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		associateCalled = true
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode associate: %v", err)
+		}
+		if req["context"] != "你好" {
+			t.Fatalf("associate context = %#v", req["context"])
+		}
+		_ = json.NewEncoder(w).Encode(engineState{
+			Candidates: []candidate{{Text: "世界", Reading: "shijie", Kind: "association", Comment: "联想"}},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := associate(server.Client(), []string{"你好"}); err != nil {
+		t.Fatal(err)
+	}
+	if !associateCalled {
+		t.Fatal("associate endpoint was not called")
 	}
 }
 
@@ -107,6 +148,42 @@ func TestCandidateActionCallsPreviewThenActionEndpoint(t *testing.T) {
 	}
 	if !previewCalled || !actionCalled {
 		t.Fatalf("previewCalled=%v actionCalled=%v", previewCalled, actionCalled)
+	}
+}
+
+func TestCandidateActionAssociateSkipsPreview(t *testing.T) {
+	var actionCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/engine/preview" {
+			t.Fatal("associate action should not call preview")
+		}
+		if r.URL.Path != "/ime/candidate-action" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		actionCalled = true
+		var req candidateActionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode action: %v", err)
+		}
+		if req.Action != "associate" || req.Context != "微信" {
+			t.Fatalf("candidate association request = %#v", req)
+		}
+		_ = json.NewEncoder(w).Encode(candidateActionResponse{
+			OK:     true,
+			Action: req.Action,
+			Total:  1,
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := candidateAction(server.Client(), []string{"associate", "--context", "微信"}); err != nil {
+		t.Fatal(err)
+	}
+	if !actionCalled {
+		t.Fatal("candidate action endpoint was not called")
 	}
 }
 

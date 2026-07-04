@@ -32,6 +32,7 @@ var abiFeatureList = []string{
 	"dynamic-datetime-candidates",
 	"candidate-char-commit",
 	"candidate-comments",
+	"association-candidates",
 	"candidate-action-json",
 	"extension-command-json",
 }
@@ -120,7 +121,10 @@ type extensionCommandPayload struct {
 }
 
 func buildCandidatePayloadV2(session *engine.Engine, start int, limit int) candidatePayloadV2 {
-	state := session.State()
+	return buildCandidatePayloadV2FromState(session.State(), start, limit)
+}
+
+func buildCandidatePayloadV2FromState(state engine.State, start int, limit int) candidatePayloadV2 {
 	if start < 0 {
 		start = 0
 	}
@@ -254,6 +258,9 @@ func executeCandidateAction(session *engine.Engine, req extensionCommandPayload)
 	switch action {
 	case "view", "page", "candidates", "candidate-page":
 		return buildCandidateActionResult(session, action, start, limit, "")
+	case "associate", "association", "associations", "predict", "suggest":
+		state := session.Associate(firstNonEmpty(req.Context, req.Input, req.Text), limit)
+		return buildCandidateActionResultWithState(action, 0, limit, "", state)
 	case "next", "next-page", "page-next":
 		step := limit
 		if req.Delta > 0 {
@@ -285,7 +292,7 @@ func executeCandidateAction(session *engine.Engine, req extensionCommandPayload)
 			return errorEnvelope(err.Error())
 		}
 		persistUserScores(session.UserScores())
-		return buildCandidateActionResultWithState(session, action, 0, limit, state.Committed, state)
+		return buildCandidateActionResultWithState(action, 0, limit, state.Committed, state)
 	case "forget", "reject", "delete-candidate", "hide-candidate":
 		index := candidateActionIndex(req, start)
 		state, rejected, err := session.RejectCandidate(index)
@@ -294,7 +301,7 @@ func executeCandidateAction(session *engine.Engine, req extensionCommandPayload)
 		}
 		persistUserScoresReplaceSync(session.UserScores())
 		persistUserRejects(session.UserRejects())
-		return buildCandidateActionResultWithRejected(session, action, start, limit, state, rejected)
+		return buildCandidateActionResultWithRejected(action, start, limit, state, rejected)
 	case "first-char", "commit-first-char":
 		return executeCandidateCharAction(session, req, start, limit, action, "first")
 	case "last-char", "commit-last-char":
@@ -312,7 +319,7 @@ func executeCandidateCharAction(session *engine.Engine, req extensionCommandPayl
 	if err != nil {
 		return errorEnvelope(err.Error())
 	}
-	return buildCandidateActionResultWithState(session, action, 0, limit, state.Committed, state)
+	return buildCandidateActionResultWithState(action, 0, limit, state.Committed, state)
 }
 
 func candidateActionIndex(req extensionCommandPayload, start int) int {
@@ -323,19 +330,19 @@ func candidateActionIndex(req extensionCommandPayload, start int) int {
 }
 
 func buildCandidateActionResult(session *engine.Engine, action string, start int, limit int, committed string) candidateActionResult {
-	return buildCandidateActionResultWithState(session, action, start, limit, committed, session.State())
+	return buildCandidateActionResultWithState(action, start, limit, committed, session.State())
 }
 
-func buildCandidateActionResultWithState(session *engine.Engine, action string, start int, limit int, committed string, state engine.State) candidateActionResult {
-	return buildCandidateActionResultFull(session, action, start, limit, committed, state, nil)
+func buildCandidateActionResultWithState(action string, start int, limit int, committed string, state engine.State) candidateActionResult {
+	return buildCandidateActionResultFull(action, start, limit, committed, state, nil)
 }
 
-func buildCandidateActionResultWithRejected(session *engine.Engine, action string, start int, limit int, state engine.State, rejected engine.Entry) candidateActionResult {
-	return buildCandidateActionResultFull(session, action, start, limit, "", state, &rejected)
+func buildCandidateActionResultWithRejected(action string, start int, limit int, state engine.State, rejected engine.Entry) candidateActionResult {
+	return buildCandidateActionResultFull(action, start, limit, "", state, &rejected)
 }
 
-func buildCandidateActionResultFull(session *engine.Engine, action string, start int, limit int, committed string, state engine.State, rejected *engine.Entry) candidateActionResult {
-	candidates := buildCandidatePayloadV2(session, start, limit)
+func buildCandidateActionResultFull(action string, start int, limit int, committed string, state engine.State, rejected *engine.Entry) candidateActionResult {
+	candidates := buildCandidatePayloadV2FromState(state, start, limit)
 	return candidateActionResult{
 		OK:         true,
 		Action:     action,
@@ -416,6 +423,8 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return session.ToggleMode(), true
 	case "candidate-payload-v2":
 		return buildCandidatePayloadV2(session, req.Start, req.Limit), true
+	case "associate", "associate-json", "association", "predict", "suggest":
+		return session.Associate(firstNonEmpty(req.Context, req.Input, req.Text), req.Limit), true
 	case "candidate-action", "candidate-action-json":
 		return executeCandidateAction(session, req), true
 	case "catalog", "catalog-json", "symbols", "symbols-json":

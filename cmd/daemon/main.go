@@ -39,6 +39,12 @@ type previewRequest struct {
 	Input string `json:"input"`
 }
 
+type associateRequest struct {
+	Context string `json:"context,omitempty"`
+	Input   string `json:"input,omitempty"`
+	Limit   int    `json:"limit,omitempty"`
+}
+
 type modeRequest struct {
 	Mode   string `json:"mode,omitempty"`
 	Toggle bool   `json:"toggle,omitempty"`
@@ -46,6 +52,7 @@ type modeRequest struct {
 
 type candidateActionRequest struct {
 	Action       string `json:"action,omitempty"`
+	Context      string `json:"context,omitempty"`
 	Index        int    `json:"index,omitempty"`
 	DisplayIndex int    `json:"displayIndex,omitempty"`
 	Start        int    `json:"start,omitempty"`
@@ -221,6 +228,7 @@ func main() {
 	mux.HandleFunc("GET /config", state.withCORS(state.getConfig))
 	mux.HandleFunc("PUT /config", state.withCORS(state.putConfig))
 	mux.HandleFunc("POST /engine/preview", state.withCORS(state.preview))
+	mux.HandleFunc("POST /engine/associate", state.withCORS(state.associate))
 	mux.HandleFunc("GET /wordbook", state.withCORS(state.wordbook))
 	mux.HandleFunc("PUT /wordbook", state.withCORS(state.wordbook))
 	mux.HandleFunc("DELETE /wordbook", state.withCORS(state.wordbook))
@@ -368,6 +376,22 @@ func (s *AppState) preview(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	writeJSON(w, s.engine.Preview(req.Input))
+}
+
+func (s *AppState) associate(w http.ResponseWriter, r *http.Request) {
+	var req associateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	context := firstNonEmpty(req.Context, req.Input)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	limit := req.Limit
+	if limit <= 0 {
+		limit = s.config.CandidatePageSize
+	}
+	writeJSON(w, s.engine.Associate(context, limit))
 }
 
 func (s *AppState) wordbook(w http.ResponseWriter, r *http.Request) {
@@ -689,6 +713,9 @@ func applyCandidateActionQuery(req *candidateActionRequest, r *http.Request) {
 	if raw := strings.TrimSpace(query.Get("action")); raw != "" {
 		req.Action = raw
 	}
+	if raw := strings.TrimSpace(firstNonEmpty(query.Get("context"), query.Get("input"))); raw != "" {
+		req.Context = raw
+	}
 	if raw := strings.TrimSpace(query.Get("side")); raw != "" {
 		req.Side = raw
 	}
@@ -742,6 +769,9 @@ func (s *AppState) executeCandidateAction(session *engine.Engine, req candidateA
 	switch action {
 	case "view", "page", "candidates", "candidate-page":
 		return buildCandidateActionResult(session, action, start, limit, ""), nil
+	case "associate", "association", "associations", "predict", "suggest":
+		state := session.Associate(req.Context, limit)
+		return buildCandidateActionResultWithState(action, 0, limit, "", state), nil
 	case "next", "next-page", "page-next":
 		step := limit
 		if req.Delta > 0 {
@@ -775,7 +805,7 @@ func (s *AppState) executeCandidateAction(session *engine.Engine, req candidateA
 		if err := s.saveUserScores(session.UserScores()); err != nil {
 			return candidateActionResult{}, err
 		}
-		return buildCandidateActionResultWithState(session, action, 0, limit, state.Committed, state), nil
+		return buildCandidateActionResultWithState(action, 0, limit, state.Committed, state), nil
 	case "forget", "reject", "delete-candidate", "hide-candidate":
 		index := candidateActionIndex(req, start)
 		state, rejected, err := session.RejectCandidate(index)
@@ -789,7 +819,7 @@ func (s *AppState) executeCandidateAction(session *engine.Engine, req candidateA
 		if err := s.writeUserRejects(rejects); err != nil {
 			return candidateActionResult{}, err
 		}
-		return buildCandidateActionResultWithRejected(session, action, start, limit, state, rejected), nil
+		return buildCandidateActionResultWithRejected(action, start, limit, state, rejected), nil
 	case "first-char", "commit-first-char":
 		return executeCandidateCharAction(session, req, start, limit, action, "first")
 	case "last-char", "commit-last-char":
@@ -807,7 +837,7 @@ func executeCandidateCharAction(session *engine.Engine, req candidateActionReque
 	if err != nil {
 		return candidateActionResult{}, err
 	}
-	return buildCandidateActionResultWithState(session, action, 0, limit, state.Committed, state), nil
+	return buildCandidateActionResultWithState(action, 0, limit, state.Committed, state), nil
 }
 
 func candidateActionIndex(req candidateActionRequest, start int) int {
@@ -818,19 +848,19 @@ func candidateActionIndex(req candidateActionRequest, start int) int {
 }
 
 func buildCandidateActionResult(session *engine.Engine, action string, start int, limit int, committed string) candidateActionResult {
-	return buildCandidateActionResultWithState(session, action, start, limit, committed, session.State())
+	return buildCandidateActionResultWithState(action, start, limit, committed, session.State())
 }
 
-func buildCandidateActionResultWithState(session *engine.Engine, action string, start int, limit int, committed string, state engine.State) candidateActionResult {
-	return buildCandidateActionResultFull(session, action, start, limit, committed, state, nil)
+func buildCandidateActionResultWithState(action string, start int, limit int, committed string, state engine.State) candidateActionResult {
+	return buildCandidateActionResultFull(action, start, limit, committed, state, nil)
 }
 
-func buildCandidateActionResultWithRejected(session *engine.Engine, action string, start int, limit int, state engine.State, rejected engine.Entry) candidateActionResult {
-	return buildCandidateActionResultFull(session, action, start, limit, "", state, &rejected)
+func buildCandidateActionResultWithRejected(action string, start int, limit int, state engine.State, rejected engine.Entry) candidateActionResult {
+	return buildCandidateActionResultFull(action, start, limit, "", state, &rejected)
 }
 
-func buildCandidateActionResultFull(session *engine.Engine, action string, start int, limit int, committed string, state engine.State, rejected *engine.Entry) candidateActionResult {
-	candidates := buildCandidatePagePayload(session, start, limit)
+func buildCandidateActionResultFull(action string, start int, limit int, committed string, state engine.State, rejected *engine.Entry) candidateActionResult {
+	candidates := buildCandidatePagePayload(state, start, limit)
 	return candidateActionResult{
 		OK:         true,
 		Action:     action,
@@ -845,8 +875,7 @@ func buildCandidateActionResultFull(session *engine.Engine, action string, start
 	}
 }
 
-func buildCandidatePagePayload(session *engine.Engine, start int, limit int) candidatePagePayload {
-	state := session.State()
+func buildCandidatePagePayload(state engine.State, start int, limit int) candidatePagePayload {
 	if start < 0 {
 		start = 0
 	}

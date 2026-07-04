@@ -10,6 +10,7 @@
   "mode": "zh",
   "punctuation": "full",
   "script": "simplified",
+  "associations": true,
   "skin": {
     "fontFamily": "Microsoft YaHei UI",
     "fontSize": 15,

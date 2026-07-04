@@ -41,6 +41,15 @@ func ShurufaCandidatePayloadV2(id C.uint64_t, start C.int, limit C.int) *C.char 
 	return jsonCString(buildCandidatePayloadV2(getSession(uint64(id)), int(start), int(limit)))
 }
 
+//export ShurufaAssociate
+func ShurufaAssociate(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(getSession(uint64(id)).Associate(firstNonEmpty(req.Context, req.Input, req.Text), req.Limit))
+}
+
 //export ShurufaCandidateAction
 func ShurufaCandidateAction(id C.uint64_t, payload *C.char) *C.char {
 	req, err := decodeExtensionCommandPayload(C.GoString(payload))

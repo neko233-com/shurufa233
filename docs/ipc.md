@@ -8,6 +8,7 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /config`
 - `PUT /config`
 - `POST /engine/preview`
+- `POST /engine/associate`
 - `GET /wordbook`
 - `PUT /wordbook`
 - `DELETE /wordbook`
@@ -49,6 +50,19 @@ into slash-prefixed symbol mode.
 
 The settings UI uses this IPC directly in development. A Wails v3 shell can host the same React bundle and call the same daemon API or proxy these methods through its Go backend.
 
+`POST /engine/associate` body:
+
+```json
+{ "context": "你好", "limit": 7 }
+```
+
+It clears active composition and returns next-word association candidates in the
+normal `State` shape. Rows use `kind=association`, carry a `source`, and are
+already converted through the configured `script`. The same association path is
+returned after `select` when the committed text has follow-up suggestions, so a
+native candidate strip can show WeChat-style post-commit choices without adding
+platform-specific prediction logic.
+
 `GET /config` and `PUT /config` include `punctuation`, which is normalized to
 `full` or `half`. `full` is the default Chinese punctuation mode; `half` keeps
 ASCII punctuation while preserving candidate-first commit behavior during active
@@ -69,6 +83,9 @@ IME/WeChat-style strip, while `vertical` matches common Rime-style candidate
 lists. `showCandidateComments` controls whether native and React candidate
 strips display muted annotation text; the candidate payload still carries
 comments so dictionary metadata remains available to richer clients.
+`associations` controls whether post-commit association candidates are shown.
+It defaults to `true`; disabling it keeps selection behavior traditional and
+returns an empty candidate page after commit.
 
 They also include `doublePinyin` and `doublePinyinScheme`. The scheme is
 normalized to `xiaohe` or `microsoft`; old configs with only
@@ -166,7 +183,7 @@ ABI command bus:
 ```
 
 Supported actions include `view`, `next-page`, `prev-page`, `first-page`,
-`last-page`, `select`, `forget`, `first-char`, `last-char`, and `select-char`. Selection
+`last-page`, `select`, `associate`, `forget`, `first-char`, `last-char`, and `select-char`. Selection
 can use either an absolute `index` or page-relative `displayIndex` plus `start`.
 The response includes `state`, optional `committed`, and a rich `candidates`
 page with metadata. This keeps React/Wails previews, daemon fallback clients,
@@ -178,6 +195,8 @@ The CLI mirrors this endpoint through `shurufa-imecli candidates <input>
 [action]`, which first previews the input and then posts the action payload.
 It can therefore be used for separator and paging smoke checks, for example
 `shurufa-imecli candidates "xi'an" view`.
+For association-only checks, use `shurufa-imecli associate "你好"` or
+`shurufa-imecli candidates associate --context "微信"`.
 
 `GET /ime/candidates?start=0&limit=7` returns tab-separated candidate rows:
 `display_index`, `text`, `reading`, `score`, `kind`, `source`, and `comment`.

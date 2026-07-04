@@ -48,6 +48,7 @@ type Config = {
   mode: "zh" | "en";
   punctuation: "full" | "half";
   script: "simplified" | "traditional";
+  associations: boolean;
   skin: Skin;
   update: UpdateConfig;
 };
@@ -211,6 +212,7 @@ const defaultConfig: Config = {
   mode: "zh",
   punctuation: "full",
   script: "simplified",
+  associations: true,
   skin: {
     fontFamily: "Microsoft YaHei UI",
     fontSize: 15,
@@ -408,6 +410,7 @@ function hydrateConfig(config: Config): Config {
     candidatePageSize: Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize)),
     candidateLayout: normalizeCandidateLayout(config.candidateLayout),
     script: normalizeScript(config.script),
+    associations: config.associations ?? defaultConfig.associations,
     showCandidateComments: config.showCandidateComments ?? defaultConfig.showCandidateComments,
     skin: {
       ...defaultConfig.skin,
@@ -1242,6 +1245,14 @@ function App() {
                 onChange={(event) => setConfig({ ...config, showCandidateComments: event.target.checked })}
               />
               <span>显示候选注释</span>
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={config.associations ?? true}
+                onChange={(event) => setConfig({ ...config, associations: event.target.checked })}
+              />
+              <span>上屏后显示联想词</span>
             </label>
             <label className="toggle">
               <input

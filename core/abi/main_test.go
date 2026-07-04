@@ -287,6 +287,15 @@ func TestCapabilitiesIncludeCatalogJSON(t *testing.T) {
 	t.Fatalf("capabilities missing catalog-json: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeAssociationCandidates(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "association-candidates" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing association-candidates: %#v", abiFeatureList)
+}
+
 func TestPreviewPreservesPinyinSeparatorCandidate(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	state := session.Preview("xi'an")
@@ -423,6 +432,19 @@ func TestExecuteExtensionCommandCatalog(t *testing.T) {
 	result, ok := got.(engine.CatalogResponse)
 	if !ok || result.Kind != "symbol" || result.Count == 0 || result.Entries[0].Reading != "fs" {
 		t.Fatalf("catalog-json command = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandAssociate(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "associate", `{"context":"你好","limit":2}`)
+	if !handled {
+		t.Fatal("associate command was not handled")
+	}
+	state, ok := got.(engine.State)
+	if !ok || len(state.Candidates) == 0 || state.Candidates[0].Text != "世界" {
+		t.Fatalf("associate command = %#v", got)
 	}
 }
 
