@@ -1479,7 +1479,14 @@ int CandidateIndexFromKey(WPARAM key) {
   if (key >= L'1' && key <= L'9') {
     return static_cast<int>(key - L'1');
   }
-  return 0;
+  if (key >= VK_NUMPAD1 && key <= VK_NUMPAD9) {
+    return static_cast<int>(key - VK_NUMPAD1);
+  }
+  return -1;
+}
+
+bool IsCandidateNumberKey(WPARAM key) {
+  return CandidateIndexFromKey(key) >= 0;
 }
 
 int CandidateQuickSelectIndexFromKey(WPARAM key) {
@@ -1822,9 +1829,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return S_OK;
     }
 
-    if (key == VK_SPACE || key == VK_RETURN || (key >= L'1' && key <= L'9')) {
+    if (key == VK_SPACE || key == VK_RETURN || IsCandidateNumberKey(key)) {
       const int index =
-          (key >= L'1' && key <= L'9') ? pageOffset_ + CandidateIndexFromKey(key) : selectedIndex_;
+          IsCandidateNumberKey(key) ? pageOffset_ + CandidateIndexFromKey(key) : selectedIndex_;
       CommitCandidate(context, index);
       selectedIndex_ = 0;
       pageOffset_ = 0;
@@ -1976,7 +1983,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (!asciiMode_ && !ChinesePunctuationForKey(key).empty()) {
       return true;
     }
-    if (key >= L'1' && key <= L'9') {
+    if (IsCandidateNumberKey(key)) {
       const int relativeIndex = CandidateIndexFromKey(key);
       return relativeIndex < kCandidatesPerPage &&
              cachedCandidateCount_ > pageOffset_ + relativeIndex;
