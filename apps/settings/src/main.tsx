@@ -1,4 +1,4 @@
-import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BookOpen,
@@ -113,12 +113,21 @@ type TypingMetrics = {
   cpm: number;
   keysPerSecond: number;
   avgLatencyMs: number;
+  p95LatencyMs: number;
+  burstKeysPerSecond: number;
   accuracy: number;
   keyCount: number;
   changes: number;
   errors: number;
   composing: boolean;
   compositions: number;
+};
+
+type TypingProbe = {
+  input: string;
+  candidates: Candidate[];
+  status: "idle" | "ready" | "offline";
+  updatedAt: string;
 };
 
 const apiBase = "http://127.0.0.1:23333";
@@ -239,6 +248,8 @@ const defaultTypingMetrics: TypingMetrics = {
   cpm: 0,
   keysPerSecond: 0,
   avgLatencyMs: 0,
+  p95LatencyMs: 0,
+  burstKeysPerSecond: 0,
   accuracy: 100,
   keyCount: 0,
   changes: 0,
@@ -255,9 +266,25 @@ function createTypingStats() {
     changes: 0,
     latencyTotalMs: 0,
     latencySamples: 0,
+    latencyWindow: [] as number[],
+    keyWindow: [] as number[],
+    burstKeysPerSecond: 0,
+    recentKeys: [] as string[],
     compositions: 0,
     composing: false,
   };
+}
+
+function percentile(values: number[], ratio: number) {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
+  return sorted[index];
+}
+
+function extractTypingProbe(input: string) {
+  const match = input.match(/[a-zA-Z]{1,32}$/);
+  return match ? match[0].toLowerCase() : "";
 }
 
 function countTypingErrors(input: string, target: string) {
@@ -299,6 +326,12 @@ function App() {
   const [typingPromptId, setTypingPromptId] = useState(typingPrompts[0].id);
   const [typingText, setTypingText] = useState("");
   const [typingMetrics, setTypingMetrics] = useState<TypingMetrics>(defaultTypingMetrics);
+  const [typingProbe, setTypingProbe] = useState<TypingProbe>({
+    input: "",
+    candidates: [],
+    status: "idle",
+    updatedAt: "",
+  });
   const typingStatsRef = useRef(createTypingStats());
 
   useEffect(() => {
@@ -323,7 +356,7 @@ function App() {
         : 0,
     [typingPrompt.text, typingText.length],
   );
-  const accentStyle = useMemo(() => ({ "--accent": config.skin.accent }) as React.CSSProperties, [config.skin.accent]);
+  const accentStyle = useMemo(() => ({ "--accent": config.skin.accent }) as CSSProperties, [config.skin.accent]);
   const candidateBarStyle = useMemo(
     () =>
       ({
@@ -335,10 +368,17 @@ function App() {
         "--candidate-muted": config.skin.mutedText,
         "--candidate-border": config.skin.border,
         "--candidate-highlight": config.skin.highlightText,
-      }) as React.CSSProperties,
+      }) as CSSProperties,
     [config.skin],
   );
   const previewCandidates = (state?.candidates ?? []).slice(0, 7);
+  const typingProbeCandidates = typingProbe.candidates.slice(0, 7);
+  const typingProbeKinds = useMemo(() => {
+    const kinds = new Set(typingProbeCandidates.map((candidate) => candidate.kind).filter(Boolean));
+    return Array.from(kinds)
+      .map((kind) => kindLabel(kind))
+      .filter(Boolean);
+  }, [typingProbeCandidates]);
 
   const refreshTypingMetrics = useCallback(
     (input: string) => {
@@ -349,12 +389,15 @@ function App() {
       const errors = countTypingErrors(input, typingPrompt.text);
       const accuracy = input.length > 0 ? Math.max(0, ((input.length - errors) / input.length) * 100) : 100;
       const activityEvents = Math.max(stats.keyCount, stats.changes);
+      const p95LatencyMs = percentile(stats.latencyWindow, 0.95);
       setTypingMetrics({
         elapsedMs,
         wpm: elapsedMinutes > 0 ? input.length / 5 / elapsedMinutes : 0,
         cpm: elapsedMinutes > 0 ? input.length / elapsedMinutes : 0,
         keysPerSecond: elapsedMs > 0 ? activityEvents / (elapsedMs / 1000) : 0,
         avgLatencyMs: stats.latencySamples > 0 ? stats.latencyTotalMs / stats.latencySamples : 0,
+        p95LatencyMs,
+        burstKeysPerSecond: stats.burstKeysPerSecond,
         accuracy,
         keyCount: stats.keyCount,
         changes: stats.changes,
@@ -370,15 +413,22 @@ function App() {
     typingStatsRef.current = createTypingStats();
     setTypingText("");
     setTypingMetrics(defaultTypingMetrics);
+    setTypingProbe({ input: "", candidates: [], status: "idle", updatedAt: "" });
   }, []);
 
-  const handleTypingKeyDown = useCallback(() => {
+  const handleTypingKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
     const stats = typingStatsRef.current;
+    const now = performance.now();
     if (stats.startedAt === 0) {
-      stats.startedAt = performance.now();
+      stats.startedAt = now;
     }
     stats.keyCount += 1;
-    stats.lastKeyAt = performance.now();
+    stats.lastKeyAt = now;
+    stats.keyWindow = [...stats.keyWindow.filter((time) => now - time <= 1000), now];
+    stats.burstKeysPerSecond = Math.max(stats.burstKeysPerSecond, stats.keyWindow.length);
+    if (event.key.length === 1 || event.key === "Backspace" || event.key === "Enter" || event.key === " ") {
+      stats.recentKeys = [...stats.recentKeys.slice(-11), event.key === " " ? "Space" : event.key];
+    }
   }, []);
 
   const handleTypingChange = useCallback(
@@ -393,6 +443,7 @@ function App() {
         if (latency >= 0 && latency < 1000) {
           stats.latencyTotalMs += latency;
           stats.latencySamples += 1;
+          stats.latencyWindow = [...stats.latencyWindow.slice(-255), latency];
         }
       }
       setTypingText(value);
@@ -419,6 +470,18 @@ function App() {
     }, 120);
     return () => window.clearInterval(interval);
   }, [refreshTypingMetrics, typingText]);
+
+  useEffect(() => {
+    const probe = extractTypingProbe(typingText);
+    if (!probe) {
+      setTypingProbe({ input: "", candidates: [], status: "idle", updatedAt: "" });
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      void runTypingProbe(probe);
+    }, 90);
+    return () => window.clearTimeout(timeout);
+  }, [typingText]);
 
   async function loadConfig() {
     try {
@@ -447,6 +510,32 @@ function App() {
     } catch (err) {
       setStatus("offline");
       setError(err instanceof Error ? err.message : "daemon offline");
+    }
+  }
+
+  async function runTypingProbe(input: string) {
+    try {
+      const res = await fetch(`${apiBase}/engine/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as EngineState;
+      setTypingProbe({
+        input,
+        candidates: data.candidates ?? [],
+        status: "ready",
+        updatedAt: data.updatedAt,
+      });
+      if (status === "offline") setStatus("ready");
+    } catch {
+      setTypingProbe({
+        input,
+        candidates: [],
+        status: "offline",
+        updatedAt: new Date().toISOString(),
+      });
     }
   }
 
@@ -588,6 +677,24 @@ function App() {
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = "shurufa233-user-wordbook.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportTypingReport() {
+    const report = {
+      generatedAt: new Date().toISOString(),
+      prompt: typingPrompt,
+      input: typingText,
+      metrics: typingMetrics,
+      probe: typingProbe,
+      recentKeys: typingStatsRef.current.recentKeys,
+    };
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "shurufa233-typing-lab-report.json";
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -977,10 +1084,15 @@ function App() {
                 <h2>电竞打字性能实验室</h2>
                 <span>React 输入路径 + 原生 SmokeEdit 双轨验证</span>
               </div>
-              <button className="secondary" onClick={resetTypingLab}>
-                <RotateCcw size={18} />
-                重置
-              </button>
+              <div className="panelActions">
+                <button className="iconButton" title="导出测试报告" onClick={exportTypingReport}>
+                  <FileDown size={18} />
+                </button>
+                <button className="secondary" onClick={resetTypingLab}>
+                  <RotateCcw size={18} />
+                  重置
+                </button>
+              </div>
             </div>
 
             <div className="promptTabs">
@@ -1017,11 +1129,59 @@ function App() {
               </div>
             </div>
 
+            <div className="probeGrid">
+              <div className="probePanel">
+                <div className="probeHeader">
+                  <span>实时候选</span>
+                  <strong>{typingProbe.input || "idle"}</strong>
+                </div>
+                <div className="probeCandidates" style={candidateBarStyle}>
+                  {typingProbeCandidates.length > 0 ? (
+                    typingProbeCandidates.map((candidate, index) => (
+                      <span className={index === 0 ? "probeCandidate selected" : "probeCandidate"} key={`${candidate.reading}-${candidate.text}-${index}`}>
+                        <b>{index + 1}</b>
+                        <span>{candidate.text}</span>
+                        {kindLabel(candidate.kind) && <i>{kindLabel(candidate.kind)}</i>}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="probeEmpty">{typingProbe.status === "offline" ? "daemon offline" : "waiting"}</span>
+                  )}
+                </div>
+              </div>
+              <div className="probePanel">
+                <div className="probeHeader">
+                  <span>候选类型</span>
+                  <strong>{typingProbeCandidates.length}</strong>
+                </div>
+                <div className="probeTags">
+                  {(typingProbeKinds.length > 0 ? typingProbeKinds : ["普通"]).map((label) => (
+                    <span key={label}>{label}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="probePanel">
+                <div className="probeHeader">
+                  <span>最近按键</span>
+                  <strong>{typingStatsRef.current.recentKeys.length}</strong>
+                </div>
+                <div className="keyTrail">
+                  {typingStatsRef.current.recentKeys.length > 0 ? (
+                    typingStatsRef.current.recentKeys.map((key, index) => <span key={`${key}-${index}`}>{key}</span>)
+                  ) : (
+                    <span>idle</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="metricsGrid">
               <Metric label="WPM" value={typingMetrics.wpm.toFixed(1)} />
               <Metric label="CPM" value={typingMetrics.cpm.toFixed(0)} />
               <Metric label="Events/s" value={typingMetrics.keysPerSecond.toFixed(1)} />
+              <Metric label="Burst/s" value={typingMetrics.burstKeysPerSecond.toFixed(0)} />
               <Metric label="Avg latency" value={`${typingMetrics.avgLatencyMs.toFixed(1)} ms`} />
+              <Metric label="P95 latency" value={`${typingMetrics.p95LatencyMs.toFixed(1)} ms`} />
               <Metric label="Accuracy" value={`${typingMetrics.accuracy.toFixed(1)}%`} />
               <Metric label="IME" value={typingMetrics.composing ? "Composing" : "Idle"} />
             </div>

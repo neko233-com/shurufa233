@@ -229,7 +229,7 @@ SmokeEdit is single-instance guarded. Launching it again focuses the existing la
 
 Inside SmokeEdit, press `F6` to activate the shurufa233 TSF profile for the current test session and immediately refocus the native edit control. This is intended for local validation and does not change the Windows default input method. Press `F5` to clear the test buffer and reset metrics.
 
-The React/Vite settings app also includes an esports-style typing lab for the browser/settings-panel path. It tracks WPM, CPM, input event rate, average key-to-input latency when key events are available, accuracy, IME composition activity, and prompt completion progress. This React lab is useful for UI and Wails-hosted settings validation, while `Shurufa233SmokeEdit.exe` remains the authoritative native TSF validation target. Use prompts such as `zan`, `kaixin`, `wuyu`, `shengqi`, and `shengluehao` to verify emoji, kaomoji, and symbol candidates.
+The React/Vite settings app also includes an esports-style typing lab for the browser/settings-panel path. It tracks WPM, CPM, input event rate, average key-to-input latency when key events are available, P95 latency, one-second burst peak keys/s, accuracy, IME composition activity, and prompt completion progress. The lab probes the daemon preview API from the current trailing pinyin token and shows the live candidate strip, candidate metadata kinds, and recent-key trail, then can export a JSON test report for regression records. This React lab is useful for UI and Wails-hosted settings validation, while `Shurufa233SmokeEdit.exe` remains the authoritative native TSF validation target. Use prompts such as `zan`, `kaixin`, `wuyu`, `shengqi`, and `shengluehao` to verify emoji, kaomoji, and symbol candidates.
 
 ## Agent Input Mode
 
