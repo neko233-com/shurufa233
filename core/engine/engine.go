@@ -12,12 +12,16 @@ import (
 )
 
 type Engine struct {
-	mu     sync.RWMutex
-	config Config
-	dict   map[string][]Entry
-	user   map[string]int
-	buffer string
+	mu            sync.RWMutex
+	config        Config
+	dict          map[string][]Entry
+	prefix        map[string][]Entry
+	user          map[string]int
+	buffer        string
+	maxReadingLen int
 }
+
+const maxPrefixEntries = 256
 
 func DefaultConfig() Config {
 	return Config{
@@ -53,11 +57,14 @@ func New(config Config) *Engine {
 	if config.MaxCandidates <= 0 {
 		config = DefaultConfig()
 	}
-	return &Engine{
+	e := &Engine{
 		config: config,
-		dict:   defaultDictionary(),
+		dict:   make(map[string][]Entry),
+		prefix: make(map[string][]Entry),
 		user:   make(map[string]int),
 	}
+	e.AddEntries(defaultEntries)
+	return e
 }
 
 func (e *Engine) Configure(config Config) {
@@ -72,12 +79,57 @@ func (e *Engine) Configure(config Config) {
 func (e *Engine) AddEntries(entries []Entry) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.addEntriesLocked(entries)
+}
+
+func (e *Engine) addEntriesLocked(entries []Entry) {
 	for _, entry := range entries {
 		entry.Reading = normalizeReading(entry.Reading)
 		if entry.Reading == "" || entry.Text == "" {
 			continue
 		}
-		e.dict[entry.Reading] = append(e.dict[entry.Reading], entry)
+		merged := false
+		for i := range e.dict[entry.Reading] {
+			if e.dict[entry.Reading][i].Text == entry.Text {
+				if entry.Weight > e.dict[entry.Reading][i].Weight {
+					e.dict[entry.Reading][i].Weight = entry.Weight
+				}
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			e.dict[entry.Reading] = append(e.dict[entry.Reading], entry)
+		}
+	}
+	e.rebuildPrefixLocked()
+	e.sortIndexLocked()
+}
+
+func (e *Engine) rebuildPrefixLocked() {
+	e.prefix = make(map[string][]Entry, len(e.dict)*2)
+	e.maxReadingLen = 0
+	for reading, entries := range e.dict {
+		if len(reading) > e.maxReadingLen {
+			e.maxReadingLen = len(reading)
+		}
+		for _, entry := range entries {
+			for i := 1; i <= len(reading); i++ {
+				prefix := reading[:i]
+				if len(e.prefix[prefix]) < maxPrefixEntries {
+					e.prefix[prefix] = append(e.prefix[prefix], entry)
+				}
+			}
+		}
+	}
+}
+
+func (e *Engine) sortIndexLocked() {
+	for key := range e.dict {
+		sortEntries(e.dict[key])
+	}
+	for key := range e.prefix {
+		sortEntries(e.prefix[key])
 	}
 }
 
@@ -211,12 +263,7 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 		return exact
 	}
 
-	var prefixMatches []Entry
-	for key, entries := range e.dict {
-		if strings.HasPrefix(key, reading) {
-			prefixMatches = append(prefixMatches, entries...)
-		}
-	}
+	prefixMatches := append([]Entry{}, e.prefix[reading]...)
 	if len(prefixMatches) > 0 {
 		return prefixMatches
 	}
@@ -233,7 +280,11 @@ func (e *Engine) segmentGreedyLocked(reading string) string {
 	for i := 0; i < len(reading); {
 		bestEnd := -1
 		var best Entry
-		for j := len(reading); j > i; j-- {
+		end := len(reading)
+		if e.maxReadingLen > 0 && i+e.maxReadingLen < end {
+			end = i + e.maxReadingLen
+		}
+		for j := end; j > i; j-- {
 			part := reading[i:j]
 			entries := e.dict[part]
 			if len(entries) == 0 {
@@ -260,4 +311,13 @@ func normalizeReading(input string) string {
 		}
 	}
 	return builder.String()
+}
+
+func sortEntries(entries []Entry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].Weight == entries[j].Weight {
+			return len([]rune(entries[i].Text)) > len([]rune(entries[j].Text))
+		}
+		return entries[i].Weight > entries[j].Weight
+	})
 }

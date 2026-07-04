@@ -11,6 +11,9 @@ Cross-platform Chinese input method prototype using a three-layer isolation mode
 The current local MVP runs the Go engine, daemon IPC, and settings UI on Windows. Native Windows TSF glue is scaffolded under `native/windows/tsf`; building and registering it requires Visual Studio Build Tools with the Windows SDK.
 
 Windows native support targets Windows 11 only for the first production line.
+See [docs/windows.md](docs/windows.md) for x64/x86/arm64 build, local install, CLI, and agent input details.
+
+Product stance: clean local input method, WeChat-like typing comfort, no telemetry, no ads, no account requirement, and no company-cloud input pipeline.
 
 ## Quick Start
 
@@ -42,4 +45,4 @@ scripts          Build and install helpers
 
 ## Windows Native Status
 
-`scripts/install-windows.ps1` checks for Visual Studio C++ build tools, builds the Go C ABI DLL, and prepares the native TSF build. This machine currently has Go and Node installed, but no `cmake` or `cl`, so system-wide TSF registration is blocked until Visual Studio Build Tools are installed.
+`scripts/install-windows.ps1` installs the current-machine daemon, CLI, and native TSF DLL, then registers and enables the TSF profile for the current user.

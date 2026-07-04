@@ -1,58 +1,216 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"strconv"
 	"strings"
-
-	"github.com/neko233-com/shurufa233/core/engine"
+	"time"
 )
 
+const apiBase = "http://127.0.0.1:23333"
+
+type candidate struct {
+	Text      string `json:"text"`
+	Reading   string `json:"reading"`
+	Weight    int    `json:"weight"`
+	UserScore int    `json:"userScore"`
+}
+
+type engineState struct {
+	Buffer     string      `json:"buffer"`
+	Candidates []candidate `json:"candidates"`
+	Committed  string      `json:"committed,omitempty"`
+}
+
+type updateCheck struct {
+	CurrentVersion  string `json:"currentVersion"`
+	LatestVersion   string `json:"latestVersion"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	ManifestURL     string `json:"manifestUrl"`
+}
+
+type agentResponse struct {
+	Input      string   `json:"input"`
+	Candidates []string `json:"candidates"`
+	Actions    []string `json:"actions"`
+}
+
 func main() {
-	e := engine.New(engine.DefaultConfig())
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Println("shurufa233 CLI. Type pinyin, /select N, /back, /clear, /quit.")
+	if len(os.Args) < 2 {
+		usage()
+		return
+	}
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	var err error
+	switch os.Args[1] {
+	case "status":
+		err = status(client)
+	case "preview":
+		err = preview(client, strings.Join(os.Args[2:], " "))
+	case "update-check":
+		err = updateCheckCmd(client)
+	case "update-apply":
+		err = updateApply(client)
+	case "agent":
+		err = agent(client, strings.Join(os.Args[2:], " "))
+	case "repl":
+		err = repl(client)
+	default:
+		usage()
+		os.Exit(2)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func usage() {
+	fmt.Println(`shurufa233 CLI
+
+Usage:
+  shurufa-imecli status
+  shurufa-imecli preview nihao
+  shurufa-imecli update-check
+  shurufa-imecli update-apply
+  shurufa-imecli agent "/rewrite hello"
+  shurufa-imecli repl`)
+}
+
+func status(client *http.Client) error {
+	body, err := get(client, "/health")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(body))
+	return nil
+}
+
+func preview(client *http.Client, input string) error {
+	if input == "" {
+		return fmt.Errorf("missing preview input")
+	}
+	var state engineState
+	if err := postJSON(client, "/engine/preview", map[string]string{"input": input}, &state); err != nil {
+		return err
+	}
+	fmt.Printf("buffer: %s\n", state.Buffer)
+	for i, item := range state.Candidates {
+		fmt.Printf("%d. %s [%s] score=%d\n", i+1, item.Text, item.Reading, item.Weight+item.UserScore)
+	}
+	return nil
+}
+
+func updateCheckCmd(client *http.Client) error {
+	var check updateCheck
+	if err := getJSON(client, "/updates/check", &check); err != nil {
+		return err
+	}
+	fmt.Printf("current=%s latest=%s available=%v\n", check.CurrentVersion, check.LatestVersion, check.UpdateAvailable)
+	fmt.Println(check.ManifestURL)
+	return nil
+}
+
+func updateApply(client *http.Client) error {
+	body, err := post(client, "/updates/apply", nil)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(body))
+	return nil
+}
+
+func agent(client *http.Client, input string) error {
+	if input == "" {
+		return fmt.Errorf("missing agent input")
+	}
+	var response agentResponse
+	if err := postJSON(client, "/agent/compose", map[string]string{"input": input}, &response); err != nil {
+		return err
+	}
+	for i, item := range response.Candidates {
+		fmt.Printf("%d. %s\n", i+1, item)
+	}
+	return nil
+}
+
+func repl(client *http.Client) error {
+	fmt.Println("shurufa233 CLI REPL. Type pinyin, /agent text, /quit.")
+	var line string
 	for {
 		fmt.Print("> ")
-		if !scanner.Scan() {
-			break
+		if _, err := fmt.Scanln(&line); err != nil {
+			return nil
 		}
-		line := strings.TrimSpace(scanner.Text())
-		switch {
-		case line == "/quit":
-			return
-		case line == "/back":
-			printState(e.Backspace())
-		case line == "/clear":
-			printState(e.Clear())
-		case strings.HasPrefix(line, "/select "):
-			indexText := strings.TrimSpace(strings.TrimPrefix(line, "/select "))
-			index, err := strconv.Atoi(indexText)
-			if err != nil {
-				fmt.Println("invalid index")
-				continue
-			}
-			state, err := e.Select(index - 1)
-			if err != nil {
+		if line == "/quit" {
+			return nil
+		}
+		if strings.HasPrefix(line, "/agent") {
+			if err := agent(client, strings.TrimSpace(strings.TrimPrefix(line, "/agent"))); err != nil {
 				fmt.Println(err)
-				continue
 			}
-			printState(state)
-		default:
-			printState(e.Preview(line))
+			continue
+		}
+		if err := preview(client, line); err != nil {
+			fmt.Println(err)
 		}
 	}
 }
 
-func printState(state engine.State) {
-	if state.Committed != "" {
-		fmt.Println("commit:", state.Committed)
-		return
+func getJSON(client *http.Client, path string, out any) error {
+	body, err := get(client, path)
+	if err != nil {
+		return err
 	}
-	fmt.Println("buffer:", state.Buffer)
-	for i, candidate := range state.Candidates {
-		fmt.Printf("%d. %s [%s] score=%d\n", i+1, candidate.Text, candidate.Reading, candidate.Weight+candidate.UserScore)
+	return json.Unmarshal(body, out)
+}
+
+func postJSON(client *http.Client, path string, payload any, out any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
 	}
+	body, err := post(client, path, data)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, out)
+}
+
+func get(client *http.Client, path string) ([]byte, error) {
+	resp, err := client.Get(apiBase + path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return readResponse(resp)
+}
+
+func post(client *http.Client, path string, body []byte) ([]byte, error) {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	resp, err := client.Post(apiBase+path, "application/json", reader)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return readResponse(resp)
+}
+
+func readResponse(resp *http.Response) ([]byte, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("%s returned HTTP %d: %s", resp.Request.URL.Path, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return body, nil
 }

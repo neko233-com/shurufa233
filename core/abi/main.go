@@ -46,6 +46,13 @@ func ShurufaInputKey(id C.uint64_t, key C.char) *C.char {
 	return jsonCString(state)
 }
 
+//export ShurufaInputKeyFast
+func ShurufaInputKeyFast(id C.uint64_t, key C.char) C.int {
+	session := getSession(uint64(id))
+	state := session.InputKey(rune(byte(key)))
+	return C.int(len(state.Candidates))
+}
+
 //export ShurufaPreview
 func ShurufaPreview(id C.uint64_t, input *C.char) *C.char {
 	session := getSession(uint64(id))
@@ -59,10 +66,66 @@ func ShurufaBackspace(id C.uint64_t) *C.char {
 	return jsonCString(session.Backspace())
 }
 
+//export ShurufaBackspaceFast
+func ShurufaBackspaceFast(id C.uint64_t) C.int {
+	session := getSession(uint64(id))
+	state := session.Backspace()
+	return C.int(len(state.Candidates))
+}
+
 //export ShurufaClear
 func ShurufaClear(id C.uint64_t) *C.char {
 	session := getSession(uint64(id))
 	return jsonCString(session.Clear())
+}
+
+//export ShurufaCandidateCount
+func ShurufaCandidateCount(id C.uint64_t) C.int {
+	session := getSession(uint64(id))
+	return C.int(len(session.State().Candidates))
+}
+
+//export ShurufaCandidateText
+func ShurufaCandidateText(id C.uint64_t, index C.int) *C.char {
+	session := getSession(uint64(id))
+	candidates := session.State().Candidates
+	i := int(index)
+	if i < 0 || i >= len(candidates) {
+		return C.CString("")
+	}
+	return C.CString(candidates[i].Text)
+}
+
+//export ShurufaCandidateReading
+func ShurufaCandidateReading(id C.uint64_t, index C.int) *C.char {
+	session := getSession(uint64(id))
+	candidates := session.State().Candidates
+	i := int(index)
+	if i < 0 || i >= len(candidates) {
+		return C.CString("")
+	}
+	return C.CString(candidates[i].Reading)
+}
+
+//export ShurufaCandidateScore
+func ShurufaCandidateScore(id C.uint64_t, index C.int) C.int {
+	session := getSession(uint64(id))
+	candidates := session.State().Candidates
+	i := int(index)
+	if i < 0 || i >= len(candidates) {
+		return 0
+	}
+	return C.int(candidates[i].Weight + candidates[i].UserScore)
+}
+
+//export ShurufaCommitCandidate
+func ShurufaCommitCandidate(id C.uint64_t, index C.int) *C.char {
+	session := getSession(uint64(id))
+	state, err := session.Select(int(index))
+	if err != nil {
+		return C.CString("")
+	}
+	return C.CString(state.Committed)
 }
 
 //export ShurufaSelect

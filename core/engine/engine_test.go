@@ -58,3 +58,28 @@ func TestLoadDictionary(t *testing.T) {
 		t.Fatalf("expected hot dictionary candidate, got %#v", state.Candidates)
 	}
 }
+
+func TestLoadDictionaryMergesDuplicates(t *testing.T) {
+	e := New(DefaultConfig())
+	_, err := e.LoadDictionary(strings.NewReader(`{
+		"language": "zh-CN",
+		"version": "test",
+		"entries": [{ "reading": "nihao", "text": "你好", "weight": 20000 }]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := e.Preview("nihao")
+	count := 0
+	for _, candidate := range state.Candidates {
+		if candidate.Text == "你好" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected one merged 你好 candidate, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Weight != 20000 {
+		t.Fatalf("expected merged candidate to keep highest weight, got %d", state.Candidates[0].Weight)
+	}
+}

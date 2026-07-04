@@ -31,6 +31,17 @@ type previewRequest struct {
 	Input string `json:"input"`
 }
 
+type agentRequest struct {
+	Input   string `json:"input"`
+	Context string `json:"context,omitempty"`
+}
+
+type agentResponse struct {
+	Input      string   `json:"input"`
+	Candidates []string `json:"candidates"`
+	Actions    []string `json:"actions"`
+}
+
 type dictionaryManifest struct {
 	Version      string                 `json:"version"`
 	Channel      string                 `json:"channel"`
@@ -77,6 +88,13 @@ func main() {
 	mux.HandleFunc("GET /wordbook", state.withCORS(state.wordbook))
 	mux.HandleFunc("GET /updates/check", state.withCORS(state.checkUpdates))
 	mux.HandleFunc("POST /updates/apply", state.withCORS(state.applyUpdates))
+	mux.HandleFunc("POST /ime/key", state.withCORS(state.imeKey))
+	mux.HandleFunc("POST /ime/backspace", state.withCORS(state.imeBackspace))
+	mux.HandleFunc("POST /ime/select", state.withCORS(state.imeSelect))
+	mux.HandleFunc("GET /ime/count", state.withCORS(state.imeCount))
+	mux.HandleFunc("GET /ime/candidates", state.withCORS(state.imeCandidates))
+	mux.HandleFunc("GET /ime/skin", state.withCORS(state.imeSkin))
+	mux.HandleFunc("POST /agent/compose", state.withCORS(state.agentCompose))
 
 	server := &http.Server{
 		Addr:              listenAddr,
@@ -158,6 +176,86 @@ func (s *AppState) wordbook(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+func (s *AppState) imeKey(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		http.Error(w, "missing key", http.StatusBadRequest)
+		return
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	s.engine.InputKey([]rune(key)[0])
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *AppState) imeBackspace(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	s.engine.Backspace()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *AppState) imeSelect(w http.ResponseWriter, r *http.Request) {
+	index := 0
+	if raw := r.URL.Query().Get("index"); raw != "" {
+		_, _ = fmt.Sscanf(raw, "%d", &index)
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	state, err := s.engine.Select(index)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(state.Committed))
+}
+
+func (s *AppState) imeCount(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = fmt.Fprintf(w, "%d", len(s.engine.State().Candidates))
+}
+
+func (s *AppState) imeCandidates(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	state := s.engine.State()
+	parts := make([]string, 0, len(state.Candidates))
+	for i, candidate := range state.Candidates {
+		parts = append(parts, fmt.Sprintf("%d.%s", i+1, candidate.Text))
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(strings.Join(parts, "  ")))
+}
+
+func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s",
+		s.config.Skin.FontFamily,
+		s.config.Skin.FontSize,
+		s.config.Skin.Accent,
+		s.config.Skin.Theme,
+	)
+}
+
+func (s *AppState) agentCompose(w http.ResponseWriter, r *http.Request) {
+	var req agentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	input := strings.TrimSpace(req.Input)
+	if input == "" {
+		http.Error(w, "missing input", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, composeAgentResponse(input, req.Context))
+}
+
 func (s *AppState) checkUpdates(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RLock()
 	config := s.config
@@ -177,6 +275,41 @@ func (s *AppState) checkUpdates(w http.ResponseWriter, _ *http.Request) {
 		ManifestURL:     manifestURL,
 		Manifest:        manifest,
 	})
+}
+
+func composeAgentResponse(input string, context string) agentResponse {
+	lower := strings.ToLower(input)
+	response := agentResponse{
+		Input:   input,
+		Actions: []string{"commit", "copy", "open-settings"},
+	}
+	switch {
+	case strings.HasPrefix(lower, "/rewrite "):
+		text := strings.TrimSpace(input[len("/rewrite "):])
+		response.Candidates = []string{
+			"请润色这段文字：" + text,
+			"把下面内容改得更自然、更简洁：" + text,
+		}
+	case strings.HasPrefix(lower, "/translate "):
+		text := strings.TrimSpace(input[len("/translate "):])
+		response.Candidates = []string{
+			"请把这段内容翻译成中文：" + text,
+			"请把这段内容翻译成英文：" + text,
+		}
+	case strings.HasPrefix(lower, "/ask "):
+		text := strings.TrimSpace(input[len("/ask "):])
+		response.Candidates = []string{
+			"请回答：" + text,
+			"请分步骤分析：" + text,
+		}
+	default:
+		prefix := "作为输入法 agent，请处理："
+		if strings.TrimSpace(context) != "" {
+			prefix = "结合当前上下文，作为输入法 agent，请处理："
+		}
+		response.Candidates = []string{prefix + input}
+	}
+	return response
 }
 
 func (s *AppState) applyUpdates(w http.ResponseWriter, _ *http.Request) {
