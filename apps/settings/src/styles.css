@@ -592,6 +592,20 @@ h2 {
   white-space: nowrap;
 }
 
+.candidateComment {
+  overflow: hidden;
+  max-width: 72px;
+  color: color-mix(in srgb, var(--candidate-muted, #64748b), var(--candidate-text, #111827) 12%);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidatePill.selected .candidateComment {
+  color: color-mix(in srgb, var(--candidate-highlight, #ffffff), transparent 18%);
+}
+
 .candidatePill i {
   display: inline-flex;
   align-items: center;
@@ -786,6 +800,22 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.probeCandidate em {
+  flex: 0 1 auto;
+  overflow: hidden;
+  max-width: 58px;
+  color: color-mix(in srgb, var(--candidate-muted, #64748b), var(--candidate-text, #111827) 12%);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.probeCandidate.selected em {
+  color: color-mix(in srgb, var(--candidate-highlight, #ffffff), transparent 18%);
 }
 
 .probeCandidate i,

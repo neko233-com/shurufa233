@@ -368,6 +368,7 @@ func (e *Engine) candidatesLocked() []Candidate {
 			Reading:   entry.Reading,
 			Kind:      entry.Kind,
 			Source:    entry.Source,
+			Comment:   entry.Comment,
 			Weight:    entry.Weight,
 			UserScore: e.entryUserScoreLocked(entry),
 		})
@@ -411,6 +412,8 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 			if previous, ok := seen[key]; ok {
 				if next.Weight > exact[previous].Weight {
 					exact[previous] = next
+				} else if exact[previous].Comment == "" && next.Comment != "" {
+					exact[previous].Comment = next.Comment
 				}
 				continue
 			}
@@ -436,6 +439,7 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 				Text:    segmented,
 				Kind:    "phrase",
 				Source:  "segmenter",
+				Comment: "整句",
 				Weight:  weight,
 			}}, item.penalty)
 		}
@@ -479,6 +483,7 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 					Text:    segmented,
 					Kind:    "phrase",
 					Source:  "segmenter",
+					Comment: "整句",
 					Weight:  max(1, weight-penalty),
 				}}
 			}
@@ -506,6 +511,7 @@ func dynamicEntriesForInput(input string, now time.Time) []Entry {
 				Text:    text,
 				Kind:    "dynamic",
 				Source:  "builtin-datetime",
+				Comment: "动态",
 				Weight:  dynamicCandidateWeightBase - index,
 			})
 		}

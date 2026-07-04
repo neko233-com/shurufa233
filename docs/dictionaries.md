@@ -28,7 +28,7 @@ layout instead of assuming the default order. Inline and block styles are both
 accepted:
 
 ```yaml
-columns: [text, code, weight, stem]
+columns: [text, code, weight, stem, comment]
 ```
 
 ```yaml
@@ -36,10 +36,14 @@ columns:
   - code
   - text
   - weight
+  - comment
 ```
 
 The optional `stem` column is ignored safely; `text`, `code`, and `weight` are
-used to produce shurufa233 entries.
+used to produce shurufa233 entries. Optional `comment`, `comments`, or
+`annotation` columns are preserved as candidate comments so native and React
+candidate strips can show source-provided hints for symbols, emoji, phrases, and
+specialized dictionaries.
 
 Rime user phrases such as `custom_phrase.txt` are also supported. These files
 often have no YAML header and use the same table shape:

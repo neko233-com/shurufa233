@@ -20,6 +20,7 @@ type candidate struct {
 	Reading   string `json:"reading"`
 	Kind      string `json:"kind,omitempty"`
 	Source    string `json:"source,omitempty"`
+	Comment   string `json:"comment,omitempty"`
 	Weight    int    `json:"weight"`
 	UserScore int    `json:"userScore"`
 }
@@ -139,6 +140,9 @@ func preview(client *http.Client, input string) error {
 			if item.Source != "" {
 				meta += " source=" + item.Source
 			}
+		}
+		if item.Comment != "" {
+			meta += " comment=" + item.Comment
 		}
 		fmt.Printf("%d. %s [%s] score=%d%s\n", i+1, item.Text, item.Reading, item.Weight+item.UserScore, meta)
 	}

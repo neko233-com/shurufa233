@@ -213,7 +213,7 @@ func TestImeCandidatesReturnsMetadataAndPagedRows(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if got := rec.Body.String(); !strings.Contains(got, "1\t👍\tzan\t6400\temoji\tbuiltin-symbols") {
+	if got := rec.Body.String(); !strings.Contains(got, "1\t👍\tzan\t6400\temoji\tbuiltin-symbols\t赞") {
 		t.Fatalf("expected emoji metadata row, got %q", got)
 	}
 

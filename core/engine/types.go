@@ -31,6 +31,7 @@ type Candidate struct {
 	Reading   string `json:"reading"`
 	Kind      string `json:"kind,omitempty"`
 	Source    string `json:"source,omitempty"`
+	Comment   string `json:"comment,omitempty"`
 	Weight    int    `json:"weight"`
 	UserScore int    `json:"userScore"`
 }
@@ -48,6 +49,7 @@ type Entry struct {
 	Text    string `json:"text"`
 	Kind    string `json:"kind,omitempty"`
 	Source  string `json:"source,omitempty"`
+	Comment string `json:"comment,omitempty"`
 	Weight  int    `json:"weight"`
 }
 

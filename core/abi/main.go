@@ -182,6 +182,8 @@ func ShurufaCandidatePayloadRange(id C.uint64_t, start C.int, limit C.int) *C.ch
 		out.WriteString(sanitizePayloadField(candidate.Kind))
 		out.WriteByte('\t')
 		out.WriteString(sanitizePayloadField(candidate.Source))
+		out.WriteByte('\t')
+		out.WriteString(sanitizePayloadField(candidate.Comment))
 	}
 	return C.CString(out.String())
 }

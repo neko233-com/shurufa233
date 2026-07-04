@@ -88,6 +88,25 @@ columns: [text, weight, code]
 	}
 }
 
+func TestParseRimeDictionaryHonorsCommentColumn(t *testing.T) {
+	input := `---
+name: comments
+columns: [text, code, weight, comment]
+...
+候选	hou xuan	3200	候选注释
+`
+	entries, err := parseRimeDictionary(strings.NewReader(input), "rime-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v, want 1", entries)
+	}
+	if entries[0].Comment != "候选注释" {
+		t.Fatalf("entry comment = %#v", entries[0])
+	}
+}
+
 func TestParseRimeDictionaryHonorsBlockColumns(t *testing.T) {
 	input := `---
 name: block_columns

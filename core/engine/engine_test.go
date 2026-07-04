@@ -500,6 +500,9 @@ func TestBuiltinEmojiCandidateMetadata(t *testing.T) {
 				if candidate.Kind != tt.kind || candidate.Source != "builtin-symbols" {
 					t.Fatalf("expected %s metadata for %q, got %#v", tt.kind, tt.text, candidate)
 				}
+				if candidate.Comment == "" {
+					t.Fatalf("expected builtin candidate comment for %q, got %#v", tt.text, candidate)
+				}
 			}
 		}
 		if !found {

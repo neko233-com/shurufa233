@@ -271,13 +271,15 @@ GET /ime/candidates?start=0&limit=7
 ```
 
 `/ime/candidates` returns the same tab-separated payload shape as the C ABI:
-`display_index`, `text`, `reading`, `score`, `kind`, and `source`. The `start` and
-`limit` query parameters let the native window request only the visible page, so
-HTTP fallback keeps the same paging, emoji, kaomoji, and symbol badge behavior as
-the in-process core path.
+`display_index`, `text`, `reading`, `score`, `kind`, `source`, and `comment`.
+The `start` and `limit` query parameters let the native window request only the
+visible page, so HTTP fallback keeps the same paging, emoji, kaomoji, symbol
+badge, and candidate comment behavior as the in-process core path.
 Candidate type badges are intentionally short localized labels (`表情`, `颜`, `符`,
 `短`, `时`, `AI`) so emoji, kaomoji, symbol, phrase, dynamic datetime, and agent candidates stay readable without
-making the native strip feel like a debug surface.
+making the native strip feel like a debug surface. Candidate comments are drawn
+as muted inline hints after the candidate text, preserving Rime/OpenCC annotations
+without turning the lower candidate strip into a table.
 
 Current skin fields come from the settings UI:
 

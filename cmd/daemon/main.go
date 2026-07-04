@@ -417,13 +417,14 @@ func (s *AppState) imeCandidates(w http.ResponseWriter, r *http.Request) {
 	}
 	parts := make([]string, 0, max(0, end-start))
 	for i, candidate := range state.Candidates[start:end] {
-		parts = append(parts, fmt.Sprintf("%d\t%s\t%s\t%d\t%s\t%s",
+		parts = append(parts, fmt.Sprintf("%d\t%s\t%s\t%d\t%s\t%s\t%s",
 			i+1,
 			sanitizePayloadField(candidate.Text),
 			sanitizePayloadField(candidate.Reading),
 			candidate.Weight+candidate.UserScore,
 			sanitizePayloadField(candidate.Kind),
 			sanitizePayloadField(candidate.Source),
+			sanitizePayloadField(candidate.Comment),
 		))
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

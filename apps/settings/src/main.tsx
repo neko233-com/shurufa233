@@ -85,6 +85,7 @@ type Candidate = {
   reading: string;
   kind?: string;
   source?: string;
+  comment?: string;
   weight: number;
   userScore: number;
 };
@@ -1093,6 +1094,7 @@ function App() {
                       >
                         <b>{index + 1}</b>
                         <span className="candidateText">{candidate.text}</span>
+                        {candidate.comment && <span className="candidateComment">{candidate.comment}</span>}
                         {kindLabel(candidate.kind) && <i>{kindLabel(candidate.kind)}</i>}
                       </button>
                     ))
@@ -1170,6 +1172,7 @@ function App() {
                       <span className={index === 0 ? "probeCandidate selected" : "probeCandidate"} key={`${candidate.reading}-${candidate.text}-${index}`}>
                         <b>{index + 1}</b>
                         <span>{candidate.text}</span>
+                        {candidate.comment && <em>{candidate.comment}</em>}
                         {kindLabel(candidate.kind) && <i>{kindLabel(candidate.kind)}</i>}
                       </span>
                     ))

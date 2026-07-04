@@ -198,6 +198,9 @@ func TestBuildCandidatePayloadV2IncludesMetadata(t *testing.T) {
 	if payload.Items[0].Text == "" || payload.Items[0].Reading == "" {
 		t.Fatalf("expected text and reading metadata, got %#v", payload.Items[0])
 	}
+	if payload.Items[0].Comment == "" {
+		t.Fatalf("expected candidate comment metadata, got %#v", payload.Items[0])
+	}
 	if payload.Items[0].Score != payload.Items[0].Weight+payload.Items[0].UserScore {
 		t.Fatalf("score does not include user score: %#v", payload.Items[0])
 	}
@@ -210,6 +213,15 @@ func TestCapabilitiesIncludeCandidateCharCommit(t *testing.T) {
 		}
 	}
 	t.Fatalf("capabilities missing candidate-char-commit: %#v", abiFeatureList)
+}
+
+func TestCapabilitiesIncludeCandidateComments(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "candidate-comments" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing candidate-comments: %#v", abiFeatureList)
 }
 
 func TestDecodeUserScoresPayloadAcceptsWrappedAndRawScores(t *testing.T) {

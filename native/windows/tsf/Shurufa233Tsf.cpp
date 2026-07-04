@@ -509,6 +509,7 @@ class CandidateWindow {
     std::wstring reading;
     std::wstring kind;
     std::wstring source;
+    std::wstring comment;
     int score = 0;
   };
 
@@ -900,9 +901,10 @@ class CandidateWindow {
 
   int CandidateItemWidth(HDC dc, const CandidateView &candidate, bool selected) const {
     const int textWidth = TextWidth(dc, candidate.text);
+    const int commentWidth = candidate.comment.empty() ? 0 : min(Scale(88), TextWidth(dc, candidate.comment) + Scale(10));
     const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
     const int kindWidth = kindLabel.empty() ? 0 : CandidateBadgeWidth(dc, kindLabel) + Scale(10);
-    return max(Scale(66), min(Scale(280), Scale(48) + textWidth + kindWidth));
+    return max(Scale(66), min(Scale(320), Scale(48) + textWidth + commentWidth + kindWidth));
   }
 
   bool HasPageControls() const {
@@ -1192,6 +1194,7 @@ class CandidateWindow {
         size_t third = second == std::string::npos ? std::string::npos : line.find('\t', second + 1);
         size_t fourth = third == std::string::npos ? std::string::npos : line.find('\t', third + 1);
         size_t fifth = fourth == std::string::npos ? std::string::npos : line.find('\t', fourth + 1);
+        size_t sixth = fifth == std::string::npos ? std::string::npos : line.find('\t', fifth + 1);
         if (first != std::string::npos && second != std::string::npos && third != std::string::npos) {
           CandidateView item;
           item.index = atoi(line.substr(0, first).c_str());
@@ -1202,7 +1205,10 @@ class CandidateWindow {
             item.kind = Utf8ToWide(line.substr(fourth + 1, fifth == std::string::npos ? std::string::npos : fifth - fourth - 1).c_str());
           }
           if (fifth != std::string::npos) {
-            item.source = Utf8ToWide(line.substr(fifth + 1).c_str());
+            item.source = Utf8ToWide(line.substr(fifth + 1, sixth == std::string::npos ? std::string::npos : sixth - fifth - 1).c_str());
+          }
+          if (sixth != std::string::npos) {
+            item.comment = Utf8ToWide(line.substr(sixth + 1).c_str());
           }
           parsed.push_back(item);
         }
@@ -1375,16 +1381,28 @@ class CandidateWindow {
       SetTextColor(dc, selected ? highlightText_ : text_);
       RECT textRect{itemRect.left + Scale(30), itemRect.top, itemRect.right - Scale(10), itemRect.bottom};
       const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
+      int rightEdge = itemRect.right - Scale(8);
       if (!kindLabel.empty()) {
         const int badgeWidth = CandidateBadgeWidth(dc, kindLabel);
-        textRect.right = max(textRect.left + Scale(24), itemRect.right - badgeWidth - Scale(8));
-        RECT badgeRect{itemRect.right - badgeWidth - Scale(7), itemRect.top + Scale(7),
+        rightEdge = itemRect.right - badgeWidth - Scale(8);
+        textRect.right = max(textRect.left + Scale(24), rightEdge);
+        RECT badgeRect{rightEdge, itemRect.top + Scale(7),
                        itemRect.right - Scale(7), itemRect.bottom - Scale(7)};
         DrawRoundedRect(dc, badgeRect, CandidateBadgeFillColor(selected),
                         CandidateBadgeBorderColor(selected), 9);
         SetTextColor(dc, CandidateBadgeTextColor(selected));
         DrawTextW(dc, kindLabel.c_str(), static_cast<int>(kindLabel.size()), &badgeRect,
                   DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS);
+        SetTextColor(dc, selected ? highlightText_ : text_);
+      }
+      if (!candidate.comment.empty()) {
+        const int commentWidth = min(Scale(88), max(Scale(30), TextWidth(dc, candidate.comment) + Scale(8)));
+        RECT commentRect{max(textRect.left + Scale(30), rightEdge - commentWidth), itemRect.top,
+                         rightEdge - Scale(4), itemRect.bottom};
+        textRect.right = max(textRect.left + Scale(24), commentRect.left - Scale(6));
+        SetTextColor(dc, selected ? MixColor(highlightText_, accent_, 14) : mutedText_);
+        DrawTextW(dc, candidate.comment.c_str(), static_cast<int>(candidate.comment.size()),
+                  &commentRect, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_END_ELLIPSIS);
         SetTextColor(dc, selected ? highlightText_ : text_);
       }
       DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,

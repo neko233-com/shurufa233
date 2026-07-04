@@ -344,6 +344,7 @@ func parseOpenCCTextLine(line string, source string, hints rimeParseHints) ([]en
 				Text:    text,
 				Kind:    symbolKind(text),
 				Source:  source,
+				Comment: key,
 				Weight:  openCCWeightBase - valueIndex,
 			})
 		}
@@ -425,6 +426,7 @@ func parseRimeSymbolListItem(line string, source string, reading string, index i
 		Text:    text,
 		Kind:    symbolKind(text),
 		Source:  source,
+		Comment: symbolComment(reading, text),
 		Weight:  rimeSymbolWeightBase - index,
 	}, true
 }
@@ -457,6 +459,7 @@ func parseRimeSymbolLine(line string, source string) ([]engine.Entry, bool) {
 			Text:    text,
 			Kind:    symbolKind(text),
 			Source:  source,
+			Comment: symbolComment(reading, text),
 			Weight:  rimeSymbolWeightBase - index,
 		})
 	}
@@ -657,7 +660,7 @@ func normalizeColumnName(value string) string {
 	value = cleanYAMLScalar(stripYAMLInlineComment(value))
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch value {
-	case "text", "code", "weight", "stem":
+	case "text", "code", "weight", "stem", "comment", "comments", "annotation":
 		return value
 	default:
 		return ""
@@ -732,27 +735,34 @@ func parseRimeEntryWithColumns(line string, source string, columns rimeColumns) 
 			weight = parsed
 		}
 	}
+	comment := ""
+	if columns.commentIndex >= 0 && len(fields) > columns.commentIndex {
+		comment = strings.TrimSpace(stripRimeInlineComment(fields[columns.commentIndex]))
+	}
 	return engine.Entry{
 		Reading: reading,
 		Text:    text,
 		Source:  source,
+		Comment: comment,
 		Weight:  weight,
 	}, true
 }
 
 type rimeColumns struct {
-	textIndex   int
-	codeIndex   int
-	weightIndex int
-	nextIndex   int
+	textIndex    int
+	codeIndex    int
+	weightIndex  int
+	commentIndex int
+	nextIndex    int
 }
 
 func defaultRimeColumns() rimeColumns {
 	return rimeColumns{
-		textIndex:   0,
-		codeIndex:   1,
-		weightIndex: 2,
-		nextIndex:   3,
+		textIndex:    0,
+		codeIndex:    1,
+		weightIndex:  2,
+		commentIndex: -1,
+		nextIndex:    3,
 	}
 }
 
@@ -766,10 +776,11 @@ func columnsFromNames(names []string) rimeColumns {
 
 func blankRimeColumns() rimeColumns {
 	return rimeColumns{
-		textIndex:   -1,
-		codeIndex:   -1,
-		weightIndex: -1,
-		nextIndex:   0,
+		textIndex:    -1,
+		codeIndex:    -1,
+		weightIndex:  -1,
+		commentIndex: -1,
+		nextIndex:    0,
 	}
 }
 
@@ -791,10 +802,26 @@ func (columns rimeColumns) withColumn(name string) rimeColumns {
 		columns.codeIndex = columns.nextIndex
 	case "weight":
 		columns.weightIndex = columns.nextIndex
+	case "comment", "comments", "annotation":
+		columns.commentIndex = columns.nextIndex
 	case "stem":
 	}
 	columns.nextIndex++
 	return columns
+}
+
+func symbolComment(reading string, text string) string {
+	switch symbolKind(text) {
+	case "emoji":
+		return "表情"
+	case "kaomoji":
+		return "颜文字"
+	default:
+		if reading != "" {
+			return "符号"
+		}
+		return ""
+	}
 }
 
 func splitRimeEntryFields(line string) ([]string, bool) {
@@ -913,6 +940,9 @@ func mergeEntries(entries []engine.Entry) []engine.Entry {
 		if index, ok := seen[key]; ok {
 			if entry.Weight > out[index].Weight {
 				out[index].Weight = entry.Weight
+			}
+			if out[index].Comment == "" && entry.Comment != "" {
+				out[index].Comment = entry.Comment
 			}
 			continue
 		}

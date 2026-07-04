@@ -26,6 +26,7 @@ var abiFeatureList = []string{
 	"emoji-kaomoji-symbol-candidates",
 	"dynamic-datetime-candidates",
 	"candidate-char-commit",
+	"candidate-comments",
 }
 
 type abiEnvelope struct {
@@ -50,6 +51,7 @@ type candidatePayloadV2Item struct {
 	Reading      string `json:"reading"`
 	Kind         string `json:"kind,omitempty"`
 	Source       string `json:"source,omitempty"`
+	Comment      string `json:"comment,omitempty"`
 	Weight       int    `json:"weight"`
 	UserScore    int    `json:"userScore"`
 	Score        int    `json:"score"`
@@ -95,6 +97,7 @@ func buildCandidatePayloadV2(session *engine.Engine, start int, limit int) candi
 			Reading:      candidate.Reading,
 			Kind:         candidate.Kind,
 			Source:       candidate.Source,
+			Comment:      candidate.Comment,
 			Weight:       candidate.Weight,
 			UserScore:    candidate.UserScore,
 			Score:        candidate.Weight + candidate.UserScore,

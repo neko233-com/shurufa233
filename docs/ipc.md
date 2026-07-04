@@ -16,6 +16,7 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /ime/mode`
 - `POST /ime/mode`
 - `POST /ime/select-char`
+- `GET /ime/candidates`
 - `POST /agent/compose`
 
 `POST /engine/preview` body:
@@ -71,6 +72,11 @@ saved default input mode in `config.json`.
 candidate, while `side=last` commits the last character. This mirrors Rime's
 common first/last-character candidate action without forcing the Windows TSF
 layer to sacrifice its current bracket paging shortcut.
+
+`GET /ime/candidates?start=0&limit=7` returns tab-separated candidate rows:
+`display_index`, `text`, `reading`, `score`, `kind`, `source`, and `comment`.
+The final three fields are optional metadata; older six-column rows remain valid
+for clients that have not adopted candidate comments yet.
 
 `POST /agent/compose` body:
 

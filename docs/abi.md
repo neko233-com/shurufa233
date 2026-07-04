@@ -63,10 +63,10 @@ char* ShurufaCommitCandidateChar(uint64_t session, int index, const char* side);
 Each row is:
 
 ```text
-display_index<TAB>text<TAB>reading<TAB>score<TAB>kind<TAB>source
+display_index<TAB>text<TAB>reading<TAB>score<TAB>kind<TAB>source<TAB>comment
 ```
 
-`kind` and `source` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, `phrase`, `dynamic`, and `agent`; renderers must tolerate older four-column payloads. Built-in examples include `zan` -> `👍` (`emoji`), `kaixin` -> `ヽ(・∀・)ﾉ` (`kaomoji`), `shengluehao` -> `……` (`symbol`), `rq` -> today's date (`dynamic`), and `rewrite` -> `/rewrite ` (`agent`).
+`kind`, `source`, and `comment` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, `phrase`, `dynamic`, and `agent`; renderers must tolerate older four-column or six-column payloads. Built-in examples include `zan` -> `👍` (`emoji`, comment `赞`), `kaixin` -> `ヽ(・∀・)ﾉ` (`kaomoji`), `shengluehao` -> `……` (`symbol`), `rq` -> today's date (`dynamic`, comment `动态`), and `rewrite` -> `/rewrite ` (`agent`, comment `润色`).
 
 The Windows glue calls `ShurufaFree` after copying the returned payload. Older per-candidate getters remain available as a compatibility fallback.
 
@@ -106,7 +106,8 @@ returns JSON with an `ok` field and `updatedAt`.
 `user-scores-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `emoji-kaomoji-symbol-candidates`, and
-`dynamic-datetime-candidates`, and `candidate-char-commit`.
+`dynamic-datetime-candidates`, `candidate-char-commit`, and
+`candidate-comments`.
 
 `ShurufaCandidatePayloadV2` is the future rich candidate contract for native
 renderers, React/Wails diagnostics, esports typing labs, and mouse/skin
@@ -126,6 +127,7 @@ experiments:
       "reading": "nihao",
       "kind": "phrase",
       "source": "segmenter",
+      "comment": "整句",
       "weight": 15000,
       "userScore": 25,
       "score": 15025
