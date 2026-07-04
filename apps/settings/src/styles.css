@@ -389,41 +389,133 @@ h2 {
   cursor: pointer;
 }
 
-.candidateBar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 54px;
+.candidatePreviewShell {
+  display: grid;
+  place-items: start;
   overflow-x: auto;
-  border: 1px solid #d1d5db;
+  border: 1px dashed #d1d5db;
   border-radius: 8px;
-  padding: 8px;
-  background: #f8fafc;
+  background:
+    linear-gradient(90deg, rgb(248 250 252 / 0.95), rgb(255 255 255 / 0.9)),
+    repeating-linear-gradient(135deg, transparent 0 12px, rgb(15 23 42 / 0.025) 12px 13px);
+  padding: 18px;
 }
 
-.candidateBar .buffer {
-  min-width: 72px;
-  color: var(--accent);
+.candidatePreview {
+  min-width: min(100%, 520px);
+  overflow: hidden;
+  border: 1px solid var(--candidate-border, #d1d5db);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--candidate-surface, #ffffff), #f8fafc 16%);
+  box-shadow:
+    0 18px 42px rgb(15 23 42 / 0.14),
+    0 3px 8px rgb(15 23 42 / 0.08);
+  color: var(--candidate-text, #111827);
+}
+
+.compositionRow {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 8px 18px 6px;
+  color: color-mix(in srgb, var(--candidate-text, #111827), #111827 18%);
+}
+
+.compositionRow span {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  border-bottom: 2px solid color-mix(in srgb, var(--candidate-muted, #64748b), #111827 18%);
+  font-weight: 650;
+  line-height: 1.55;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidateBand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 50px;
+  overflow-x: auto;
+  border-top: 1px solid color-mix(in srgb, var(--candidate-border, #d1d5db), transparent 20%);
+  background: var(--candidate-surface, #ffffff);
+  padding: 8px 14px;
+}
+
+.candidatePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  min-width: 66px;
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--candidate-border, #d1d5db), var(--candidate-surface, #ffffff) 36%);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--candidate-surface, #ffffff), var(--candidate-accent, #2563eb) 4%);
+  color: var(--candidate-text, #111827);
+  cursor: pointer;
+  padding: 0 11px;
+}
+
+.candidatePill.selected {
+  border-color: color-mix(in srgb, var(--candidate-accent, #2563eb), #ffffff 10%);
+  background: var(--candidate-accent, #2563eb);
+  color: var(--candidate-highlight, #ffffff);
+  box-shadow: 0 7px 14px color-mix(in srgb, var(--candidate-accent, #2563eb), transparent 72%);
+}
+
+.candidatePill b {
+  min-width: 12px;
+  color: var(--candidate-muted, #64748b);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.candidatePill.selected b {
+  color: var(--candidate-highlight, #ffffff);
+}
+
+.candidateText {
+  overflow: hidden;
+  max-width: 180px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidatePill i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 20px;
+  border: 1px solid color-mix(in srgb, var(--candidate-border, #d1d5db), var(--candidate-accent, #2563eb) 22%);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--candidate-surface, #ffffff), var(--candidate-accent, #2563eb) 10%);
+  color: var(--candidate-muted, #64748b);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+.candidatePill.selected i {
+  border-color: color-mix(in srgb, var(--candidate-highlight, #ffffff), transparent 60%);
+  background: color-mix(in srgb, var(--candidate-accent, #2563eb), var(--candidate-highlight, #ffffff) 22%);
+  color: var(--candidate-highlight, #ffffff);
+}
+
+.emptyCandidate,
+.pageIndicator {
+  flex: 0 0 auto;
+  color: var(--candidate-muted, #64748b);
+  font-size: 12px;
   font-weight: 700;
 }
 
-.candidateBar button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 56px;
-  min-height: 36px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #111827;
-  cursor: pointer;
-  padding: 0 10px;
-}
-
-.candidateBar b {
-  color: var(--candidate-muted, #64748b);
-  font-size: 12px;
+.pageIndicator {
+  margin-left: auto;
+  padding-left: 14px;
 }
 
 @media (max-width: 840px) {

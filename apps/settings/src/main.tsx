@@ -49,6 +49,8 @@ type UpdateConfig = {
 type Candidate = {
   text: string;
   reading: string;
+  kind?: string;
+  source?: string;
   weight: number;
   userScore: number;
 };
@@ -178,13 +180,16 @@ function App() {
       ({
         fontFamily: config.skin.fontFamily,
         fontSize: config.skin.fontSize,
-        background: config.skin.surface,
-        borderColor: config.skin.border,
-        color: config.skin.text,
+        "--candidate-accent": config.skin.accent,
+        "--candidate-surface": config.skin.surface,
+        "--candidate-text": config.skin.text,
         "--candidate-muted": config.skin.mutedText,
+        "--candidate-border": config.skin.border,
+        "--candidate-highlight": config.skin.highlightText,
       }) as React.CSSProperties,
     [config.skin],
   );
+  const previewCandidates = (state?.candidates ?? []).slice(0, 7);
 
   async function loadConfig() {
     try {
@@ -515,21 +520,38 @@ function App() {
 
           <section className="panel previewPanel">
             <div className="panelHeader">
-              <h2>拼音预览</h2>
+              <h2>候选窗预览</h2>
               <span>{candidateCount} 个候选</span>
             </div>
             <label className="field">
               <span>输入串</span>
               <input value={preview} onChange={(event) => setPreview(event.target.value)} />
             </label>
-            <div className="candidateBar" style={candidateBarStyle}>
-              <span className="buffer">{state?.buffer || "..."}</span>
-              {(state?.candidates ?? []).map((candidate, index) => (
-                <button key={`${candidate.reading}-${candidate.text}`}>
-                  <b>{index + 1}</b>
-                  {candidate.text}
-                </button>
-              ))}
+            <div className="candidatePreviewShell">
+              <div className="candidatePreview" style={candidateBarStyle}>
+                <div className="compositionRow">
+                  <span>{state?.buffer || preview || "nihao"}</span>
+                </div>
+                <div className="candidateBand">
+                  {previewCandidates.length > 0 ? (
+                    previewCandidates.map((candidate, index) => (
+                      <button
+                        key={`${candidate.reading}-${candidate.text}-${index}`}
+                        className={index === 0 ? "candidatePill selected" : "candidatePill"}
+                      >
+                        <b>{index + 1}</b>
+                        <span className="candidateText">{candidate.text}</span>
+                        {kindLabel(candidate.kind) && <i>{kindLabel(candidate.kind)}</i>}
+                      </button>
+                    ))
+                  ) : (
+                    <span className="emptyCandidate">等待输入</span>
+                  )}
+                  {candidateCount > previewCandidates.length && (
+                    <span className="pageIndicator">1-{previewCandidates.length}/{candidateCount}</span>
+                  )}
+                </div>
+              </div>
             </div>
           </section>
         </div>
@@ -543,6 +565,14 @@ function statusLabel(status: "loading" | "ready" | "offline" | "saved") {
   if (status === "ready") return "已连接";
   if (status === "saved") return "已保存";
   return "离线";
+}
+
+function kindLabel(kind?: string) {
+  if (kind === "emoji") return "Emoji";
+  if (kind === "kaomoji") return "颜";
+  if (kind === "symbol") return "符";
+  if (kind === "phrase") return "短";
+  return "";
 }
 
 createRoot(document.getElementById("root")!).render(

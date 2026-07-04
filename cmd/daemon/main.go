@@ -116,9 +116,19 @@ func main() {
 	mux.HandleFunc("GET /ime/skin", state.withCORS(state.imeSkin))
 	mux.HandleFunc("POST /agent/compose", state.withCORS(state.agentCompose))
 
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			state.withCORS(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			})(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+
 	server := &http.Server{
 		Addr:              listenAddr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	log.Printf("shurufa233 daemon listening on http://%s", listenAddr)
@@ -618,7 +628,10 @@ func (s *AppState) saveUserScores(scores map[string]int) error {
 
 func (s *AppState) withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		if origin := r.Header.Get("Origin"); isAllowedLocalOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "content-type")
 		if r.Method == http.MethodOptions {
@@ -627,6 +640,23 @@ func (s *AppState) withCORS(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+func isAllowedLocalOrigin(origin string) bool {
+	if origin == "" {
+		return false
+	}
+	for _, allowed := range []string{
+		"http://localhost:5173",
+		"http://127.0.0.1:5173",
+		"http://[::1]:5173",
+		"wails://wails",
+	} {
+		if strings.EqualFold(origin, allowed) {
+			return true
+		}
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, value any) {
