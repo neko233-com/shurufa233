@@ -71,6 +71,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 
 The installer:
 
+- verifies `manifest.json` when present, including platform, real OS architecture, `in-process-core` mode, required files, and SHA-256 hashes before changing system state
 - copies daemon, CLI, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
 - detects the real Windows OS architecture, including 32-bit PowerShell running under WOW64, before choosing x64, arm64, or x86 artifacts
 - copies `Shurufa233ProfileCtl.exe` for current-session enable/activate/probe operations

@@ -56,6 +56,50 @@ function Get-CurrentGoArch {
   }
 }
 
+function Test-PackageManifest {
+  param(
+    [string]$ExpectedNativeArch,
+    [string]$ExpectedGoArch
+  )
+
+  $manifestPath = Join-Path $Root "manifest.json"
+  if (-not (Test-Path $manifestPath)) {
+    return
+  }
+
+  $manifest = Get-Content -Path $manifestPath -Raw | ConvertFrom-Json
+  if ($manifest.platform -ne "windows") {
+    throw "Package manifest platform is '$($manifest.platform)', expected 'windows'."
+  }
+  if ($manifest.nativeArch -ne $ExpectedNativeArch -or $manifest.goArch -ne $ExpectedGoArch) {
+    throw "This package targets nativeArch=$($manifest.nativeArch), goArch=$($manifest.goArch), but this Windows session needs nativeArch=$ExpectedNativeArch, goArch=$ExpectedGoArch. Use the matching shurufa233 Windows package."
+  }
+  if ($manifest.performanceMode -ne "in-process-core") {
+    throw "Package performanceMode is '$($manifest.performanceMode)'. Production install requires in-process-core."
+  }
+
+  foreach ($artifact in @($manifest.artifacts)) {
+    if ($artifact.required -ne $true) {
+      continue
+    }
+    $relativePath = [string]$artifact.path
+    if ([IO.Path]::IsPathRooted($relativePath) -or $relativePath -match '(^|[\\/])\.\.([\\/]|$)') {
+      throw "Package manifest contains an unsafe artifact path: $relativePath"
+    }
+    $fullPath = Join-Path $Root $relativePath
+    if (-not (Test-Path $fullPath)) {
+      throw "Package manifest required artifact is missing: $relativePath"
+    }
+    if ($artifact.sha256) {
+      $actualHash = (Get-FileHash $fullPath -Algorithm SHA256).Hash
+      if ($actualHash -ne $artifact.sha256) {
+        throw "Package manifest hash mismatch for $relativePath. Expected $($artifact.sha256), found $actualHash"
+      }
+    }
+  }
+  Write-Host "Package manifest verified for $ExpectedNativeArch/$ExpectedGoArch."
+}
+
 function Save-InputMethodBackup {
   if (Test-Path $InputMethodBackupPath) {
     Write-Host "Input method backup already exists at $InputMethodBackupPath"
@@ -444,6 +488,10 @@ function Register-NativeArtifacts {
 
 $NativeArch = Get-CurrentNativeArch
 $GoArch = Get-CurrentGoArch
+
+if (-not $RegisterOnly) {
+  Test-PackageManifest -ExpectedNativeArch $NativeArch -ExpectedGoArch $GoArch
+}
 
 if (-not $SkipBuild -and -not $RegisterOnly) {
   & (Join-Path $Root "scripts\build-windows.ps1") -GoArch @($GoArch) -NativeArch @($NativeArch)
