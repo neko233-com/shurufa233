@@ -16,6 +16,8 @@ const apiBase = "http://127.0.0.1:23333"
 type candidate struct {
 	Text      string `json:"text"`
 	Reading   string `json:"reading"`
+	Kind      string `json:"kind,omitempty"`
+	Source    string `json:"source,omitempty"`
 	Weight    int    `json:"weight"`
 	UserScore int    `json:"userScore"`
 }
@@ -116,7 +118,14 @@ func preview(client *http.Client, input string) error {
 	}
 	fmt.Printf("buffer: %s\n", state.Buffer)
 	for i, item := range state.Candidates {
-		fmt.Printf("%d. %s [%s] score=%d\n", i+1, item.Text, item.Reading, item.Weight+item.UserScore)
+		meta := ""
+		if item.Kind != "" {
+			meta = " kind=" + item.Kind
+			if item.Source != "" {
+				meta += " source=" + item.Source
+			}
+		}
+		fmt.Printf("%d. %s [%s] score=%d%s\n", i+1, item.Text, item.Reading, item.Weight+item.UserScore, meta)
 	}
 	return nil
 }

@@ -841,6 +841,7 @@ function kindLabel(kind?: string) {
   if (kind === "kaomoji") return "颜";
   if (kind === "symbol") return "符";
   if (kind === "phrase") return "短";
+  if (kind === "agent") return "AI";
   return "";
 }
 

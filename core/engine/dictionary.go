@@ -57,6 +57,14 @@ var defaultEntries = []Entry{
 	{Reading: "shengluehao", Text: "……", Kind: "symbol", Source: "builtin-symbols", Weight: 6000},
 	{Reading: "dian", Text: "·", Kind: "symbol", Source: "builtin-symbols", Weight: 5600},
 	{Reading: "dian", Text: "…", Kind: "symbol", Source: "builtin-symbols", Weight: 5400},
+	{Reading: "ai", Text: "/ask ", Kind: "agent", Source: "builtin-agent", Weight: 6900},
+	{Reading: "agent", Text: "/ask ", Kind: "agent", Source: "builtin-agent", Weight: 9000},
+	{Reading: "ask", Text: "/ask ", Kind: "agent", Source: "builtin-agent", Weight: 9000},
+	{Reading: "wen", Text: "/ask ", Kind: "agent", Source: "builtin-agent", Weight: 6500},
+	{Reading: "rewrite", Text: "/rewrite ", Kind: "agent", Source: "builtin-agent", Weight: 9000},
+	{Reading: "runse", Text: "/rewrite ", Kind: "agent", Source: "builtin-agent", Weight: 8500},
+	{Reading: "translate", Text: "/translate ", Kind: "agent", Source: "builtin-agent", Weight: 9000},
+	{Reading: "fanyi", Text: "/translate ", Kind: "agent", Source: "builtin-agent", Weight: 8500},
 }
 
 func defaultDictionary() map[string][]Entry {

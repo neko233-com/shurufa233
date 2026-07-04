@@ -217,6 +217,11 @@ and generic compose prompts; these structured rows are the handoff point for a
 future TSF candidate-row integration or an external local/cloud agent provider.
 
 This is intentionally provider-neutral. The same protocol can later call local models, cloud models, or a user-configured agent endpoint without changing the TSF glue.
+The Go core also exposes built-in agent command candidates in the ordinary
+candidate list. Triggers such as `ai`, `agent`, `ask`, `rewrite`, `runse`,
+`translate`, and `fanyi` surface `/ask `, `/rewrite `, or `/translate ` rows with
+`kind=agent` and `source=builtin-agent`; the native candidate strip renders these
+with a compact `AI` badge.
 
 ## Candidate Window
 
@@ -233,7 +238,7 @@ GET /ime/candidates?start=0&limit=7
 HTTP fallback keeps the same paging, emoji, kaomoji, and symbol badge behavior as
 the in-process core path.
 Candidate type badges are intentionally short localized labels (`表情`, `颜`, `符`,
-`短`) so emoji, kaomoji, symbol, and phrase candidates stay readable without
+`短`, `AI`) so emoji, kaomoji, symbol, phrase, and agent candidates stay readable without
 making the native strip feel like a debug surface.
 
 Current skin fields come from the settings UI:

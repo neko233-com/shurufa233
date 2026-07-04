@@ -268,6 +268,52 @@ func TestBuiltinEmojiCandidateMetadata(t *testing.T) {
 	}
 }
 
+func TestBuiltinAgentCandidateMetadata(t *testing.T) {
+	e := New(DefaultConfig())
+
+	tests := []struct {
+		reading string
+		text    string
+	}{
+		{reading: "rewrite", text: "/rewrite "},
+		{reading: "runse", text: "/rewrite "},
+		{reading: "translate", text: "/translate "},
+		{reading: "fanyi", text: "/translate "},
+		{reading: "ask", text: "/ask "},
+		{reading: "agent", text: "/ask "},
+	}
+
+	for _, tt := range tests {
+		state := e.Preview(tt.reading)
+		if len(state.Candidates) == 0 || state.Candidates[0].Text != tt.text {
+			t.Fatalf("expected top agent candidate %q for %s, got %#v", tt.text, tt.reading, state.Candidates)
+		}
+		if state.Candidates[0].Kind != "agent" || state.Candidates[0].Source != "builtin-agent" {
+			t.Fatalf("expected agent metadata for %s, got %#v", tt.reading, state.Candidates[0])
+		}
+	}
+}
+
+func TestBuiltinAgentCandidateDoesNotOverrideCommonWord(t *testing.T) {
+	e := New(DefaultConfig())
+	state := e.Preview("ai")
+	if len(state.Candidates) < 2 {
+		t.Fatalf("expected word and agent candidates for ai, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Text != "爱" {
+		t.Fatalf("agent candidate should not outrank common word 爱, got %#v", state.Candidates)
+	}
+	foundAgent := false
+	for _, candidate := range state.Candidates {
+		if candidate.Kind == "agent" && candidate.Text == "/ask " {
+			foundAgent = true
+		}
+	}
+	if !foundAgent {
+		t.Fatalf("expected ai to expose /ask agent candidate, got %#v", state.Candidates)
+	}
+}
+
 func TestBundledZhDictionaryHasPagingCandidates(t *testing.T) {
 	e := New(DefaultConfig())
 	file, err := os.Open(filepath.Join("..", "..", "data", "dictionaries", "zh-CN.2026.07.04.json"))

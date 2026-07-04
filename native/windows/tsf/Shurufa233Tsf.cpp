@@ -1186,6 +1186,9 @@ class CandidateWindow {
     if (kind == L"phrase") {
       return L"短";
     }
+    if (kind == L"agent") {
+      return L"AI";
+    }
     return L"";
   }
 
