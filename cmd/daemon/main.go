@@ -756,7 +756,7 @@ func configFile() (string, error) {
 
 func normalizeConfig(config engine.Config) engine.Config {
 	defaults := engine.DefaultConfig()
-	if config.MaxCandidates <= 0 {
+	if config.MaxCandidates < defaults.MaxCandidates {
 		config.MaxCandidates = defaults.MaxCandidates
 	}
 	if config.Language == "" {

@@ -1,7 +1,11 @@
 package engine
 
-import "testing"
-import "strings"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestCandidatesAndLearning(t *testing.T) {
 	e := New(DefaultConfig())
@@ -134,5 +138,24 @@ func TestBuiltinEmojiCandidateMetadata(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected builtin kaomoji candidate, got %#v", state.Candidates)
+	}
+}
+
+func TestBundledZhDictionaryHasPagingCandidates(t *testing.T) {
+	e := New(DefaultConfig())
+	file, err := os.Open(filepath.Join("..", "..", "data", "dictionaries", "zh-CN.2026.07.04.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := e.LoadDictionary(file); err != nil {
+		t.Fatal(err)
+	}
+	state := e.Preview("shi")
+	if len(state.Candidates) < 8 {
+		t.Fatalf("expected bundled shi candidates to exercise paging, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Text != "是" {
+		t.Fatalf("expected top bundled shi candidate 是, got %#v", state.Candidates)
 	}
 }

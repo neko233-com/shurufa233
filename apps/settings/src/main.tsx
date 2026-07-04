@@ -322,7 +322,7 @@ function App() {
               <span>候选池上限</span>
               <input
                 type="number"
-                min={7}
+                min={42}
                 max={99}
                 value={config.maxCandidates}
                 onChange={(event) => setConfig({ ...config, maxCandidates: Number(event.target.value) })}

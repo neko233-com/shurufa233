@@ -75,7 +75,31 @@ bool ParseLangIdArg(const char *value, LANGID *langid) {
   return true;
 }
 
-HRESULT ActivateTip(LANGID langid, REFCLSID clsid, REFGUID profileGuid) {
+HRESULT GetActiveKeyboardProfile(TF_INPUTPROCESSORPROFILE *profile) {
+  if (!profile) {
+    return E_INVALIDARG;
+  }
+  ITfInputProcessorProfileMgr *mgr = nullptr;
+  HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_ITfInputProcessorProfileMgr,
+                                reinterpret_cast<void **>(&mgr));
+  if (SUCCEEDED(hr) && mgr) {
+    hr = mgr->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, profile);
+    mgr->Release();
+  }
+  return hr;
+}
+
+bool IsActiveTip(LANGID langid, REFCLSID clsid, REFGUID profileGuid) {
+  TF_INPUTPROCESSORPROFILE active{};
+  if (FAILED(GetActiveKeyboardProfile(&active))) {
+    return false;
+  }
+  return active.langid == langid && IsEqualGUID(active.clsid, clsid) &&
+         IsEqualGUID(active.guidProfile, profileGuid);
+}
+
+HRESULT ActivateTipOnce(LANGID langid, REFCLSID clsid, REFGUID profileGuid) {
   HRESULT hr = S_OK;
 
   ITfInputProcessorProfiles *profiles = nullptr;
@@ -107,6 +131,18 @@ HRESULT ActivateTip(LANGID langid, REFCLSID clsid, REFGUID profileGuid) {
     mgr->Release();
   }
   return hr;
+}
+
+HRESULT ActivateTip(LANGID langid, REFCLSID clsid, REFGUID profileGuid) {
+  HRESULT hr = S_OK;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    hr = ActivateTipOnce(langid, clsid, profileGuid);
+    if (SUCCEEDED(hr) && IsActiveTip(langid, clsid, profileGuid)) {
+      return S_OK;
+    }
+    Sleep(150);
+  }
+  return SUCCEEDED(hr) ? HRESULT_FROM_WIN32(ERROR_RETRY) : hr;
 }
 
 }  // namespace
