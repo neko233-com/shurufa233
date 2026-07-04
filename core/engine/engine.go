@@ -25,6 +25,7 @@ type Engine struct {
 const maxPrefixEntries = 256
 const fuzzyCandidatePenalty = 120
 const fuzzyVariantLimit = 64
+const doublePinyinVariantLimit = 64
 
 func DefaultConfig() Config {
 	return Config{
@@ -290,6 +291,7 @@ func (e *Engine) candidatesLocked() []Candidate {
 
 func (e *Engine) lookupLocked(reading string) []Entry {
 	reading = normalizeReading(reading)
+	readings := e.lookupReadingsLocked(reading)
 	var exact []Entry
 	seen := map[string]int{}
 	appendEntries := func(entries []Entry, penalty int) {
@@ -313,34 +315,65 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 		}
 	}
 
-	appendEntries(e.dict[reading], 0)
-	for _, variant := range e.fuzzyReadingsLocked(reading) {
-		appendEntries(e.dict[variant], fuzzyCandidatePenalty)
+	for _, item := range readings {
+		appendEntries(e.dict[item.reading], item.penalty)
+		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
+			appendEntries(e.dict[variant], item.penalty+fuzzyCandidatePenalty)
+		}
 	}
 	if len(exact) > 0 {
 		return exact
 	}
 
 	seen = map[string]int{}
-	appendEntries(e.prefix[reading], 0)
-	for _, variant := range e.fuzzyReadingsLocked(reading) {
-		appendEntries(e.prefix[variant], fuzzyCandidatePenalty)
+	for _, item := range readings {
+		appendEntries(e.prefix[item.reading], item.penalty)
+		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
+			appendEntries(e.prefix[variant], item.penalty+fuzzyCandidatePenalty)
+		}
 	}
 	if len(exact) > 0 {
 		return exact
 	}
 
-	for _, variant := range append([]string{reading}, e.fuzzyReadingsLocked(reading)...) {
-		segmented := e.segmentGreedyLocked(variant)
-		if segmented != "" && segmented != reading {
-			penalty := 0
-			if variant != reading {
-				penalty = fuzzyCandidatePenalty
+	for _, item := range readings {
+		for _, variant := range append([]string{item.reading}, e.fuzzyReadingsLocked(item.reading)...) {
+			segmented := e.segmentGreedyLocked(variant)
+			if segmented != "" && segmented != reading {
+				penalty := item.penalty
+				if variant != item.reading {
+					penalty += fuzzyCandidatePenalty
+				}
+				return []Entry{{Reading: variant, Text: segmented, Weight: max(1, 3000-penalty)}}
 			}
-			return []Entry{{Reading: variant, Text: segmented, Weight: max(1, 3000-penalty)}}
 		}
 	}
 	return nil
+}
+
+type lookupReading struct {
+	reading string
+	penalty int
+}
+
+func (e *Engine) lookupReadingsLocked(reading string) []lookupReading {
+	seen := map[string]bool{}
+	items := make([]lookupReading, 0, 4)
+	add := func(value string, penalty int) {
+		value = normalizeReading(value)
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		items = append(items, lookupReading{reading: value, penalty: penalty})
+	}
+	add(reading, 0)
+	if e.config.DoublePinyin {
+		for _, decoded := range decodeXiaoheDoublePinyin(reading) {
+			add(decoded, 0)
+		}
+	}
+	return items
 }
 
 func (e *Engine) fuzzyReadingsLocked(reading string) []string {
@@ -410,6 +443,111 @@ func normalizeReading(input string) string {
 		}
 	}
 	return builder.String()
+}
+
+var xiaoheInitials = map[byte]string{
+	'b': "b",
+	'p': "p",
+	'm': "m",
+	'f': "f",
+	'd': "d",
+	't': "t",
+	'n': "n",
+	'l': "l",
+	'g': "g",
+	'k': "k",
+	'h': "h",
+	'j': "j",
+	'q': "q",
+	'x': "x",
+	'v': "zh",
+	'i': "ch",
+	'u': "sh",
+	'r': "r",
+	'z': "z",
+	'c': "c",
+	's': "s",
+	'y': "y",
+	'w': "w",
+}
+
+var xiaoheFinals = map[byte][]string{
+	'a': []string{"a"},
+	'b': []string{"in"},
+	'c': []string{"iao"},
+	'd': []string{"ai"},
+	'e': []string{"e"},
+	'f': []string{"en"},
+	'g': []string{"eng"},
+	'h': []string{"ang"},
+	'i': []string{"i"},
+	'j': []string{"an"},
+	'k': []string{"ao"},
+	'l': []string{"ing"},
+	'm': []string{"ian"},
+	'n': []string{"iang", "uang"},
+	'o': []string{"o", "uo"},
+	'p': []string{"ie"},
+	'q': []string{"iu"},
+	'r': []string{"uan", "er"},
+	's': []string{"ong", "iong"},
+	't': []string{"ue", "ve"},
+	'u': []string{"u"},
+	'v': []string{"v", "ui"},
+	'w': []string{"ei"},
+	'x': []string{"ia", "ua"},
+	'y': []string{"un"},
+	'z': []string{"ou"},
+}
+
+func decodeXiaoheDoublePinyin(input string) []string {
+	input = normalizeReading(input)
+	if input == "" {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	var walk func(pos int, parts []string)
+	walk = func(pos int, parts []string) {
+		if len(out) >= doublePinyinVariantLimit {
+			return
+		}
+		if pos == len(input) {
+			value := strings.Join(parts, "")
+			if value != "" && value != input && !seen[value] {
+				seen[value] = true
+				out = append(out, value)
+			}
+			return
+		}
+		if finals, ok := xiaoheFinals[input[pos]]; ok {
+			for _, final := range finals {
+				walk(pos+1, append(parts, normalizeDoublePinyinSyllable("", final)))
+			}
+		}
+		if pos+1 >= len(input) {
+			return
+		}
+		initial, ok := xiaoheInitials[input[pos]]
+		if !ok {
+			return
+		}
+		for _, final := range xiaoheFinals[input[pos+1]] {
+			walk(pos+2, append(parts, normalizeDoublePinyinSyllable(initial, final)))
+		}
+	}
+	walk(0, nil)
+	return out
+}
+
+func normalizeDoublePinyinSyllable(initial string, final string) string {
+	if initial == "j" || initial == "q" || initial == "x" || initial == "y" {
+		final = strings.ReplaceAll(final, "v", "u")
+	}
+	if initial == "" {
+		final = strings.ReplaceAll(final, "v", "u")
+	}
+	return initial + final
 }
 
 type fuzzyRule struct {

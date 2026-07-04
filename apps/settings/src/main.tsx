@@ -513,7 +513,7 @@ function App() {
                 checked={config.doublePinyin}
                 onChange={(event) => setConfig({ ...config, doublePinyin: event.target.checked })}
               />
-              <span>启用双拼模式</span>
+              <span>启用小鹤双拼</span>
             </label>
             <label className="field">
               <span>模糊音</span>

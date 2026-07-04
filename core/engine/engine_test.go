@@ -90,6 +90,52 @@ func TestFuzzyInitialsCanBeDisabled(t *testing.T) {
 	}
 }
 
+func TestDoublePinyinXiaoheCandidates(t *testing.T) {
+	config := DefaultConfig()
+	config.DoublePinyin = true
+	e := New(config)
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "nihk", want: "你好"},
+		{input: "vswf", want: "中文"},
+		{input: "uuru", want: "输入法"},
+	}
+
+	for _, tt := range tests {
+		state := e.Preview(tt.input)
+		if len(state.Candidates) == 0 || state.Candidates[0].Text != tt.want {
+			t.Fatalf("expected double pinyin %q -> %q, got %#v", tt.input, tt.want, state.Candidates)
+		}
+	}
+}
+
+func TestDoublePinyinCanBeDisabled(t *testing.T) {
+	config := DefaultConfig()
+	config.DoublePinyin = false
+	e := New(config)
+
+	state := e.Preview("nihk")
+	for _, candidate := range state.Candidates {
+		if candidate.Text == "你好" {
+			t.Fatalf("double pinyin should be disabled, got %#v", state.Candidates)
+		}
+	}
+}
+
+func TestDoublePinyinKeepsFullPinyinFallback(t *testing.T) {
+	config := DefaultConfig()
+	config.DoublePinyin = true
+	e := New(config)
+
+	state := e.Preview("nihao")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "你好" {
+		t.Fatalf("expected full pinyin fallback while double pinyin is enabled, got %#v", state.Candidates)
+	}
+}
+
 func TestLoadDictionary(t *testing.T) {
 	e := New(DefaultConfig())
 	_, err := e.LoadDictionary(strings.NewReader(`{
