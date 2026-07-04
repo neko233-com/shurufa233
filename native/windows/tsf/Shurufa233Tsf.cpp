@@ -76,6 +76,7 @@ using ImportUserPinsJsonFn = char *(*)(uint64_t, char *);
 using CommitTextFn = char *(*)(uint64_t, char *, char *);
 using AgentComposeFn = char *(*)(char *, char *);
 using ExecuteCommandFn = char *(*)(uint64_t, const char *, const char *);
+using SessionPayloadFn = char *(*)(uint64_t, const char *);
 
 struct CoreApi {
   bool initialized = false;
@@ -105,19 +106,25 @@ struct CoreApi {
   AssociateFn associate = nullptr;
   KeyEventJsonFn keyEventJson = nullptr;
   ReverseLookupFn reverseLookup = nullptr;
+  CoreStringFn dictionarySourcesJson = nullptr;
   CoreStringFn configJson = nullptr;
   ApplyConfigJsonFn applyConfigJson = nullptr;
   CoreStringFn reloadConfig = nullptr;
   CoreStringFn reloadDictionaries = nullptr;
   CoreStringFn dictionaryManifestJson = nullptr;
+  SessionStringFn recognizerPatternsJson = nullptr;
+  SessionPayloadFn applyAppRulesJson = nullptr;
   SessionStringFn userScoresJson = nullptr;
   ImportUserScoresJsonFn importUserScoresJson = nullptr;
   SessionStringFn userPhrasesJson = nullptr;
   ImportUserPhrasesJsonFn importUserPhrasesJson = nullptr;
+  SessionPayloadFn deleteUserPhraseJson = nullptr;
   SessionStringFn userRejectsJson = nullptr;
   ImportUserRejectsJsonFn importUserRejectsJson = nullptr;
+  SessionPayloadFn deleteUserRejectJson = nullptr;
   SessionStringFn userPinsJson = nullptr;
   ImportUserPinsJsonFn importUserPinsJson = nullptr;
+  SessionPayloadFn deleteUserPinJson = nullptr;
   CommitTextFn commitText = nullptr;
   AgentComposeFn agentCompose = nullptr;
   ExecuteCommandFn executeCommand = nullptr;
@@ -429,24 +436,30 @@ bool TryLoadInProcessCore() {
   api.associate = LoadCoreProc<AssociateFn>(module, "ShurufaAssociate");
   api.keyEventJson = LoadCoreProc<KeyEventJsonFn>(module, "ShurufaKeyEventJSON");
   api.reverseLookup = LoadCoreProc<ReverseLookupFn>(module, "ShurufaReverseLookupJSON");
+  api.dictionarySourcesJson = LoadCoreProc<CoreStringFn>(module, "ShurufaDictionarySourcesJSON");
   api.configJson = LoadCoreProc<CoreStringFn>(module, "ShurufaConfigJSON");
   api.applyConfigJson = LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplyConfigJSON");
   api.reloadConfig = LoadCoreProc<CoreStringFn>(module, "ShurufaReloadConfig");
   api.reloadDictionaries = LoadCoreProc<CoreStringFn>(module, "ShurufaReloadDictionaries");
   api.dictionaryManifestJson =
       LoadCoreProc<CoreStringFn>(module, "ShurufaDictionaryManifestJSON");
+  api.recognizerPatternsJson = LoadCoreProc<SessionStringFn>(module, "ShurufaRecognizerPatternsJSON");
+  api.applyAppRulesJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaApplyAppRulesJSON");
   api.userScoresJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserScoresJSON");
   api.importUserScoresJson =
       LoadCoreProc<ImportUserScoresJsonFn>(module, "ShurufaImportUserScoresJSON");
   api.userPhrasesJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserPhrasesJSON");
   api.importUserPhrasesJson =
       LoadCoreProc<ImportUserPhrasesJsonFn>(module, "ShurufaImportUserPhrasesJSON");
+  api.deleteUserPhraseJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaDeleteUserPhraseJSON");
   api.userRejectsJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserRejectsJSON");
   api.importUserRejectsJson =
       LoadCoreProc<ImportUserRejectsJsonFn>(module, "ShurufaImportUserRejectsJSON");
+  api.deleteUserRejectJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaDeleteUserRejectJSON");
   api.userPinsJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserPinsJSON");
   api.importUserPinsJson =
       LoadCoreProc<ImportUserPinsJsonFn>(module, "ShurufaImportUserPinsJSON");
+  api.deleteUserPinJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaDeleteUserPinJSON");
   api.commitText = LoadCoreProc<CommitTextFn>(module, "ShurufaCommitText");
   api.agentCompose = LoadCoreProc<AgentComposeFn>(module, "ShurufaAgentCompose");
   api.executeCommand = LoadCoreProc<ExecuteCommandFn>(module, "ShurufaExecuteCommand");
@@ -493,19 +506,25 @@ void UseHttpCoreFallback() {
   g_core.associate = nullptr;
   g_core.keyEventJson = nullptr;
   g_core.reverseLookup = nullptr;
+  g_core.dictionarySourcesJson = nullptr;
   g_core.configJson = nullptr;
   g_core.applyConfigJson = nullptr;
   g_core.reloadConfig = nullptr;
   g_core.reloadDictionaries = nullptr;
   g_core.dictionaryManifestJson = nullptr;
+  g_core.recognizerPatternsJson = nullptr;
+  g_core.applyAppRulesJson = nullptr;
   g_core.userScoresJson = nullptr;
   g_core.importUserScoresJson = nullptr;
   g_core.userPhrasesJson = nullptr;
   g_core.importUserPhrasesJson = nullptr;
+  g_core.deleteUserPhraseJson = nullptr;
   g_core.userRejectsJson = nullptr;
   g_core.importUserRejectsJson = nullptr;
+  g_core.deleteUserRejectJson = nullptr;
   g_core.userPinsJson = nullptr;
   g_core.importUserPinsJson = nullptr;
+  g_core.deleteUserPinJson = nullptr;
   g_core.commitText = nullptr;
   g_core.agentCompose = nullptr;
   g_core.executeCommand = nullptr;

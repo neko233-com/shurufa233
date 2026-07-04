@@ -370,6 +370,23 @@ func TestCapabilitiesIncludeKeyEventJSON(t *testing.T) {
 	t.Fatalf("capabilities missing key-event-json: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeApplyAppRulesAndUserDataDelete(t *testing.T) {
+	want := map[string]bool{
+		"apply-app-rules-json":  false,
+		"user-data-delete-json": false,
+	}
+	for _, feature := range abiFeatureList {
+		if _, ok := want[feature]; ok {
+			want[feature] = true
+		}
+	}
+	for feature, found := range want {
+		if !found {
+			t.Fatalf("capabilities missing %s: %#v", feature, abiFeatureList)
+		}
+	}
+}
+
 func TestPreviewPreservesPinyinSeparatorCandidate(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	state := session.Preview("xi'an")
@@ -692,6 +709,33 @@ func TestExecuteExtensionCommandAppContextRules(t *testing.T) {
 	}
 }
 
+func TestExecuteExtensionCommandApplyAppRules(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("SHURUFA233_CONFIG", configPath)
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "apply-app-rules-json", `{"rules":[{"id":"editor","name":"Editor","processNames":["Notepad.exe"],"mode":"en","disableCandidates":true,"priority":99}]}`)
+	if !handled {
+		t.Fatal("apply-app-rules-json command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("apply app rules = %#v", got)
+	}
+
+	decision := engine.ResolveAppContext(session.Config(), engine.AppContext{ProcessName: "Notepad.exe"})
+	if !decision.Matched || decision.Mode != "en" || !decision.DisableCandidates {
+		t.Fatalf("applied app rules did not affect context decision: %#v", decision)
+	}
+	saved, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(saved), `"id": "editor"`) {
+		t.Fatalf("saved config does not include app rule: %s", saved)
+	}
+}
+
 func TestExecuteExtensionCommandProfileBundle(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	session.ImportUserScores(map[string]int{"nihao|你好": 25})
@@ -716,6 +760,48 @@ func TestExecuteExtensionCommandProfileBundle(t *testing.T) {
 	}
 	if session.UserScores()["ceshi|测试"] != 50 || len(session.UserPhrases()) != 1 || session.UserPhrases()[0].Reading != "yyds" {
 		t.Fatalf("profile import did not update session: scores=%#v phrases=%#v", session.UserScores(), session.UserPhrases())
+	}
+}
+
+func TestExecuteExtensionCommandDeletesUserData(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SHURUFA233_USER_PHRASES", filepath.Join(dir, "user-phrases.json"))
+	t.Setenv("SHURUFA233_USER_REJECTS", filepath.Join(dir, "user-rejects.json"))
+	t.Setenv("SHURUFA233_USER_PINS", filepath.Join(dir, "user-pins.json"))
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{
+		{Reading: "ceshi", Text: "测试", Weight: 30000},
+		{Reading: "ceshi", Text: "错词", Weight: 20000},
+	})
+	session.AddUserPhrases([]engine.Entry{{Reading: "msd", Text: "马上到！", Weight: 60000}})
+	session.AddUserRejects([]engine.Entry{{Reading: "ceshi", Text: "错词", Weight: 1}})
+	session.AddUserPins([]engine.Entry{{Reading: "ceshi", Text: "测试", Weight: 1}})
+
+	got, handled := executeSessionExtensionCommand(session, "delete-user-phrase", `{"reading":"msd","text":"马上到！"}`)
+	if !handled {
+		t.Fatal("delete-user-phrase command was not handled")
+	}
+	phrases, ok := got.(map[string]any)
+	if !ok || phrases["ok"] != true || phrases["total"] != 0 {
+		t.Fatalf("delete user phrase = %#v", got)
+	}
+
+	got, handled = executeSessionExtensionCommand(session, "delete-user-reject", `{"reading":"ceshi","text":"错词"}`)
+	if !handled {
+		t.Fatal("delete-user-reject command was not handled")
+	}
+	rejects, ok := got.(map[string]any)
+	if !ok || rejects["ok"] != true || rejects["total"] != 0 {
+		t.Fatalf("delete user reject = %#v", got)
+	}
+
+	got, handled = executeSessionExtensionCommand(session, "delete-user-pin", `{"reading":"ceshi","text":"测试"}`)
+	if !handled {
+		t.Fatal("delete-user-pin command was not handled")
+	}
+	pins, ok := got.(map[string]any)
+	if !ok || pins["ok"] != true || pins["total"] != 0 {
+		t.Fatalf("delete user pin = %#v", got)
 	}
 }
 

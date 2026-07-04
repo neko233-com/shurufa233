@@ -110,14 +110,17 @@ char* ShurufaCandidateAction(uint64_t session, const char* json);
 char* ShurufaKeyEventJSON(uint64_t session, const char* json);
 char* ShurufaCatalogJSON(uint64_t session, const char* json);
 char* ShurufaReverseLookupJSON(uint64_t session, const char* json);
+char* ShurufaDictionarySourcesJSON(void);
 char* ShurufaConfigJSON(void);
 char* ShurufaApplyConfigJSON(char* json);
 char* ShurufaSchemaPresetsJSON(void);
 char* ShurufaApplySchemaJSON(char* json);
 char* ShurufaApplyRimeCustomJSON(uint64_t session, char* json);
+char* ShurufaRecognizerPatternsJSON(uint64_t session);
 char* ShurufaSwitchesJSON(uint64_t session);
 char* ShurufaApplySwitchJSON(uint64_t session, char* json);
 char* ShurufaAppRulesJSON(uint64_t session);
+char* ShurufaApplyAppRulesJSON(uint64_t session, char* json);
 char* ShurufaResolveAppContextJSON(uint64_t session, char* json);
 char* ShurufaReloadConfig(void);
 char* ShurufaReloadDictionaries(void);
@@ -126,10 +129,13 @@ char* ShurufaUserScoresJSON(uint64_t session);
 char* ShurufaImportUserScoresJSON(uint64_t session, char* json);
 char* ShurufaUserPhrasesJSON(uint64_t session);
 char* ShurufaImportUserPhrasesJSON(uint64_t session, char* json);
+char* ShurufaDeleteUserPhraseJSON(uint64_t session, char* json);
 char* ShurufaUserRejectsJSON(uint64_t session);
 char* ShurufaImportUserRejectsJSON(uint64_t session, char* json);
+char* ShurufaDeleteUserRejectJSON(uint64_t session, char* json);
 char* ShurufaUserPinsJSON(uint64_t session);
 char* ShurufaImportUserPinsJSON(uint64_t session, char* json);
+char* ShurufaDeleteUserPinJSON(uint64_t session, char* json);
 char* ShurufaProfileJSON(uint64_t session);
 char* ShurufaImportProfileJSON(uint64_t session, char* json);
 char* ShurufaCommitText(uint64_t session, char* reading, char* text);
@@ -164,7 +170,8 @@ C++ export on developer machines that only consume packaged builds.
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
 `candidate-comments`, `association-candidates`, `candidate-action-json`, and
 `extension-command-json`, `key-behavior-config`, `rime-switches-json`,
-`app-context-rules-json`, and `key-event-json`.
+`app-context-rules-json`, `apply-app-rules-json`, `user-data-delete-json`, and
+`key-event-json`.
 
 `ShurufaAssociate(session, {"context":"你好","limit":7})` returns a normal state
 object with post-commit association candidates. The same behavior is available
@@ -212,6 +219,7 @@ switches-json
 apply-switch-json       {"id":"ascii_mode","value":true}
 toggle-switch           {"id":"ascii_punct"}
 app-rules-json
+apply-app-rules-json    {"rules":[{"id":"game","name":"Game","processNames":["WeGame.exe"],"mode":"en"}]}
 resolve-app-context-json {"appContext":{"processName":"WeGame.exe","gameMode":true}}
 reload-config
 reload-dictionaries

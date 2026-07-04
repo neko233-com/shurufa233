@@ -93,6 +93,15 @@ func ShurufaReverseLookupJSON(id C.uint64_t, payload *C.char) *C.char {
 	}))
 }
 
+//export ShurufaDictionarySourcesJSON
+func ShurufaDictionarySourcesJSON() *C.char {
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"sources":   engine.BuiltinDictionarySources(),
+		"updatedAt": time.Now().UTC(),
+	})
+}
+
 //export ShurufaConfigJSON
 func ShurufaConfigJSON() *C.char {
 	return jsonCString(configEnvelope())
@@ -138,6 +147,17 @@ func ShurufaApplySchemaJSON(payload *C.char) *C.char {
 //export ShurufaApplyRimeCustomJSON
 func ShurufaApplyRimeCustomJSON(id C.uint64_t, payload *C.char) *C.char {
 	return jsonCString(applyRimeCustomPayload(getSession(uint64(id)), C.GoString(payload)))
+}
+
+//export ShurufaRecognizerPatternsJSON
+func ShurufaRecognizerPatternsJSON(id C.uint64_t) *C.char {
+	session := getSession(uint64(id))
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"patterns":  session.Config().RecognizerPatterns,
+		"config":    session.Config(),
+		"updatedAt": time.Now().UTC(),
+	})
 }
 
 //export ShurufaSwitchesJSON
@@ -187,6 +207,15 @@ func ShurufaAppRulesJSON(id C.uint64_t) *C.char {
 		"config":    session.Config(),
 		"updatedAt": time.Now().UTC(),
 	})
+}
+
+//export ShurufaApplyAppRulesJSON
+func ShurufaApplyAppRulesJSON(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(applyAppRulesPayload(getSession(uint64(id)), req))
 }
 
 //export ShurufaResolveAppContextJSON
@@ -425,6 +454,12 @@ func ShurufaImportUserPhrasesJSON(id C.uint64_t, payload *C.char) *C.char {
 	})
 }
 
+//export ShurufaDeleteUserPhraseJSON
+func ShurufaDeleteUserPhraseJSON(id C.uint64_t, payload *C.char) *C.char {
+	result, _ := executeSessionExtensionCommand(getSession(uint64(id)), "delete-user-phrase", C.GoString(payload))
+	return jsonCString(result)
+}
+
 //export ShurufaImportUserRejectsJSON
 func ShurufaImportUserRejectsJSON(id C.uint64_t, payload *C.char) *C.char {
 	req, err := decodeExtensionCommandPayload(C.GoString(payload))
@@ -453,6 +488,12 @@ func ShurufaImportUserRejectsJSON(id C.uint64_t, payload *C.char) *C.char {
 	})
 }
 
+//export ShurufaDeleteUserRejectJSON
+func ShurufaDeleteUserRejectJSON(id C.uint64_t, payload *C.char) *C.char {
+	result, _ := executeSessionExtensionCommand(getSession(uint64(id)), "delete-user-reject", C.GoString(payload))
+	return jsonCString(result)
+}
+
 //export ShurufaImportUserPinsJSON
 func ShurufaImportUserPinsJSON(id C.uint64_t, payload *C.char) *C.char {
 	req, err := decodeExtensionCommandPayload(C.GoString(payload))
@@ -479,6 +520,12 @@ func ShurufaImportUserPinsJSON(id C.uint64_t, payload *C.char) *C.char {
 		"pins":      pins,
 		"updatedAt": time.Now().UTC(),
 	})
+}
+
+//export ShurufaDeleteUserPinJSON
+func ShurufaDeleteUserPinJSON(id C.uint64_t, payload *C.char) *C.char {
+	result, _ := executeSessionExtensionCommand(getSession(uint64(id)), "delete-user-pin", C.GoString(payload))
+	return jsonCString(result)
 }
 
 //export ShurufaCommitText

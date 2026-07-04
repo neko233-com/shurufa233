@@ -46,7 +46,9 @@ var abiFeatureList = []string{
 	"rime-switches-json",
 	"rime-recognizer-patterns-json",
 	"app-context-rules-json",
+	"apply-app-rules-json",
 	"profile-bundle-json",
+	"user-data-delete-json",
 	"key-event-json",
 }
 
@@ -180,6 +182,7 @@ type extensionCommandPayload struct {
 	Query        string             `json:"query,omitempty"`
 	Config       *engine.Config     `json:"config,omitempty"`
 	AppContext   *engine.AppContext `json:"appContext,omitempty"`
+	Rules        []engine.AppRule   `json:"rules,omitempty"`
 	UserScores   map[string]int     `json:"userScores,omitempty"`
 	Scores       map[string]int     `json:"scores,omitempty"`
 	Entries      []engine.Entry     `json:"entries,omitempty"`
@@ -293,6 +296,28 @@ func applyRimeCustomPayload(session *engine.Engine, payload string) any {
 	result.Config = config
 	result.Schema = config.Schema
 	return result
+}
+
+func applyAppRulesPayload(session *engine.Engine, req extensionCommandPayload) map[string]any {
+	config := session.Config()
+	config.AppRules = req.Rules
+	config = normalizeConfig(config)
+	session.Configure(config)
+	persisted := true
+	var persistError string
+	if err := persistConfig(config); err != nil {
+		persisted = false
+		persistError = err.Error()
+	}
+	return map[string]any{
+		"ok":              true,
+		"rules":           engine.NormalizeAppRules(config.AppRules),
+		"config":          config,
+		"persisted":       persisted,
+		"persistError":    persistError,
+		"sessionsUpdated": 1,
+		"updatedAt":       time.Now().UTC(),
+	}
 }
 
 func decodeRimeCustomText(payload string) (string, error) {
@@ -1187,6 +1212,8 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"config":    session.Config(),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
+	case "apply-app-rules-json", "put-app-rules-json", "set-app-rules-json":
+		return applyAppRulesPayload(session, req), true
 	case "resolve-app-context-json", "app-context-json", "app-context":
 		context := engine.AppContext{}
 		if req.AppContext != nil {
