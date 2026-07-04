@@ -41,6 +41,7 @@ using CandidateCountFn = int (*)(uint64_t);
 using CandidateTextFn = char *(*)(uint64_t, int);
 using CandidateReadingFn = char *(*)(uint64_t, int);
 using CandidateScoreFn = int (*)(uint64_t, int);
+using CandidatePayloadFn = char *(*)(uint64_t, int);
 using ClearSessionFn = char *(*)(uint64_t);
 using CommitCandidateFn = char *(*)(uint64_t, int);
 using FreeFn = void (*)(char *);
@@ -56,6 +57,7 @@ struct CoreApi {
   CandidateTextFn candidateText = nullptr;
   CandidateReadingFn candidateReading = nullptr;
   CandidateScoreFn candidateScore = nullptr;
+  CandidatePayloadFn candidatePayload = nullptr;
   ClearSessionFn clearSession = nullptr;
   CommitCandidateFn commitCandidate = nullptr;
   FreeFn freeValue = nullptr;
@@ -119,6 +121,13 @@ std::wstring ModuleDir() {
     *(slash + 1) = L'\0';
   }
   return modulePath;
+}
+
+std::wstring ModuleFileName() {
+  wchar_t modulePath[MAX_PATH]{};
+  GetModuleFileNameW(g_instance, modulePath, ARRAYSIZE(modulePath));
+  const wchar_t *slash = wcsrchr(modulePath, L'\\');
+  return slash ? std::wstring(slash + 1) : std::wstring(modulePath);
 }
 
 bool EnsureHttpHandles() {
@@ -267,14 +276,30 @@ bool TryLoadInProcessCore() {
     return true;
   }
 
-  std::wstring corePath = ModuleDir() + L"shurufa_core.dll";
-  HMODULE module = LoadLibraryW(corePath.c_str());
-  if (!module) {
+  std::vector<std::wstring> corePaths;
+  const std::wstring moduleDir = ModuleDir();
+  const std::wstring moduleName = ModuleFileName();
+  constexpr wchar_t tsfPrefix[] = L"Shurufa233Tsf-";
+  if (moduleName.rfind(tsfPrefix, 0) == 0 && moduleName.size() > wcslen(tsfPrefix)) {
+    corePaths.push_back(moduleDir + L"shurufa_core-" + moduleName.substr(wcslen(tsfPrefix)));
+  }
+  corePaths.push_back(moduleDir + L"shurufa_core.dll");
+
+  HMODULE module = nullptr;
+  std::wstring loadedPath;
+  for (const std::wstring &corePath : corePaths) {
+    module = LoadLibraryW(corePath.c_str());
+    if (module) {
+      loadedPath = corePath;
+      break;
+    }
     wchar_t message[256]{};
     StringCchPrintfW(message, ARRAYSIZE(message),
                      L"In-process core unavailable error=%lu path=%s",
                      GetLastError(), corePath.c_str());
     LogLine(message);
+  }
+  if (!module) {
     return false;
   }
 
@@ -289,6 +314,7 @@ bool TryLoadInProcessCore() {
   api.candidateText = LoadCoreProc<CandidateTextFn>(module, "ShurufaCandidateText");
   api.candidateReading = LoadCoreProc<CandidateReadingFn>(module, "ShurufaCandidateReading");
   api.candidateScore = LoadCoreProc<CandidateScoreFn>(module, "ShurufaCandidateScore");
+  api.candidatePayload = LoadCoreProc<CandidatePayloadFn>(module, "ShurufaCandidatePayload");
   api.clearSession = LoadCoreProc<ClearSessionFn>(module, "ShurufaClear");
   api.commitCandidate = LoadCoreProc<CommitCandidateFn>(module, "ShurufaCommitCandidate");
   api.freeValue = LoadCoreProc<FreeFn>(module, "ShurufaFree");
@@ -300,7 +326,10 @@ bool TryLoadInProcessCore() {
 
   g_coreModule = module;
   g_core = api;
-  LogLine(L"In-process Go core loaded");
+  wchar_t message[256]{};
+  StringCchPrintfW(message, ARRAYSIZE(message), L"In-process Go core loaded path=%s",
+                   loadedPath.c_str());
+  LogLine(message);
   return true;
 }
 
@@ -315,6 +344,7 @@ void UseHttpCoreFallback() {
   g_core.candidateText = HttpCandidateText;
   g_core.candidateReading = HttpCandidateReading;
   g_core.candidateScore = HttpCandidateScore;
+  g_core.candidatePayload = nullptr;
   g_core.clearSession = HttpClearSessionValue;
   g_core.commitCandidate = HttpCommitCandidate;
   g_core.freeValue = HttpFree;
@@ -1007,6 +1037,17 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
   std::string BuildCandidatePayloadFromCore(int count) {
+    if (g_core.candidatePayload) {
+      char *payload = g_core.candidatePayload(session_, min(count, 9));
+      std::string result = payload ? payload : "";
+      if (payload) {
+        g_core.freeValue(payload);
+      }
+      if (!result.empty()) {
+        return result;
+      }
+    }
+
     std::string payload;
     for (int i = 0; i < count && i < 9; ++i) {
       char *text = g_core.candidateText(session_, i);

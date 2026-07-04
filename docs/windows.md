@@ -53,6 +53,7 @@ The installer:
 - sets it as the default input method override
 - starts `ctfmon.exe`
 - registers a versioned TSF DLL path so loaded DLLs do not block updates
+- installs a matching versioned `shurufa_core-<arch>-<stamp>.dll` beside the TSF DLL so the in-process core can update even when the legacy `shurufa_core.dll` is locked
 - activates the profile for the current session with `ITfInputProcessorProfileMgr::ActivateProfile`
 - saves the pre-install input method list to `%APPDATA%\shurufa233\input-method-backup.json` if no backup exists yet
 

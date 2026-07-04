@@ -33,3 +33,23 @@ Example response:
   "updatedAt": "2026-07-04T00:00:00Z"
 }
 ```
+
+## Hot Path
+
+Windows TSF uses compact non-JSON calls on the per-key path:
+
+```c
+int ShurufaInputKeyFast(uint64_t session, char key);
+int ShurufaBackspaceFast(uint64_t session);
+int ShurufaCandidateCount(uint64_t session);
+char* ShurufaCandidatePayload(uint64_t session, int limit);
+char* ShurufaCommitCandidate(uint64_t session, int index);
+```
+
+`ShurufaCandidatePayload` returns up to `limit` UTF-8 rows separated by `\n`. Each row is:
+
+```text
+display_index<TAB>text<TAB>reading<TAB>score
+```
+
+The Windows glue calls `ShurufaFree` after copying the returned payload. Older per-candidate getters remain available as a compatibility fallback.

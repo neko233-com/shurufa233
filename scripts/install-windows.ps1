@@ -96,17 +96,18 @@ if (-not $RegisterOnly) {
   }
   Copy-Item -Force $DaemonSource (Join-Path $InstallDir "shurufa-daemon.exe")
   Copy-Item -Force $CliSource (Join-Path $InstallDir "shurufa-imecli.exe")
+  $stamp = Get-Date -Format "yyyyMMddHHmmss"
+  $TsfDll = Join-Path $InstallDir "Shurufa233Tsf-$NativeArch-$stamp.dll"
+  Copy-Item -Force $TsfSource $TsfDll
   if (Test-Path $CoreSource) {
-    $LocalCoreDll = Join-Path $InstallDir "shurufa_core.dll"
+    $LocalCoreDll = Join-Path $InstallDir "shurufa_core-$NativeArch-$stamp.dll"
     Copy-Item -Force $CoreSource $LocalCoreDll
+    Copy-Item -Force $CoreSource (Join-Path $InstallDir "shurufa_core.dll")
   } else {
     Remove-Item -Force (Join-Path $InstallDir "shurufa_core.dll") -ErrorAction SilentlyContinue
     Write-Warning "shurufa_core.dll was not found for $GoArch; TSF will use daemon IPC fallback."
   }
   Copy-Item -Force $ProfileCtlSource (Join-Path $InstallDir "Shurufa233ProfileCtl.exe")
-  $stamp = Get-Date -Format "yyyyMMddHHmmss"
-  $TsfDll = Join-Path $InstallDir "Shurufa233Tsf-$NativeArch-$stamp.dll"
-  Copy-Item -Force $TsfSource $TsfDll
 } else {
   $TsfDll = $TsfDllPath
   if ($CoreDllPath) {
@@ -136,7 +137,10 @@ if (-not (Test-IsAdmin)) {
   if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
     $args += @("-CoreDllPath", "`"$LocalCoreDll`"")
   }
-  Start-Process -FilePath "powershell.exe" -ArgumentList $args -Verb RunAs -Wait
+  $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $args -Verb RunAs -Wait -PassThru
+  if ($proc.ExitCode -ne 0) {
+    Write-Warning "Elevated TSF registration exited with code $($proc.ExitCode); verifying HKLM registration before failing."
+  }
   $ExpectedRegisteredTsfDll = Join-Path $NativeInstallDir (Split-Path $TsfDll -Leaf)
   $RegisteredComPath = (Get-ItemProperty "HKLM:\Software\Classes\CLSID\{3D7B8D06-9872-4C31-B77D-3B87327CBF64}\InprocServer32")."(default)"
   if ($RegisteredComPath -ne $ExpectedRegisteredTsfDll) {
@@ -148,12 +152,24 @@ if (-not (Test-IsAdmin)) {
       throw "TSF registration did not update HKLM. Expected $ExpectedRegisteredTsfDll but found $RegisteredComPath"
     }
   }
+  if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
+    $ExpectedCoreDll = Join-Path $NativeInstallDir (Split-Path $LocalCoreDll -Leaf)
+    if (-not (Test-Path $ExpectedCoreDll)) {
+      throw "Versioned core DLL was not installed to $ExpectedCoreDll"
+    }
+    $sourceHash = (Get-FileHash $LocalCoreDll -Algorithm SHA256).Hash
+    $installedHash = (Get-FileHash $ExpectedCoreDll -Algorithm SHA256).Hash
+    if ($sourceHash -ne $installedHash) {
+      throw "Versioned core DLL hash mismatch. Expected $sourceHash but found $installedHash at $ExpectedCoreDll"
+    }
+  }
 } else {
   New-Item -ItemType Directory -Force $NativeInstallDir | Out-Null
   $RegisteredTsfDll = Join-Path $NativeInstallDir (Split-Path $TsfDll -Leaf)
   Copy-Item -Force $TsfDll $RegisteredTsfDll
   if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
-    Copy-Item -Force $LocalCoreDll (Join-Path $NativeInstallDir "shurufa_core.dll")
+    Copy-Item -Force $LocalCoreDll (Join-Path $NativeInstallDir (Split-Path $LocalCoreDll -Leaf))
+    Copy-Item -Force $LocalCoreDll (Join-Path $NativeInstallDir "shurufa_core.dll") -ErrorAction SilentlyContinue
   } else {
     Remove-Item -Force (Join-Path $NativeInstallDir "shurufa_core.dll") -ErrorAction SilentlyContinue
   }
@@ -169,6 +185,11 @@ if (-not $RegisterOnly) {
 
   Get-ChildItem $InstallDir -Filter "Shurufa233Tsf-*.dll" -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -ne $TsfDll } |
+    ForEach-Object {
+      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {}
+    }
+  Get-ChildItem $InstallDir -Filter "shurufa_core-*.dll" -ErrorAction SilentlyContinue |
+    Where-Object { -not $LocalCoreDll -or $_.FullName -ne $LocalCoreDll } |
     ForEach-Object {
       try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {}
     }

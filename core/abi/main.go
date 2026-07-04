@@ -8,6 +8,8 @@ import "C"
 
 import (
 	"encoding/json"
+	"strconv"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -118,6 +120,34 @@ func ShurufaCandidateScore(id C.uint64_t, index C.int) C.int {
 	return C.int(candidates[i].Weight + candidates[i].UserScore)
 }
 
+//export ShurufaCandidatePayload
+func ShurufaCandidatePayload(id C.uint64_t, limit C.int) *C.char {
+	session := getSession(uint64(id))
+	candidates := session.State().Candidates
+	maxItems := int(limit)
+	if maxItems <= 0 || maxItems > 9 {
+		maxItems = 9
+	}
+	if len(candidates) < maxItems {
+		maxItems = len(candidates)
+	}
+	var out strings.Builder
+	for i := 0; i < maxItems; i++ {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		candidate := candidates[i]
+		out.WriteString(strconv.Itoa(i + 1))
+		out.WriteByte('\t')
+		out.WriteString(sanitizePayloadField(candidate.Text))
+		out.WriteByte('\t')
+		out.WriteString(sanitizePayloadField(candidate.Reading))
+		out.WriteByte('\t')
+		out.WriteString(strconv.Itoa(candidate.Weight + candidate.UserScore))
+	}
+	return C.CString(out.String())
+}
+
 //export ShurufaCommitCandidate
 func ShurufaCommitCandidate(id C.uint64_t, index C.int) *C.char {
 	session := getSession(uint64(id))
@@ -160,4 +190,11 @@ func jsonCString(value any) *C.char {
 		return C.CString(`{"error":"json marshal failed"}`)
 	}
 	return C.CString(string(data))
+}
+
+func sanitizePayloadField(value string) string {
+	value = strings.ReplaceAll(value, "\t", " ")
+	value = strings.ReplaceAll(value, "\r", " ")
+	value = strings.ReplaceAll(value, "\n", " ")
+	return value
 }
