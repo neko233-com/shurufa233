@@ -169,7 +169,7 @@ Local TSF diagnostics are written to:
 
 Native packages include `Shurufa233SmokeEdit.exe`. It is a polished Win32 EDIT-based performance lab rather than a React surface, because it validates the real TSF path used by native Windows apps and latency-sensitive games. It tracks WPM, key events per second, average key-to-text-change latency, IME composition activity, and committed character count.
 
-The React/Vite app remains the cross-platform settings surface. Browser/React typing tests can be added later as a separate compatibility target, but they do not replace the native SmokeEdit path.
+The React/Vite settings app also includes an esports-style typing lab for the browser/settings-panel path. It tracks WPM, CPM, input event rate, average key-to-input latency when key events are available, accuracy, and IME composition activity. This React lab is useful for UI and Wails-hosted settings validation, while `Shurufa233SmokeEdit.exe` remains the authoritative native TSF validation target.
 
 ## Agent Input Mode
 

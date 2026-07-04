@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BookOpen,
@@ -12,6 +12,8 @@ import {
   Sparkles,
   Languages,
   RefreshCw,
+  Gauge,
+  Target,
 } from "lucide-react";
 import "./styles.css";
 
@@ -66,6 +68,26 @@ type SkinPreset = {
   id: string;
   name: string;
   skin: Skin;
+};
+
+type TypingPrompt = {
+  id: string;
+  name: string;
+  text: string;
+};
+
+type TypingMetrics = {
+  elapsedMs: number;
+  wpm: number;
+  cpm: number;
+  keysPerSecond: number;
+  avgLatencyMs: number;
+  accuracy: number;
+  keyCount: number;
+  changes: number;
+  errors: number;
+  composing: boolean;
+  compositions: number;
 };
 
 const apiBase = "http://127.0.0.1:23333";
@@ -156,6 +178,62 @@ const skinPresets: SkinPreset[] = [
   },
 ];
 
+const typingPrompts: TypingPrompt[] = [
+  {
+    id: "pinyin-rhythm",
+    name: "拼音节奏",
+    text: "shurufa233 ganjing qingkuai xiang weixin shurufa yiyang shunshou",
+  },
+  {
+    id: "zh-commit",
+    name: "中文上屏",
+    text: "输入法要干净、顺手、低延迟，候选窗清楚好看。",
+  },
+  {
+    id: "esports",
+    name: "电竞短句",
+    text: "flash mid peek left hold angle reset tap strafe confirm",
+  },
+];
+
+const defaultTypingMetrics: TypingMetrics = {
+  elapsedMs: 0,
+  wpm: 0,
+  cpm: 0,
+  keysPerSecond: 0,
+  avgLatencyMs: 0,
+  accuracy: 100,
+  keyCount: 0,
+  changes: 0,
+  errors: 0,
+  composing: false,
+  compositions: 0,
+};
+
+function createTypingStats() {
+  return {
+    startedAt: 0,
+    lastKeyAt: 0,
+    keyCount: 0,
+    changes: 0,
+    latencyTotalMs: 0,
+    latencySamples: 0,
+    compositions: 0,
+    composing: false,
+  };
+}
+
+function countTypingErrors(input: string, target: string) {
+  let errors = Math.max(0, input.length - target.length);
+  const compareLength = Math.min(input.length, target.length);
+  for (let index = 0; index < compareLength; index += 1) {
+    if (input[index] !== target[index]) {
+      errors += 1;
+    }
+  }
+  return errors;
+}
+
 function App() {
   const [config, setConfig] = useState<Config>(defaultConfig);
   const [preview, setPreview] = useState("nihao");
@@ -163,6 +241,10 @@ function App() {
   const [status, setStatus] = useState<"loading" | "ready" | "offline" | "saved">("loading");
   const [updateText, setUpdateText] = useState("未检查");
   const [error, setError] = useState("");
+  const [typingPromptId, setTypingPromptId] = useState(typingPrompts[0].id);
+  const [typingText, setTypingText] = useState("");
+  const [typingMetrics, setTypingMetrics] = useState<TypingMetrics>(defaultTypingMetrics);
+  const typingStatsRef = useRef(createTypingStats());
 
   useEffect(() => {
     void loadConfig();
@@ -174,6 +256,10 @@ function App() {
   }, [preview]);
 
   const candidateCount = state?.candidates?.length ?? 0;
+  const typingPrompt = useMemo(
+    () => typingPrompts.find((prompt) => prompt.id === typingPromptId) ?? typingPrompts[0],
+    [typingPromptId],
+  );
   const accentStyle = useMemo(() => ({ "--accent": config.skin.accent }) as React.CSSProperties, [config.skin.accent]);
   const candidateBarStyle = useMemo(
     () =>
@@ -190,6 +276,86 @@ function App() {
     [config.skin],
   );
   const previewCandidates = (state?.candidates ?? []).slice(0, 7);
+
+  const refreshTypingMetrics = useCallback(
+    (input: string) => {
+      const stats = typingStatsRef.current;
+      const now = performance.now();
+      const elapsedMs = stats.startedAt > 0 ? Math.max(1, now - stats.startedAt) : 0;
+      const elapsedMinutes = elapsedMs > 0 ? elapsedMs / 60000 : 0;
+      const errors = countTypingErrors(input, typingPrompt.text);
+      const accuracy = input.length > 0 ? Math.max(0, ((input.length - errors) / input.length) * 100) : 100;
+      const activityEvents = Math.max(stats.keyCount, stats.changes);
+      setTypingMetrics({
+        elapsedMs,
+        wpm: elapsedMinutes > 0 ? input.length / 5 / elapsedMinutes : 0,
+        cpm: elapsedMinutes > 0 ? input.length / elapsedMinutes : 0,
+        keysPerSecond: elapsedMs > 0 ? activityEvents / (elapsedMs / 1000) : 0,
+        avgLatencyMs: stats.latencySamples > 0 ? stats.latencyTotalMs / stats.latencySamples : 0,
+        accuracy,
+        keyCount: stats.keyCount,
+        changes: stats.changes,
+        errors,
+        composing: stats.composing,
+        compositions: stats.compositions,
+      });
+    },
+    [typingPrompt.text],
+  );
+
+  const resetTypingLab = useCallback(() => {
+    typingStatsRef.current = createTypingStats();
+    setTypingText("");
+    setTypingMetrics(defaultTypingMetrics);
+  }, []);
+
+  const handleTypingKeyDown = useCallback(() => {
+    const stats = typingStatsRef.current;
+    if (stats.startedAt === 0) {
+      stats.startedAt = performance.now();
+    }
+    stats.keyCount += 1;
+    stats.lastKeyAt = performance.now();
+  }, []);
+
+  const handleTypingChange = useCallback(
+    (value: string) => {
+      const stats = typingStatsRef.current;
+      if (stats.startedAt === 0) {
+        stats.startedAt = performance.now();
+      }
+      stats.changes += 1;
+      if (stats.lastKeyAt > 0) {
+        const latency = performance.now() - stats.lastKeyAt;
+        if (latency >= 0 && latency < 1000) {
+          stats.latencyTotalMs += latency;
+          stats.latencySamples += 1;
+        }
+      }
+      setTypingText(value);
+      refreshTypingMetrics(value);
+    },
+    [refreshTypingMetrics],
+  );
+
+  const handleCompositionStart = useCallback(() => {
+    const stats = typingStatsRef.current;
+    stats.composing = true;
+    stats.compositions += 1;
+    refreshTypingMetrics(typingText);
+  }, [refreshTypingMetrics, typingText]);
+
+  const handleCompositionEnd = useCallback(() => {
+    typingStatsRef.current.composing = false;
+    refreshTypingMetrics(typingText);
+  }, [refreshTypingMetrics, typingText]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      refreshTypingMetrics(typingText);
+    }, 120);
+    return () => window.clearInterval(interval);
+  }, [refreshTypingMetrics, typingText]);
 
   async function loadConfig() {
     try {
@@ -267,6 +433,7 @@ function App() {
           <a><Palette size={18} /> 候选栏</a>
           <a><BookOpen size={18} /> 词库</a>
           <a><Languages size={18} /> 中英切换</a>
+          <a><Gauge size={18} /> 性能</a>
           <a><Sparkles size={18} /> 更新</a>
         </nav>
       </aside>
@@ -554,10 +721,87 @@ function App() {
               </div>
             </div>
           </section>
+
+          <section className="panel typingLabPanel">
+            <div className="panelHeader">
+              <div>
+                <h2>电竞打字性能实验室</h2>
+                <span>React 输入路径 + 原生 SmokeEdit 双轨验证</span>
+              </div>
+              <button className="secondary" onClick={resetTypingLab}>
+                <RotateCcw size={18} />
+                重置
+              </button>
+            </div>
+
+            <div className="promptTabs">
+              {typingPrompts.map((prompt) => (
+                <button
+                  key={prompt.id}
+                  className={prompt.id === typingPrompt.id ? "selected" : ""}
+                  onClick={() => {
+                    setTypingPromptId(prompt.id);
+                    resetTypingLab();
+                  }}
+                >
+                  {prompt.name}
+                </button>
+              ))}
+            </div>
+
+            <div className="typingArena">
+              <div className="targetLine">
+                <Target size={18} />
+                <span>{typingPrompt.text}</span>
+              </div>
+              <textarea
+                value={typingText}
+                spellCheck={false}
+                onKeyDown={handleTypingKeyDown}
+                onChange={(event) => handleTypingChange(event.target.value)}
+                onCompositionStart={handleCompositionStart}
+                onCompositionEnd={handleCompositionEnd}
+                placeholder="在这里输入上方文本，测试键盘、候选选择、上屏和节奏..."
+              />
+            </div>
+
+            <div className="metricsGrid">
+              <Metric label="WPM" value={typingMetrics.wpm.toFixed(1)} />
+              <Metric label="CPM" value={typingMetrics.cpm.toFixed(0)} />
+              <Metric label="Events/s" value={typingMetrics.keysPerSecond.toFixed(1)} />
+              <Metric label="Avg latency" value={`${typingMetrics.avgLatencyMs.toFixed(1)} ms`} />
+              <Metric label="Accuracy" value={`${typingMetrics.accuracy.toFixed(1)}%`} />
+              <Metric label="IME" value={typingMetrics.composing ? "Composing" : "Idle"} />
+            </div>
+
+            <div className="labFooter">
+              <span>{formatDuration(typingMetrics.elapsedMs)}</span>
+              <span>{typingMetrics.keyCount} keys</span>
+              <span>{typingMetrics.changes} changes</span>
+              <span>{typingMetrics.compositions} compositions</span>
+              <span>{typingMetrics.errors} errors</span>
+            </div>
+          </section>
         </div>
       </section>
     </main>
   );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function formatDuration(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
 }
 
 function statusLabel(status: "loading" | "ready" | "offline" | "saved") {

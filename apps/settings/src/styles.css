@@ -179,6 +179,10 @@ h2 {
   grid-column: 1 / -1;
 }
 
+.typingLabPanel {
+  grid-column: 1 / -1;
+}
+
 .panelHeader {
   display: flex;
   align-items: start;
@@ -201,18 +205,24 @@ h2 {
 }
 
 .field input,
-.field select {
+.field select,
+.typingArena textarea {
   width: 100%;
-  min-height: 38px;
   border: 1px solid #d1d5db;
   border-radius: 8px;
-  padding: 0 11px;
   color: #111827;
   background: #ffffff;
 }
 
+.field input,
+.field select {
+  min-height: 38px;
+  padding: 0 11px;
+}
+
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.typingArena textarea:focus {
   outline: 2px solid color-mix(in srgb, var(--accent), transparent 72%);
   border-color: var(--accent);
 }
@@ -518,6 +528,118 @@ h2 {
   padding-left: 14px;
 }
 
+.promptTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.promptTabs button {
+  min-height: 34px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
+.promptTabs button.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent), #ffffff 90%);
+  color: var(--accent);
+}
+
+.typingArena {
+  display: grid;
+  gap: 10px;
+}
+
+.targetLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #1f2937;
+  padding: 0 12px;
+}
+
+.targetLine svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.targetLine span {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.typingArena textarea {
+  min-height: 144px;
+  resize: vertical;
+  padding: 14px;
+  line-height: 1.65;
+  font-size: 18px;
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(116px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.metric {
+  min-width: 0;
+  min-height: 70px;
+  border: 1px solid #e1e7f0;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 11px 12px;
+}
+
+.metric span,
+.labFooter span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.metric strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 8px;
+  color: #111827;
+  font-size: 20px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.labFooter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.labFooter span {
+  min-height: 28px;
+  border: 1px solid #e1e7f0;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 6px 9px;
+}
+
 @media (max-width: 840px) {
   .app {
     grid-template-columns: 1fr;
@@ -532,7 +654,7 @@ h2 {
   }
 
   nav {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   nav a {
@@ -559,5 +681,13 @@ h2 {
 
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .metricsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .targetLine span {
+    white-space: normal;
   }
 }
