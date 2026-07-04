@@ -1147,6 +1147,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	}
 	config.Mode = normalizeModeValue(config.Mode, defaults.Mode)
 	config.Punctuation = normalizePunctuationValue(config.Punctuation, defaults.Punctuation)
+	config.DoublePinyinScheme = normalizeDoublePinyinSchemeValue(config.DoublePinyinScheme, defaults.DoublePinyinScheme)
 	if config.Skin.FontFamily == "" {
 		config.Skin = defaults.Skin
 	}
@@ -1217,6 +1218,20 @@ func normalizePunctuationValue(mode string, fallback string) string {
 	default:
 		if fallback == "" {
 			return "full"
+		}
+		return fallback
+	}
+}
+
+func normalizeDoublePinyinSchemeValue(scheme string, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(scheme)) {
+	case "", "xiaohe", "flypy":
+		return "xiaohe"
+	case "microsoft", "ms", "sogou":
+		return "microsoft"
+	default:
+		if fallback == "" {
+			return "xiaohe"
 		}
 		return fallback
 	}

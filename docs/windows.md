@@ -202,10 +202,11 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 - the Go session state exposes the normalized `zh`/`en` mode, the daemon mirrors it through `GET/POST /ime/mode`, and the Windows TSF Shift toggle synchronizes that session state before showing `EN` or `中`
 - `Ctrl`/`Alt` shortcuts are passed through to the host app
 - configured fuzzy initials such as `zh=z`, `ch=c`, and `sh=s` are handled in the Go core with exact pinyin candidates kept ahead of fuzzy matches
-- when double pinyin is enabled, the Go core decodes the Xiaohe layout while keeping full-pinyin fallback available
+- when double pinyin is enabled, the Go core decodes the configured `doublePinyinScheme` (`xiaohe` or `microsoft`) while keeping full-pinyin fallback available; old configs with only `doublePinyin=true` use Xiaohe
+- in Microsoft double pinyin mode, the native TSF layer treats `;` as the `ing` final and sends it to the Go core instead of using it as the second-candidate shortcut
 - short initial input such as `nh`, `wx`, `srf`, and `zgr` is handled by the Go core abbreviation index, with exact full-pinyin candidates still kept ahead
 - full-sentence input can fall back to a scored segmenter that chooses the best dictionary path, including user-learned word scores, instead of the first greedy split, while strong exact phrases still stay ahead
-- space, enter, main-row or numpad number keys, semicolon, apostrophe, brackets, page up/down, home/end, `-`, and `=` operate the visible candidate page
+- space, enter, main-row or numpad number keys, semicolon outside Microsoft double pinyin, apostrophe, brackets, page up/down, home/end, `-`, and `=` operate the visible candidate page
 - Chinese punctuation commits the selected candidate first, then inserts the punctuation; default `punctuation=full` maps common shifted punctuation such as `!`, `^`, `(`, `)`, and `-` to `！`, `……`, `（`, `）`, and `——`, while quote keys alternate paired Chinese quotes `“”` and `‘’`
 - when `punctuation=half`, punctuation keys use ASCII punctuation; if a candidate or raw pinyin buffer is active, TSF still commits that text first and then appends the half-width punctuation
 - if a raw letter buffer has no candidates, space, enter, or Chinese punctuation commits the raw letters instead of dropping the buffer

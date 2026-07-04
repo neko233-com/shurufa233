@@ -50,6 +50,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	if config.Mode == "" {
 		config.Mode = engine.DefaultConfig().Mode
 	}
+	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	switch strings.ToLower(strings.TrimSpace(config.Punctuation)) {
 	case "half":
 		config.Punctuation = "half"
@@ -57,4 +58,15 @@ func normalizeConfig(config engine.Config) engine.Config {
 		config.Punctuation = engine.DefaultConfig().Punctuation
 	}
 	return config
+}
+
+func normalizeDoublePinyinScheme(scheme string) string {
+	switch strings.ToLower(strings.TrimSpace(scheme)) {
+	case "", "xiaohe", "flypy":
+		return "xiaohe"
+	case "microsoft", "ms", "sogou":
+		return "microsoft"
+	default:
+		return "xiaohe"
+	}
 }

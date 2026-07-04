@@ -2,6 +2,7 @@
   "maxCandidates": 42,
   "fuzzyInitials": ["zh=z", "ch=c", "sh=s"],
   "doublePinyin": false,
+  "doublePinyinScheme": "xiaohe",
   "language": "zh-CN",
   "mode": "zh",
   "punctuation": "full",

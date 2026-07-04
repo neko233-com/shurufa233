@@ -1746,7 +1746,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     clientId_ = clientId;
     session_ = g_core.createSession();
     RefreshAsciiModeFromCore();
-    RefreshPunctuationModeFromConfig();
+    RefreshTypingConfigFromConfig();
 
     HRESULT hr = threadMgr_->QueryInterface(IID_ITfKeystrokeMgr, reinterpret_cast<void **>(&keyMgr_));
     if (SUCCEEDED(hr) && keyMgr_) {
@@ -1798,7 +1798,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (shiftDown_ && !IsShiftKey(key)) {
       shiftToggleCandidate_ = false;
     }
-    RefreshPunctuationModeFromConfig();
+    RefreshTypingConfigFromConfig();
     *eaten = ShouldEatKey(key);
     return S_OK;
   }
@@ -1811,7 +1811,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (HasSystemModifier()) {
       return S_OK;
     }
-    RefreshPunctuationModeFromConfig();
+    RefreshTypingConfigFromConfig();
     if (!session_ || !ShouldEatKey(key)) {
       return S_OK;
     }
@@ -1840,6 +1840,17 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       compositionLength_++;
       rawBuffer_.push_back(ch);
       const int count = g_core.inputKeyFast(session_, ch);
+      UpdateCandidateWindow(count);
+      *eaten = TRUE;
+      return S_OK;
+    }
+
+    if (IsMicrosoftDoublePinyinSemicolonKey(key)) {
+      selectedIndex_ = 0;
+      pageOffset_ = 0;
+      compositionLength_++;
+      rawBuffer_.push_back(';');
+      const int count = g_core.inputKeyFast(session_, ';');
       UpdateCandidateWindow(count);
       *eaten = TRUE;
       return S_OK;
@@ -2045,6 +2056,10 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
   }
 
+  bool IsMicrosoftDoublePinyinSemicolonKey(WPARAM key) const {
+    return !asciiMode_ && microsoftDoublePinyin_ && (key == VK_OEM_1 || key == L';');
+  }
+
   bool ShouldEatKey(WPARAM key) const {
     if (!session_) {
       return false;
@@ -2059,6 +2074,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return cachedCandidateCount_ > 0 && (key == VK_ESCAPE || key == VK_SPACE || key == VK_RETURN);
     }
     if (IsAsciiLetter(key)) {
+      return true;
+    }
+    if (IsMicrosoftDoublePinyinSemicolonKey(key)) {
       return true;
     }
     if (key == VK_BACK) {
@@ -2486,10 +2504,29 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     return "";
   }
 
-  void RefreshPunctuationModeFromConfig() {
+  static bool JsonConfigBoolField(const std::string &json, const char *field) {
+    const std::string key = std::string("\"") + field + "\"";
+    const size_t keyPos = json.find(key);
+    if (keyPos == std::string::npos) {
+      return false;
+    }
+    const size_t colon = json.find(':', keyPos + key.size());
+    if (colon == std::string::npos) {
+      return false;
+    }
+    size_t pos = colon + 1;
+    while (pos < json.size() && isspace(static_cast<unsigned char>(json[pos]))) {
+      ++pos;
+    }
+    return json.compare(pos, 4, "true") == 0;
+  }
+
+  void RefreshTypingConfigFromConfig() {
     const std::wstring path = ConfigPath();
     if (path.empty()) {
       punctuationFullWidth_ = true;
+      doublePinyinEnabled_ = false;
+      microsoftDoublePinyin_ = false;
       return;
     }
     const DWORD now = GetTickCount();
@@ -2500,6 +2537,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     WIN32_FILE_ATTRIBUTE_DATA attrs{};
     if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attrs)) {
       punctuationFullWidth_ = true;
+      doublePinyinEnabled_ = false;
+      microsoftDoublePinyin_ = false;
       return;
     }
     if (hasConfigWriteTime_ && SameConfigFileTime(lastConfigWriteTime_, attrs.ftLastWriteTime)) {
@@ -2508,10 +2547,16 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     const std::string json = ReadConfigUtf8File(path);
     if (json.empty()) {
       punctuationFullWidth_ = true;
+      doublePinyinEnabled_ = false;
+      microsoftDoublePinyin_ = false;
       return;
     }
     const std::string punctuation = JsonConfigStringField(json, "punctuation");
     punctuationFullWidth_ = punctuation != "half";
+    doublePinyinEnabled_ = JsonConfigBoolField(json, "doublePinyin");
+    const std::string scheme = JsonConfigStringField(json, "doublePinyinScheme");
+    microsoftDoublePinyin_ = doublePinyinEnabled_ &&
+                             (scheme == "microsoft" || scheme == "ms" || scheme == "sogou");
     lastConfigWriteTime_ = attrs.ftLastWriteTime;
     hasConfigWriteTime_ = true;
   }
@@ -2569,6 +2614,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   bool doubleQuoteOpen_ = false;
   bool singleQuoteOpen_ = false;
   bool punctuationFullWidth_ = true;
+  bool doublePinyinEnabled_ = false;
+  bool microsoftDoublePinyin_ = false;
   std::wstring configPath_;
   bool configPathResolved_ = false;
   DWORD lastLocalConfigCheckTick_ = 0;

@@ -30,6 +30,12 @@ The settings UI uses this IPC directly in development. A Wails v3 shell can host
 ASCII punctuation while preserving candidate-first commit behavior during active
 composition.
 
+They also include `doublePinyin` and `doublePinyinScheme`. The scheme is
+normalized to `xiaohe` or `microsoft`; old configs with only
+`"doublePinyin": true` continue to use Xiaohe. The Microsoft scheme is kept
+explicit because its `;` key is an `ing` final, so native glue must treat it as
+input code instead of the second-candidate shortcut while that scheme is active.
+
 `GET /wordbook` returns learned user word scores. `PUT /wordbook` accepts
 `{"userScores":{"reading|text":1000},"merge":true}` for JSON import or
 replacement when `merge` is false. `DELETE /wordbook?key=reading%7Ctext` removes

@@ -255,6 +255,62 @@ func TestDoublePinyinXiaoheCandidates(t *testing.T) {
 	}
 }
 
+func TestDoublePinyinExplicitXiaoheSchemeCandidates(t *testing.T) {
+	config := DefaultConfig()
+	config.DoublePinyin = true
+	config.DoublePinyinScheme = "xiaohe"
+	e := New(config)
+
+	state := e.Preview("nihk")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "你好" {
+		t.Fatalf("expected explicit xiaohe double pinyin candidate, got %#v", state.Candidates)
+	}
+}
+
+func TestDoublePinyinMicrosoftCandidates(t *testing.T) {
+	config := DefaultConfig()
+	config.DoublePinyin = true
+	config.DoublePinyinScheme = "microsoft"
+	e := New(config)
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "nill", want: "你来"},
+		{input: "vswf", want: "中文"},
+		{input: "uuru", want: "输入法"},
+	}
+
+	e.AddEntries([]Entry{{Reading: "nilai", Text: "你来", Weight: 18000}})
+	for _, tt := range tests {
+		state := e.Preview(tt.input)
+		if len(state.Candidates) == 0 || state.Candidates[0].Text != tt.want {
+			t.Fatalf("expected microsoft double pinyin %q -> %q, got %#v", tt.input, tt.want, state.Candidates)
+		}
+	}
+}
+
+func TestDoublePinyinMicrosoftZeroInitialAndSemicolonFinal(t *testing.T) {
+	config := DefaultConfig()
+	config.DoublePinyin = true
+	config.DoublePinyinScheme = "microsoft"
+	e := New(config)
+	e.AddEntries([]Entry{
+		{Reading: "ai", Text: "哎", Weight: 12000},
+		{Reading: "ming", Text: "明", Weight: 12000},
+	})
+
+	state := e.Preview("ol")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "哎" {
+		t.Fatalf("expected microsoft zero-initial ol -> ai candidate, got %#v", state.Candidates)
+	}
+	state = e.Preview("m;")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "明" {
+		t.Fatalf("expected microsoft semicolon final m; -> ming candidate, got %#v", state.Candidates)
+	}
+}
+
 func TestDoublePinyinCanBeDisabled(t *testing.T) {
 	config := DefaultConfig()
 	config.DoublePinyin = false

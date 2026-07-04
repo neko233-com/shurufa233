@@ -161,6 +161,29 @@ func TestNormalizeConfigDefaultsInvalidPunctuation(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigKeepsMicrosoftDoublePinyinScheme(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.DoublePinyin = true
+	next.DoublePinyinScheme = " MS "
+
+	got := normalizeConfig(next)
+
+	if !got.DoublePinyin || got.DoublePinyinScheme != "microsoft" {
+		t.Fatalf("double pinyin config = enabled:%v scheme:%q, want microsoft", got.DoublePinyin, got.DoublePinyinScheme)
+	}
+}
+
+func TestNormalizeConfigDefaultsInvalidDoublePinyinScheme(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.DoublePinyinScheme = "broken"
+
+	got := normalizeConfig(next)
+
+	if got.DoublePinyinScheme != engine.DefaultConfig().DoublePinyinScheme {
+		t.Fatalf("doublePinyinScheme = %q, want %q", got.DoublePinyinScheme, engine.DefaultConfig().DoublePinyinScheme)
+	}
+}
+
 func TestImeCandidatesReturnsMetadataAndPagedRows(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.MaxCandidates = 42

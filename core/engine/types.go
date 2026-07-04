@@ -3,14 +3,15 @@ package engine
 import "time"
 
 type Config struct {
-	MaxCandidates int      `json:"maxCandidates"`
-	FuzzyInitials []string `json:"fuzzyInitials"`
-	DoublePinyin  bool     `json:"doublePinyin"`
-	Language      string   `json:"language"`
-	Mode          string   `json:"mode"`
-	Punctuation   string   `json:"punctuation"`
-	Skin          Skin     `json:"skin"`
-	Update        Update   `json:"update"`
+	MaxCandidates      int      `json:"maxCandidates"`
+	FuzzyInitials      []string `json:"fuzzyInitials"`
+	DoublePinyin       bool     `json:"doublePinyin"`
+	DoublePinyinScheme string   `json:"doublePinyinScheme"`
+	Language           string   `json:"language"`
+	Mode               string   `json:"mode"`
+	Punctuation        string   `json:"punctuation"`
+	Skin               Skin     `json:"skin"`
+	Update             Update   `json:"update"`
 }
 
 type Skin struct {

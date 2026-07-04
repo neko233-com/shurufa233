@@ -40,10 +40,11 @@ func DefaultConfig() Config {
 			"ch=c",
 			"sh=s",
 		},
-		DoublePinyin: false,
-		Language:     "zh-CN",
-		Mode:         "zh",
-		Punctuation:  "full",
+		DoublePinyin:       false,
+		DoublePinyinScheme: "xiaohe",
+		Language:           "zh-CN",
+		Mode:               "zh",
+		Punctuation:        "full",
 		Skin: Skin{
 			FontFamily:    "Microsoft YaHei UI",
 			FontSize:      15,
@@ -72,6 +73,7 @@ func New(config Config) *Engine {
 	if config.MaxCandidates <= 0 {
 		config = DefaultConfig()
 	}
+	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
 	e := &Engine{
 		config: config,
@@ -90,6 +92,7 @@ func (e *Engine) Configure(config Config) {
 	if config.MaxCandidates <= 0 {
 		config.MaxCandidates = DefaultConfig().MaxCandidates
 	}
+	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
 	e.config = config
 }
@@ -202,7 +205,7 @@ func decompressDictionaryData(data []byte) ([]byte, error) {
 func (e *Engine) InputKey(key rune) State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if unicode.IsLetter(key) {
+	if unicode.IsLetter(key) || key == ';' {
 		e.buffer += strings.ToLower(string(key))
 	}
 	return e.stateLocked("")
@@ -248,7 +251,7 @@ func (e *Engine) ToggleMode() State {
 func (e *Engine) Preview(input string) State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.buffer = normalizeReading(input)
+	e.buffer = normalizeInputCode(input)
 	return e.stateLocked("")
 }
 
@@ -371,8 +374,9 @@ func (e *Engine) candidatesLocked() []Candidate {
 }
 
 func (e *Engine) lookupLocked(reading string) []Entry {
+	inputCode := normalizeInputCode(reading)
 	reading = normalizeReading(reading)
-	readings := e.lookupReadingsLocked(reading)
+	readings := e.lookupReadingsLocked(inputCode)
 	var exact []Entry
 	seen := map[string]int{}
 	appendEntries := func(entries []Entry, penalty int) {
@@ -481,7 +485,7 @@ func (e *Engine) lookupReadingsLocked(reading string) []lookupReading {
 	}
 	add(reading, 0)
 	if e.config.DoublePinyin {
-		for _, decoded := range decodeXiaoheDoublePinyin(reading) {
+		for _, decoded := range decodeDoublePinyin(reading, e.config.DoublePinyinScheme) {
 			add(decoded, 0)
 		}
 	}
@@ -594,12 +598,33 @@ func normalizeReading(input string) string {
 	return builder.String()
 }
 
+func normalizeInputCode(input string) string {
+	var builder strings.Builder
+	for _, r := range strings.ToLower(input) {
+		if r >= 'a' && r <= 'z' || r == ';' {
+			builder.WriteRune(r)
+		}
+	}
+	return builder.String()
+}
+
 func normalizeMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "en":
 		return "en"
 	default:
 		return "zh"
+	}
+}
+
+func normalizeDoublePinyinScheme(scheme string) string {
+	switch strings.ToLower(strings.TrimSpace(scheme)) {
+	case "", "xiaohe", "flypy":
+		return "xiaohe"
+	case "microsoft", "ms", "sogou":
+		return "microsoft"
+	default:
+		return "xiaohe"
 	}
 }
 
@@ -752,10 +777,74 @@ var xiaoheFinals = map[byte][]string{
 	'z': []string{"ou"},
 }
 
-func decodeXiaoheDoublePinyin(input string) []string {
-	input = normalizeReading(input)
+var microsoftInitials = map[byte]string{
+	'b': "b",
+	'p': "p",
+	'm': "m",
+	'f': "f",
+	'd': "d",
+	't': "t",
+	'n': "n",
+	'l': "l",
+	'g': "g",
+	'k': "k",
+	'h': "h",
+	'j': "j",
+	'q': "q",
+	'x': "x",
+	'v': "zh",
+	'i': "ch",
+	'u': "sh",
+	'r': "r",
+	'z': "z",
+	'c': "c",
+	's': "s",
+	'y': "y",
+	'w': "w",
+}
+
+var microsoftFinals = map[byte][]string{
+	'a': []string{"a"},
+	'b': []string{"ou"},
+	'c': []string{"iao"},
+	'd': []string{"iang", "uang"},
+	'e': []string{"e"},
+	'f': []string{"en"},
+	'g': []string{"eng"},
+	'h': []string{"ang"},
+	'i': []string{"i"},
+	'j': []string{"an"},
+	'k': []string{"ao"},
+	'l': []string{"ai"},
+	'm': []string{"ian"},
+	'n': []string{"in"},
+	'o': []string{"o", "uo"},
+	'p': []string{"un"},
+	'q': []string{"iu"},
+	'r': []string{"uan", "er"},
+	's': []string{"ong", "iong"},
+	't': []string{"ue", "ve"},
+	'u': []string{"u"},
+	'v': []string{"ui", "ue"},
+	'w': []string{"ia", "ua"},
+	'x': []string{"ie"},
+	'y': []string{"uai", "v"},
+	'z': []string{"ei"},
+	';': []string{"ing"},
+}
+
+func decodeDoublePinyin(input string, scheme string) []string {
+	input = normalizeInputCode(input)
 	if input == "" {
 		return nil
+	}
+	initials := xiaoheInitials
+	finals := xiaoheFinals
+	zeroInitial := byte(0)
+	if normalizeDoublePinyinScheme(scheme) == "microsoft" {
+		initials = microsoftInitials
+		finals = microsoftFinals
+		zeroInitial = 'o'
 	}
 	seen := map[string]bool{}
 	var out []string
@@ -772,24 +861,36 @@ func decodeXiaoheDoublePinyin(input string) []string {
 			}
 			return
 		}
-		if finals, ok := xiaoheFinals[input[pos]]; ok {
-			for _, final := range finals {
-				walk(pos+1, append(parts, normalizeDoublePinyinSyllable("", final)))
+		if zeroInitial == 0 {
+			if values, ok := finals[input[pos]]; ok {
+				for _, final := range values {
+					walk(pos+1, append(parts, normalizeDoublePinyinSyllable("", final)))
+				}
+			}
+		} else if input[pos] == zeroInitial && pos+1 < len(input) {
+			if values, ok := finals[input[pos+1]]; ok {
+				for _, final := range values {
+					walk(pos+2, append(parts, normalizeDoublePinyinSyllable("", final)))
+				}
 			}
 		}
 		if pos+1 >= len(input) {
 			return
 		}
-		initial, ok := xiaoheInitials[input[pos]]
+		initial, ok := initials[input[pos]]
 		if !ok {
 			return
 		}
-		for _, final := range xiaoheFinals[input[pos+1]] {
+		for _, final := range finals[input[pos+1]] {
 			walk(pos+2, append(parts, normalizeDoublePinyinSyllable(initial, final)))
 		}
 	}
 	walk(0, nil)
 	return out
+}
+
+func decodeXiaoheDoublePinyin(input string) []string {
+	return decodeDoublePinyin(input, "xiaohe")
 }
 
 func normalizeDoublePinyinSyllable(initial string, final string) string {

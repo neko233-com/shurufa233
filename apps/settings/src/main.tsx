@@ -36,6 +36,7 @@ type Config = {
   maxCandidates: number;
   fuzzyInitials: string[];
   doublePinyin: boolean;
+  doublePinyinScheme: "xiaohe" | "microsoft";
   language: string;
   mode: "zh" | "en";
   punctuation: "full" | "half";
@@ -136,6 +137,7 @@ const defaultConfig: Config = {
   maxCandidates: 42,
   fuzzyInitials: ["zh=z", "ch=c", "sh=s"],
   doublePinyin: false,
+  doublePinyinScheme: "xiaohe",
   language: "zh-CN",
   mode: "zh",
   punctuation: "full",
@@ -794,9 +796,31 @@ function App() {
               <input
                 type="checkbox"
                 checked={config.doublePinyin}
-                onChange={(event) => setConfig({ ...config, doublePinyin: event.target.checked })}
+                onChange={(event) =>
+                  setConfig({
+                    ...config,
+                    doublePinyin: event.target.checked,
+                    doublePinyinScheme: config.doublePinyinScheme ?? "xiaohe",
+                  })
+                }
               />
-              <span>启用小鹤双拼</span>
+              <span>启用双拼</span>
+            </label>
+            <label className="field">
+              <span>双拼方案</span>
+              <select
+                value={config.doublePinyinScheme ?? "xiaohe"}
+                onChange={(event) =>
+                  setConfig({
+                    ...config,
+                    doublePinyinScheme: event.target.value as Config["doublePinyinScheme"],
+                  })
+                }
+                disabled={!config.doublePinyin}
+              >
+                <option value="xiaohe">小鹤双拼</option>
+                <option value="microsoft">微软/搜狗双拼</option>
+              </select>
             </label>
             <label className="field">
               <span>模糊音</span>
