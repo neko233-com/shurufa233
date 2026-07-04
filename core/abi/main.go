@@ -199,6 +199,9 @@ func getSession(id uint64) *engine.Engine {
 
 func newEngine() *engine.Engine {
 	session := engine.New(engine.DefaultConfig())
+	for _, entry := range loadLocalDictionaryEntries() {
+		session.AddEntries(entry)
+	}
 	session.ImportUserScores(loadUserScores())
 	return session
 }

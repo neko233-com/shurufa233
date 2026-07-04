@@ -26,7 +26,7 @@ int PrintResult(const char *action, HRESULT hr) {
 }  // namespace
 
 int main(int argc, char **argv) {
-  const char *command = argc > 1 ? argv[1] : "activate";
+  const char *command = argc > 1 ? argv[1] : "enable";
   HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   const bool didCoInit = SUCCEEDED(hr);
   if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {

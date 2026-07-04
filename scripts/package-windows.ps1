@@ -123,6 +123,11 @@ foreach ($NativeArch in $Arch) {
   Copy-RequiredFile -Source (Join-Path $Root "docs\windows.md") -Destination (Join-Path $Stage "docs\windows.md")
   Copy-RequiredFile -Source (Join-Path $Root "docs\abi.md") -Destination (Join-Path $Stage "docs\abi.md")
   Copy-RequiredFile -Source (Join-Path $Root "docs\ipc.md") -Destination (Join-Path $Stage "docs\ipc.md")
+  $DictionarySource = Join-Path $Root "data\dictionaries"
+  if (Test-Path $DictionarySource) {
+    New-Item -ItemType Directory -Force (Join-Path $Stage "data\dictionaries") | Out-Null
+    Copy-Item -Force (Join-Path $DictionarySource "*.json") (Join-Path $Stage "data\dictionaries")
+  }
 
   $artifacts = [System.Collections.Generic.List[object]]::new()
   $stagePrefix = (Resolve-Path -LiteralPath $Stage).Path.TrimEnd("\") + "\"

@@ -76,12 +76,21 @@ The installer:
 - registers the TSF DLL through UAC because TSF profiles live under HKLM
 - enables the profile for the current user
 - adds the input method tip to `zh-Hans-CN`
-- sets it as the default input method override
 - starts `ctfmon.exe`
 - registers a versioned TSF DLL path so loaded DLLs do not block updates
 - installs a matching versioned `shurufa_core-<arch>-<stamp>.dll` beside the TSF DLL so the in-process core can update even when the legacy `shurufa_core.dll` is locked
-- activates the profile for the current session with `ITfInputProcessorProfileMgr::ActivateProfile`
+- keeps the existing Microsoft/Windows input method as the default input method
 - saves the pre-install input method list to `%APPDATA%\shurufa233\input-method-backup.json` if no backup exists yet
+
+The installer does not steal the default input method. Use Windows' normal input method switcher, such as `Ctrl+Shift` or the system language switch shortcut configured on the machine, to move between Microsoft IME and shurufa233. Inside shurufa233, a light tap on `Shift` toggles Chinese/English mode; `Ctrl+Shift` and other Ctrl/Alt combinations are passed back to Windows and applications.
+
+During composition, shurufa233 follows the Microsoft IME-style two-line shape: the upper preedit line shows the current English/pinyin spelling, and the lower candidate strip shows Chinese candidates. Skin settings are scoped mainly to the lower candidate strip; the upper preedit line keeps a neutral system look for readability.
+
+For focused development testing only, pass `-ActivateProfile`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -ActivateProfile
+```
 
 ## Uninstall Current Machine
 
@@ -122,6 +131,8 @@ Shurufa233ProfileCtl.exe enable
 Shurufa233ProfileCtl.exe activate
 Shurufa233ProfileCtl.exe probe
 ```
+
+Running `Shurufa233ProfileCtl.exe` without arguments only enables the profile. Use `activate` explicitly when you need to switch the current session to shurufa233.
 
 `probe` creates the TSF COM object directly and is useful when checking whether Windows is loading the registered DLL.
 

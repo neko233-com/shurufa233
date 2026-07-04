@@ -513,7 +513,7 @@ func (s *AppState) loadLocalDictionariesLocked() error {
 		return err
 	}
 	for _, file := range files {
-		if filepath.Base(file) == "manifest.json" {
+		if isDictionaryMetadataFile(filepath.Base(file)) {
 			continue
 		}
 		f, err := os.Open(file)
@@ -533,6 +533,10 @@ func (s *AppState) loadLocalDictionariesLocked() error {
 		}
 	}
 	return nil
+}
+
+func isDictionaryMetadataFile(name string) bool {
+	return name == "manifest.json" || name == "dictionary-manifest.json"
 }
 
 func (s *AppState) dictionaryDir() string {

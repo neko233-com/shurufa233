@@ -1,6 +1,7 @@
 param(
   [switch]$SkipBuild,
   [switch]$RegisterOnly,
+  [switch]$ActivateProfile,
   [string]$TsfDllPath,
   [string]$CoreDllPath
 )
@@ -130,6 +131,13 @@ if (-not $RegisterOnly) {
     Write-Warning "shurufa_core.dll was not found for $GoArch; TSF will use daemon IPC fallback."
   }
   Copy-Item -Force $ProfileCtlSource (Join-Path $InstallDir "Shurufa233ProfileCtl.exe")
+
+  $BundledDictionaryDir = Join-Path $Root "data\dictionaries"
+  if (Test-Path $BundledDictionaryDir) {
+    $UserDictionaryDir = Join-Path $ConfigDir "dictionaries"
+    New-Item -ItemType Directory -Force $UserDictionaryDir | Out-Null
+    Copy-Item -Force (Join-Path $BundledDictionaryDir "*.json") $UserDictionaryDir
+  }
 } else {
   $TsfDll = $TsfDllPath
   if ($CoreDllPath) {
@@ -238,17 +246,19 @@ if ($zh.InputMethodTips -notcontains $Tip) {
   $zh.InputMethodTips.Add($Tip)
   Set-WinUserLanguageList $languages -Force
 }
-Set-WinDefaultInputMethodOverride -InputTip $Tip
 
 Start-Process ctfmon.exe -WindowStyle Hidden -ErrorAction SilentlyContinue
 
 $ProfileCtl = Join-Path $InstallDir "Shurufa233ProfileCtl.exe"
 if (Test-Path $ProfileCtl) {
   & $ProfileCtl enable | Write-Host
-  & $ProfileCtl activate | Write-Host
+  if ($ActivateProfile) {
+    Set-WinDefaultInputMethodOverride -InputTip $Tip
+    & $ProfileCtl activate | Write-Host
+  }
 }
 
 Write-Host "Installed shurufa233 to $InstallDir"
 Write-Host "Registered $NativeArch TSF DLL for the current user."
 Write-Host "Daemon is configured for startup through HKCU Run."
-Write-Host "Open Windows Settings > Time & language > Typing > Advanced keyboard settings to select shurufa233."
+Write-Host "Open Windows Settings > Time & language > Typing > Advanced keyboard settings to select shurufa233, or rerun with -ActivateProfile when testing."

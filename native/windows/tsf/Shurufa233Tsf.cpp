@@ -398,6 +398,7 @@ class CandidateWindow {
       KillTimer(hwnd_, kStatusTimerId);
     }
     selectedIndex_ = max(0, min(selectedIndex, static_cast<int>(candidates_.size()) - 1));
+    composing_ = CompositionText();
     EnsureWindow();
     RefreshSkin();
 
@@ -415,6 +416,7 @@ class CandidateWindow {
       KillTimer(hwnd_, kStatusTimerId);
       ShowWindow(hwnd_, SW_HIDE);
     }
+    composing_.clear();
   }
 
   void ShowStatus(const wchar_t *text) {
@@ -422,6 +424,7 @@ class CandidateWindow {
     RefreshSkin();
     statusText_ = text ? text : L"";
     candidates_.clear();
+    composing_.clear();
     POINT anchor = CaretAnchor();
     const int width = MeasureStatusWidth();
     const int height = max(42, fontSize_ + 28);
@@ -514,11 +517,25 @@ class CandidateWindow {
       dc = paintDc;
     }
 
-    HBRUSH bg = CreateSolidBrush(surface_);
+    HBRUSH bg = CreateSolidBrush(PreeditSurfaceColor());
     FillRect(dc, &rect, bg);
     DeleteObject(bg);
 
-    HPEN border = CreatePen(PS_SOLID, 1, border_);
+    if (statusText_.empty() && !candidates_.empty()) {
+      RECT candidateBand{rect.left, CandidateBandTop(), rect.right, rect.bottom};
+      HBRUSH candidateBg = CreateSolidBrush(surface_);
+      FillRect(dc, &candidateBand, candidateBg);
+      DeleteObject(candidateBg);
+
+      HPEN separator = CreatePen(PS_SOLID, 1, border_);
+      HGDIOBJ oldSeparator = SelectObject(dc, separator);
+      MoveToEx(dc, rect.left + 10, candidateBand.top, nullptr);
+      LineTo(dc, rect.right - 10, candidateBand.top);
+      SelectObject(dc, oldSeparator);
+      DeleteObject(separator);
+    }
+
+    HPEN border = CreatePen(PS_SOLID, 1, statusText_.empty() ? PreeditBorderColor() : border_);
     HGDIOBJ oldPen = SelectObject(dc, border);
     HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
     RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, 12, 12);
@@ -547,6 +564,7 @@ class CandidateWindow {
   HWND hwnd_ = nullptr;
   static constexpr UINT_PTR kStatusTimerId = 1;
   std::vector<CandidateView> candidates_;
+  std::wstring composing_;
   std::wstring statusText_;
   int selectedIndex_ = 0;
   std::wstring fontFamily_ = L"Microsoft YaHei UI";
@@ -564,7 +582,11 @@ class CandidateWindow {
   int fontSizeKey_ = 0;
 
   int CandidateWindowHeight() const {
-    return max(48, fontSize_ + 34);
+    return max(76, fontSize_ * 2 + 48);
+  }
+
+  int CandidateBandTop() const {
+    return fontSize_ + 22;
   }
 
   HFONT EnsureFont() {
@@ -603,15 +625,13 @@ class CandidateWindow {
 
   int CandidateItemWidth(HDC dc, const CandidateView &candidate, bool selected) const {
     const int textWidth = TextWidth(dc, candidate.text);
-    const int readingWidth = selected ? TextWidth(dc, candidate.reading) : 0;
-    const int padding = selected && readingWidth > 0 ? 58 : 44;
-    return max(62, min(260, padding + textWidth + readingWidth));
+    return max(62, min(220, 44 + textWidth));
   }
 
   int MeasureWindowWidth() {
     HDC dc = GetDC(hwnd_);
     HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
-    int width = 20;
+    int width = max(220, TextWidth(dc, composing_) + 44);
     for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
       width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + 6;
     }
@@ -657,6 +677,22 @@ class CandidateWindow {
     return RGB(red, green, blue);
   }
 
+  COLORREF PreeditSurfaceColor() const {
+    return theme_ == "dark" ? RGB(36, 36, 36) : RGB(250, 250, 250);
+  }
+
+  COLORREF PreeditTextColor() const {
+    return theme_ == "dark" ? RGB(245, 245, 245) : RGB(30, 30, 30);
+  }
+
+  COLORREF PreeditBorderColor() const {
+    return theme_ == "dark" ? RGB(78, 78, 78) : RGB(218, 220, 224);
+  }
+
+  COLORREF PreeditUnderlineColor() const {
+    return theme_ == "dark" ? RGB(150, 150, 150) : RGB(95, 99, 104);
+  }
+
   static COLORREF ParseColor(const std::string &value) {
     if (value.size() != 7 || value[0] != '#') {
       return RGB(37, 99, 235);
@@ -695,15 +731,47 @@ class CandidateWindow {
     return parsed;
   }
 
+  std::wstring CompositionText() const {
+    if (!candidates_.empty() && selectedIndex_ >= 0 &&
+        selectedIndex_ < static_cast<int>(candidates_.size()) &&
+        !candidates_[selectedIndex_].reading.empty()) {
+      return candidates_[selectedIndex_].reading;
+    }
+    for (const CandidateView &candidate : candidates_) {
+      if (!candidate.reading.empty()) {
+        return candidate.reading;
+      }
+    }
+    return L"";
+  }
+
+  void DrawComposition(HDC dc, const RECT &rect) {
+    if (composing_.empty()) {
+      return;
+    }
+    SetTextColor(dc, PreeditTextColor());
+    RECT composeRect{rect.left + 16, rect.top + 7, rect.right - 16, rect.top + fontSize_ + 16};
+    DrawTextW(dc, composing_.c_str(), static_cast<int>(composing_.size()), &composeRect,
+              DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
+
+    HPEN accentPen = CreatePen(PS_SOLID, 2, PreeditUnderlineColor());
+    HGDIOBJ oldPen = SelectObject(dc, accentPen);
+    const int underlineY = composeRect.bottom - 2;
+    MoveToEx(dc, composeRect.left, underlineY, nullptr);
+    LineTo(dc, min(rect.right - 16, composeRect.left + max(28, TextWidth(dc, composing_))), underlineY);
+    SelectObject(dc, oldPen);
+    DeleteObject(accentPen);
+  }
+
   void DrawCandidates(HDC dc, const RECT &rect) {
     statusText_.clear();
+    DrawComposition(dc, rect);
     int x = rect.left + 14;
-    const int y = rect.top + 8;
+    const int y = CandidateBandTop() + 7;
     const int itemHeight = max(32, fontSize_ + 18);
     for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
       const CandidateView &candidate = candidates_[i];
       const bool selected = static_cast<int>(i) == selectedIndex_;
-      const int readingWidth = selected ? TextWidth(dc, candidate.reading) : 0;
       const int itemWidth = CandidateItemWidth(dc, candidate, selected);
       RECT itemRect{x, y, x + itemWidth, y + itemHeight};
 
@@ -727,19 +795,8 @@ class CandidateWindow {
 
       SetTextColor(dc, selected ? highlightText_ : text_);
       RECT textRect{itemRect.left + 28, itemRect.top, itemRect.right - 8, itemRect.bottom};
-      if (selected && readingWidth > 0) {
-        textRect.right = max(textRect.left + 24, itemRect.right - readingWidth - 14);
-      }
       DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
                 DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
-
-      if (selected && !candidate.reading.empty()) {
-        SetTextColor(dc, MixColor(highlightText_, accent_, 22));
-        RECT readingRect{max(itemRect.left + 72, itemRect.right - readingWidth - 8), itemRect.top,
-                         itemRect.right - 8, itemRect.bottom};
-        DrawTextW(dc, candidate.reading.c_str(), static_cast<int>(candidate.reading.size()),
-                  &readingRect, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_END_ELLIPSIS);
-      }
       x += itemWidth + 6;
       if (x > rect.right - 40) {
         break;
@@ -817,6 +874,18 @@ bool IsShiftKey(WPARAM key) {
 
 bool IsShiftPressed() {
   return (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+}
+
+bool IsControlPressed() {
+  return (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+}
+
+bool IsAltPressed() {
+  return (GetKeyState(VK_MENU) & 0x8000) != 0;
+}
+
+bool HasSystemModifier() {
+  return IsControlPressed() || IsAltPressed();
 }
 
 std::wstring ChinesePunctuationForKey(WPARAM key) {
@@ -1033,6 +1102,10 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (!eaten) {
       return E_INVALIDARG;
     }
+    if (HasSystemModifier()) {
+      *eaten = FALSE;
+      return S_OK;
+    }
     if (shiftDown_ && !IsShiftKey(key)) {
       shiftToggleCandidate_ = false;
     }
@@ -1045,6 +1118,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return E_INVALIDARG;
     }
     *eaten = FALSE;
+    if (HasSystemModifier()) {
+      return S_OK;
+    }
     if (!session_ || !ShouldEatKey(key)) {
       return S_OK;
     }
@@ -1133,7 +1209,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (!eaten) {
       return E_INVALIDARG;
     }
-    *eaten = IsShiftKey(key);
+    *eaten = IsShiftKey(key) && shiftDown_ && shiftToggleCandidate_ && !HasSystemModifier();
     return S_OK;
   }
 
@@ -1142,12 +1218,13 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return E_INVALIDARG;
     }
     if (IsShiftKey(key)) {
-      if (shiftDown_ && shiftToggleCandidate_) {
+      const bool shouldToggle = shiftDown_ && shiftToggleCandidate_ && !HasSystemModifier();
+      if (shouldToggle) {
         ToggleAsciiMode();
       }
       shiftDown_ = false;
       shiftToggleCandidate_ = false;
-      *eaten = TRUE;
+      *eaten = shouldToggle ? TRUE : FALSE;
       return S_OK;
     }
     *eaten = FALSE;
@@ -1165,6 +1242,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
  private:
   bool ShouldEatKey(WPARAM key) const {
     if (!session_) {
+      return false;
+    }
+    if (HasSystemModifier()) {
       return false;
     }
     if (IsShiftKey(key)) {
