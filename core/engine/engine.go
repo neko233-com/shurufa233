@@ -40,6 +40,7 @@ var nowFunc = time.Now
 func DefaultConfig() Config {
 	return Config{
 		MaxCandidates:         42,
+		Schema:                "wechat-pinyin",
 		CandidatePageSize:     7,
 		CandidateLayout:       "horizontal",
 		ShowCandidateComments: true,
@@ -89,6 +90,7 @@ func New(config Config) *Engine {
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
 	config.Script = normalizeScript(config.Script)
+	config = NormalizeSchemaConfig(config)
 	e := &Engine{
 		config:  config,
 		dict:    make(map[string][]Entry),
@@ -112,6 +114,7 @@ func (e *Engine) Configure(config Config) {
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
 	config.Script = normalizeScript(config.Script)
+	config = NormalizeSchemaConfig(config)
 	e.config = config
 }
 

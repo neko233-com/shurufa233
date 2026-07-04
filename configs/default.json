@@ -1,5 +1,6 @@
 {
   "maxCandidates": 42,
+  "schema": "wechat-pinyin",
   "candidatePageSize": 7,
   "candidateLayout": "horizontal",
   "showCandidateComments": true,

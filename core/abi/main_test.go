@@ -474,6 +474,23 @@ func TestExecuteExtensionCommandDictionarySources(t *testing.T) {
 	}
 }
 
+func TestExecuteExtensionCommandSchemaPresets(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "schema-presets-json", `{}`)
+	if !handled {
+		t.Fatal("schema-presets-json command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("schema-presets-json = %#v", got)
+	}
+	schemas, ok := result["schemas"].([]engine.SchemaPreset)
+	if !ok || len(schemas) == 0 {
+		t.Fatalf("schema presets = %#v", result["schemas"])
+	}
+}
+
 func TestExecuteExtensionCommandCandidateActionCommitsCandidateChar(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	session.Preview("zhongwen")

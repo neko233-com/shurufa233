@@ -243,6 +243,35 @@ whether to commit text, copy a prompt, or open a richer agent workflow.
 
 ## Dictionary Hot Updates
 
+## Schema Presets
+
+`GET /schemas` returns the built-in Rime/WeChat/Microsoft-style scheme catalog
+and the selected config id:
+
+```json
+{
+  "selected": "wechat-pinyin",
+  "schemas": [
+    {
+      "id": "double-pinyin-microsoft",
+      "name": "微软双拼",
+      "kind": "double-pinyin",
+      "doublePinyin": true,
+      "doublePinyinScheme": "microsoft"
+    }
+  ],
+  "config": { "schema": "wechat-pinyin" }
+}
+```
+
+`POST /schemas/apply` accepts `{"id":"rime-ice-pinyin"}` and expands the preset
+into the ordinary shared config fields, then saves `config.json` and refreshes
+active sessions. Native code only needs to keep reading the same normalized
+`doublePinyin`, `doublePinyinScheme`, `candidateLayout`, punctuation, and skin
+fields; new schemes can be added in Go without changing the TSF DLL.
+
+## Dictionary Hot Updates
+
 The default source is GitHub Releases:
 
 ```text

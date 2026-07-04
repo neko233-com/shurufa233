@@ -38,6 +38,7 @@ type Skin = {
 
 type Config = {
   maxCandidates: number;
+  schema?: string;
   candidatePageSize: number;
   candidateLayout: "horizontal" | "vertical" | "auto";
   showCandidateComments: boolean;
@@ -116,6 +117,29 @@ type DictionarySource = {
 type DictionarySourceResponse = {
   sources: DictionarySource[];
   selected: string;
+};
+
+type SchemaPreset = {
+  id: string;
+  name: string;
+  kind: string;
+  rimeId?: string;
+  description: string;
+  tags?: string[];
+  language: string;
+  doublePinyin: boolean;
+  doublePinyinScheme?: Config["doublePinyinScheme"];
+  fuzzyInitials?: string[];
+  punctuation?: Config["punctuation"];
+  candidateLayout?: Config["candidateLayout"];
+  showCandidateComments: boolean;
+  dictionarySourcePreset?: string;
+};
+
+type SchemaResponse = {
+  selected: string;
+  schemas: SchemaPreset[];
+  config?: Config;
 };
 
 type WordbookResponse = {
@@ -244,6 +268,7 @@ const apiBase = "http://127.0.0.1:23333";
 
 const defaultConfig: Config = {
   maxCandidates: 42,
+  schema: "wechat-pinyin",
   candidatePageSize: 7,
   candidateLayout: "horizontal",
   showCandidateComments: true,
@@ -488,6 +513,8 @@ function App() {
   const [updateBusy, setUpdateBusy] = useState<"idle" | "checking" | "applying">("idle");
   const [dictionarySources, setDictionarySources] = useState<DictionarySource[]>([]);
   const [dictionarySourceText, setDictionarySourceText] = useState("未读取");
+  const [schemas, setSchemas] = useState<SchemaPreset[]>([]);
+  const [schemaText, setSchemaText] = useState("未读取");
   const [wordbook, setWordbook] = useState<WordbookEntry[]>([]);
   const [wordbookDraft, setWordbookDraft] = useState("{}");
   const [wordbookText, setWordbookText] = useState("未读取");
@@ -527,6 +554,7 @@ function App() {
     void loadRejects();
     void loadCatalog();
     void loadDictionarySources();
+    void loadSchemas();
   }, []);
 
   useEffect(() => {
@@ -787,6 +815,47 @@ function App() {
     } catch (err) {
       setStatus("offline");
       setError(err instanceof Error ? err.message : "save failed");
+    }
+  }
+
+  async function loadSchemas() {
+    try {
+      const res = await fetch(`${apiBase}/schemas`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as SchemaResponse;
+      setSchemas(data.schemas ?? []);
+      setSchemaText(data.selected ? `当前 ${data.selected}` : "未选择");
+      if (data.config) {
+        setConfig(hydrateConfig(data.config));
+      }
+      setError("");
+    } catch (err) {
+      setSchemaText("读取失败");
+      setError(err instanceof Error ? err.message : "schema load failed");
+    }
+  }
+
+  async function applySchema(id: string) {
+    try {
+      const res = await fetch(`${apiBase}/schemas/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as SchemaResponse;
+      setSchemas(data.schemas ?? schemas);
+      setSchemaText(`已应用 ${data.selected}`);
+      if (data.config) {
+        setConfig(hydrateConfig(data.config));
+      }
+      setStatus("saved");
+      window.setTimeout(() => setStatus("ready"), 1000);
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setSchemaText("应用失败");
+      setError(err instanceof Error ? err.message : "schema apply failed");
     }
   }
 
@@ -1252,7 +1321,24 @@ function App() {
           <section className="panel">
             <div className="panelHeader">
               <h2>输入规则</h2>
-              <span>Go 内核实时生效</span>
+              <span>{schemaText}</span>
+            </div>
+            <div className="schemaGrid">
+              {schemas.map((schema) => (
+                <button
+                  key={schema.id}
+                  className={config.schema === schema.id ? "schemaCard selected" : "schemaCard"}
+                  onClick={() => void applySchema(schema.id)}
+                  title={schema.description}
+                >
+                  <strong>{schema.name}</strong>
+                  <span>
+                    {schema.doublePinyin ? `双拼 · ${schema.doublePinyinScheme ?? ""}` : "全拼"}
+                    {schema.rimeId ? ` · ${schema.rimeId}` : ""}
+                  </span>
+                  {schema.dictionarySourcePreset && <em>{schema.dictionarySourcePreset}</em>}
+                </button>
+              ))}
             </div>
             <div className="segmented">
               <button className={config.mode === "zh" ? "selected" : ""} onClick={() => setConfig({ ...config, mode: "zh" })}>
@@ -1356,6 +1442,7 @@ function App() {
                 onChange={(event) =>
                   setConfig({
                     ...config,
+                    schema: event.target.checked ? `double-pinyin-${config.doublePinyinScheme ?? "xiaohe"}` : "wechat-pinyin",
                     doublePinyin: event.target.checked,
                     doublePinyinScheme: config.doublePinyinScheme ?? "xiaohe",
                   })
@@ -1370,6 +1457,7 @@ function App() {
                 onChange={(event) =>
                   setConfig({
                     ...config,
+                    schema: `double-pinyin-${event.target.value}`,
                     doublePinyinScheme: event.target.value as Config["doublePinyinScheme"],
                   })
                 }

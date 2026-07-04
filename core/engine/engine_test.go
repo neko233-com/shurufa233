@@ -89,6 +89,42 @@ func TestCandidatePageSizeConfigIsClamped(t *testing.T) {
 	}
 }
 
+func TestBuiltinSchemaPresetsIncludeRimeAndDoublePinyin(t *testing.T) {
+	presets := BuiltinSchemaPresets()
+	seen := map[string]bool{}
+	for _, preset := range presets {
+		seen[preset.ID] = true
+	}
+	for _, id := range []string{"wechat-pinyin", "rime-luna-pinyin", "rime-ice-pinyin", "double-pinyin-xiaohe", "double-pinyin-microsoft"} {
+		if !seen[id] {
+			t.Fatalf("missing schema preset %q in %#v", id, presets)
+		}
+	}
+}
+
+func TestApplySchemaPresetConfigEnablesMicrosoftDoublePinyin(t *testing.T) {
+	config, ok := ApplySchemaPresetConfig(DefaultConfig(), "double-pinyin-microsoft")
+	if !ok {
+		t.Fatal("expected microsoft double pinyin schema")
+	}
+	if config.Schema != "double-pinyin-microsoft" || !config.DoublePinyin || config.DoublePinyinScheme != "microsoft" {
+		t.Fatalf("schema config = %#v", config)
+	}
+}
+
+func TestNormalizeSchemaConfigDerivesManualDoublePinyin(t *testing.T) {
+	config := DefaultConfig()
+	config.Schema = ""
+	config.DoublePinyin = true
+	config.DoublePinyinScheme = "xiaohe"
+
+	got := NormalizeSchemaConfig(config)
+
+	if got.Schema != "double-pinyin-xiaohe" {
+		t.Fatalf("schema = %q, want double-pinyin-xiaohe", got.Schema)
+	}
+}
+
 func TestGreedySegmentation(t *testing.T) {
 	e := New(DefaultConfig())
 	state := e.Preview("womende")

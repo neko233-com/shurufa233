@@ -249,6 +249,42 @@ func TestUpdateSourcePostsSelectedID(t *testing.T) {
 	}
 }
 
+func TestSchemaApplyPostsSelectedID(t *testing.T) {
+	var schemaCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/schemas/apply" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		schemaCalled = true
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode schema request: %v", err)
+		}
+		if req["id"] != "double-pinyin-microsoft" {
+			t.Fatalf("schema request = %#v", req)
+		}
+		_ = json.NewEncoder(w).Encode(schemaResponse{
+			Selected: "double-pinyin-microsoft",
+			Config: configPayload{
+				Schema:             "double-pinyin-microsoft",
+				DoublePinyin:       true,
+				DoublePinyinScheme: "microsoft",
+			},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := schema(server.Client(), []string{"apply", "double-pinyin-microsoft"}); err != nil {
+		t.Fatal(err)
+	}
+	if !schemaCalled {
+		t.Fatal("schema endpoint was not called")
+	}
+}
+
 func TestCandidateActionAcceptsForgetAction(t *testing.T) {
 	input, req, err := parseCandidateActionArgs([]string{"ceshi", "forget", "--index", "0"})
 	if err != nil {

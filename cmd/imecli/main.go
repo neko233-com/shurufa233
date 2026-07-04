@@ -109,6 +109,31 @@ type dictionaryRaw struct {
 	Role  string `json:"role"`
 }
 
+type schemaResponse struct {
+	Selected string         `json:"selected"`
+	Schemas  []schemaPreset `json:"schemas"`
+	Config   configPayload  `json:"config,omitempty"`
+}
+
+type schemaPreset struct {
+	ID                     string   `json:"id"`
+	Name                   string   `json:"name"`
+	Kind                   string   `json:"kind"`
+	RimeID                 string   `json:"rimeId,omitempty"`
+	Description            string   `json:"description"`
+	Tags                   []string `json:"tags,omitempty"`
+	Language               string   `json:"language"`
+	DoublePinyin           bool     `json:"doublePinyin"`
+	DoublePinyinScheme     string   `json:"doublePinyinScheme,omitempty"`
+	DictionarySourcePreset string   `json:"dictionarySourcePreset,omitempty"`
+}
+
+type configPayload struct {
+	Schema             string `json:"schema,omitempty"`
+	DoublePinyin       bool   `json:"doublePinyin"`
+	DoublePinyinScheme string `json:"doublePinyinScheme"`
+}
+
 type wordbookResponse struct {
 	UserScores map[string]int `json:"userScores"`
 	Count      int            `json:"count"`
@@ -185,6 +210,10 @@ func main() {
 		err = updateSources(client)
 	case "update-source":
 		err = updateSource(client, os.Args[2:])
+	case "schemas":
+		err = schemas(client)
+	case "schema":
+		err = schema(client, os.Args[2:])
 	case "mode":
 		err = mode(client, os.Args[2:])
 	case "wordbook":
@@ -238,6 +267,8 @@ Usage:
   shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]
   shurufa-imecli update-sources
   shurufa-imecli update-source shurufa233-github
+  shurufa-imecli schemas
+  shurufa-imecli schema [current|apply <id>]
   shurufa-imecli update-check
   shurufa-imecli update-apply
   shurufa-imecli candidates nihao [view|next-page|prev-page|select|first-char|last-char] [--start N] [--limit N] [--display-index N] [--index N]
@@ -512,6 +543,69 @@ func updateSource(client *http.Client, args []string) error {
 	}
 	fmt.Println(string(body))
 	return nil
+}
+
+func schemas(client *http.Client) error {
+	var response schemaResponse
+	if err := getJSON(client, "/schemas", &response); err != nil {
+		return err
+	}
+	printSchemas(response)
+	return nil
+}
+
+func schema(client *http.Client, args []string) error {
+	if len(args) == 0 || strings.EqualFold(args[0], "current") {
+		var response schemaResponse
+		if err := getJSON(client, "/schemas", &response); err != nil {
+			return err
+		}
+		fmt.Printf("schema=%s doublePinyin=%v scheme=%s\n", response.Selected, response.Config.DoublePinyin, response.Config.DoublePinyinScheme)
+		return nil
+	}
+	action := strings.ToLower(strings.TrimSpace(args[0]))
+	if action == "list" || action == "ls" {
+		return schemas(client)
+	}
+	if action == "apply" || action == "set" || action == "use" {
+		if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+			return fmt.Errorf("missing schema id")
+		}
+		var response schemaResponse
+		if err := postJSON(client, "/schemas/apply", map[string]string{"id": strings.TrimSpace(args[1])}, &response); err != nil {
+			return err
+		}
+		fmt.Printf("schema=%s doublePinyin=%v scheme=%s\n", response.Selected, response.Config.DoublePinyin, response.Config.DoublePinyinScheme)
+		return nil
+	}
+	var response schemaResponse
+	if err := postJSON(client, "/schemas/apply", map[string]string{"id": strings.TrimSpace(args[0])}, &response); err != nil {
+		return err
+	}
+	fmt.Printf("schema=%s doublePinyin=%v scheme=%s\n", response.Selected, response.Config.DoublePinyin, response.Config.DoublePinyinScheme)
+	return nil
+}
+
+func printSchemas(response schemaResponse) {
+	for _, schema := range response.Schemas {
+		marker := " "
+		if schema.ID == response.Selected {
+			marker = "*"
+		}
+		scheme := "full"
+		if schema.DoublePinyin {
+			scheme = "double:" + schema.DoublePinyinScheme
+		}
+		fmt.Printf("%s %s [%s] %s\n", marker, schema.ID, schema.Kind, scheme)
+		fmt.Printf("  %s\n", schema.Name)
+		if schema.RimeID != "" {
+			fmt.Printf("  rime: %s\n", schema.RimeID)
+		}
+		if schema.DictionarySourcePreset != "" {
+			fmt.Printf("  dictionary: %s\n", schema.DictionarySourcePreset)
+		}
+		fmt.Printf("  %s\n", schema.Description)
+	}
 }
 
 func mode(client *http.Client, args []string) error {

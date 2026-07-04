@@ -110,6 +110,8 @@ char* ShurufaCandidateAction(uint64_t session, const char* json);
 char* ShurufaCatalogJSON(uint64_t session, const char* json);
 char* ShurufaConfigJSON(void);
 char* ShurufaApplyConfigJSON(char* json);
+char* ShurufaSchemaPresetsJSON(void);
+char* ShurufaApplySchemaJSON(char* json);
 char* ShurufaReloadConfig(void);
 char* ShurufaReloadDictionaries(void);
 char* ShurufaDictionaryManifestJSON(void);
@@ -132,10 +134,19 @@ returns JSON with an `ok` field and `updatedAt`.
 The shared `config-json` payload includes display-only fields such as
 `candidatePageSize`, `candidateLayout`, and `showCandidateComments`; candidate
 comment text remains part of candidate payloads even when the UI hides it.
+It also includes `schema`, a stable Rime-style scheme id such as
+`wechat-pinyin`, `rime-luna-pinyin`, `rime-ice-pinyin`,
+`double-pinyin-xiaohe`, or `double-pinyin-microsoft`. `ShurufaSchemaPresetsJSON`
+lists the built-in scheme table, while `ShurufaApplySchemaJSON({"id":"..."})`
+expands a preset into the shared config fields that the native TSF layer already
+understands (`doublePinyin`, `doublePinyinScheme`, `candidateLayout`,
+`showCandidateComments`, punctuation, fuzzy initials, and dictionary source
+preference). This keeps new schemes in Go/config instead of requiring another
+C++ export on developer machines that only consume packaged builds.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `commit-text`, `agent-compose`,
+`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -177,6 +188,8 @@ select                  {"index":0}
 select-candidate-char   {"index":0,"side":"first"}
 config-json
 apply-config-json       { ...engine.Config } or {"config":{...}}
+schema-presets-json
+apply-schema-json       {"id":"double-pinyin-microsoft"}
 reload-config
 reload-dictionaries
 dictionary-manifest-json

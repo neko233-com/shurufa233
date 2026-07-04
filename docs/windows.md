@@ -163,6 +163,8 @@ shurufa-imecli rejects add ceshi "错词"
 shurufa-imecli candidates ceshi forget --index 0
 shurufa-imecli symbols emoji zan --limit 12
 shurufa-imecli symbols symbol /fs
+shurufa-imecli schemas
+shurufa-imecli schema apply double-pinyin-microsoft
 shurufa-imecli update-sources
 shurufa-imecli update-source shurufa233-github
 shurufa-imecli update-check
@@ -214,6 +216,7 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 - the Go session state exposes the normalized `zh`/`en` mode, the daemon mirrors it through `GET/POST /ime/mode`, and the Windows TSF Shift toggle synchronizes that session state before showing `EN` or `中`
 - `Ctrl`/`Alt` shortcuts are passed through to the host app
 - configured fuzzy initials such as `zh=z`, `ch=c`, and `sh=s` are handled in the Go core with exact pinyin candidates kept ahead of fuzzy matches
+- Rime-style schema presets are exposed through daemon `/schemas`, CLI `schema`, and the C ABI `schema-presets-json` / `apply-schema-json`; applying `wechat-pinyin`, `rime-luna-pinyin`, `rime-ice-pinyin`, `double-pinyin-xiaohe`, or `double-pinyin-microsoft` only updates the shared config and active Go sessions, so the Windows TSF glue keeps using the same reserved APIs
 - when double pinyin is enabled, the Go core decodes the configured `doublePinyinScheme` (`xiaohe` or `microsoft`) while keeping full-pinyin fallback available; old configs with only `doublePinyin=true` use Xiaohe
 - in Microsoft double pinyin mode, the native TSF layer treats `;` as the `ing` final and sends it to the Go core instead of using it as the second-candidate shortcut
 - short initial input such as `nh`, `wx`, `srf`, and `zgr` is handled by the Go core abbreviation index, with exact full-pinyin candidates still kept ahead

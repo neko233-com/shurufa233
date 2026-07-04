@@ -83,6 +83,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	if config.Update.InstalledVersion == "" {
 		config.Update.InstalledVersion = engine.DefaultConfig().Update.InstalledVersion
 	}
+	config = engine.NormalizeSchemaConfig(config)
 	return config
 }
 

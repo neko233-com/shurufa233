@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/neko233-com/shurufa233/core/engine"
@@ -276,6 +277,22 @@ func executeExtensionCommand(id uint64, command string, payload string) any {
 			return errorEnvelope(err.Error())
 		}
 		return applyConfigEnvelope(config)
+	case "schema-presets-json", "schemas", "schemas-json":
+		config := loadConfig()
+		return map[string]any{
+			"ok":        true,
+			"selected":  config.Schema,
+			"schemas":   engine.BuiltinSchemaPresets(),
+			"config":    config,
+			"updatedAt": time.Now().UTC(),
+		}
+	case "apply-schema-json", "apply-schema":
+		config := loadConfig()
+		next, ok := engine.ApplySchemaPresetConfig(config, firstNonEmpty(req.ID, req.Schema, req.Input, req.Text))
+		if !ok {
+			return errorEnvelope("unknown schema id")
+		}
+		return applyConfigEnvelope(normalizeConfig(next))
 	case "reload-config":
 		return applyConfigEnvelope(loadConfig())
 	case "reload-dictionaries":

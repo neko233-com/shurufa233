@@ -87,6 +87,33 @@ func ShurufaApplyConfigJSON(payload *C.char) *C.char {
 	return jsonCString(applyConfigEnvelope(config))
 }
 
+//export ShurufaSchemaPresetsJSON
+func ShurufaSchemaPresetsJSON() *C.char {
+	config := loadConfig()
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"selected":  config.Schema,
+		"schemas":   engine.BuiltinSchemaPresets(),
+		"config":    config,
+		"updatedAt": time.Now().UTC(),
+	})
+}
+
+//export ShurufaApplySchemaJSON
+func ShurufaApplySchemaJSON(payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	config := loadConfig()
+	next, ok := engine.ApplySchemaPresetConfig(config, firstNonEmpty(req.ID, req.Schema, req.Input, req.Text))
+	if !ok {
+		return jsonCString(errorEnvelope("unknown schema id"))
+	}
+	next = normalizeConfig(next)
+	return jsonCString(applyConfigEnvelope(next))
+}
+
 //export ShurufaReloadConfig
 func ShurufaReloadConfig() *C.char {
 	config := loadConfig()

@@ -278,6 +278,56 @@ func TestNormalizeConfigDefaultsInvalidDoublePinyinScheme(t *testing.T) {
 	}
 }
 
+func TestSchemasEndpointListsPresets(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/schemas", nil)
+	rec := httptest.NewRecorder()
+	state.schemas(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got schemaResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Selected != "wechat-pinyin" || len(got.Schemas) < 4 {
+		t.Fatalf("schemas response = %#v", got)
+	}
+}
+
+func TestApplySchemaUpdatesConfigAndSessions(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/schemas/apply", strings.NewReader(`{"id":"double-pinyin-microsoft"}`))
+	rec := httptest.NewRecorder()
+	state.applySchema(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got schemaResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Config.Schema != "double-pinyin-microsoft" || !got.Config.DoublePinyin || got.Config.DoublePinyinScheme != "microsoft" {
+		t.Fatalf("applied schema config = %#v", got.Config)
+	}
+}
+
 func TestImeCandidatesReturnsMetadataAndPagedRows(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.MaxCandidates = 42

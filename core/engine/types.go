@@ -4,6 +4,7 @@ import "time"
 
 type Config struct {
 	MaxCandidates         int      `json:"maxCandidates"`
+	Schema                string   `json:"schema,omitempty"`
 	CandidatePageSize     int      `json:"candidatePageSize"`
 	CandidateLayout       string   `json:"candidateLayout"`
 	ShowCandidateComments bool     `json:"showCandidateComments"`
@@ -92,4 +93,21 @@ type DictionaryFile struct {
 	Language string  `json:"language"`
 	Version  string  `json:"version"`
 	Entries  []Entry `json:"entries"`
+}
+
+type SchemaPreset struct {
+	ID                     string   `json:"id"`
+	Name                   string   `json:"name"`
+	Kind                   string   `json:"kind"`
+	RimeID                 string   `json:"rimeId,omitempty"`
+	Description            string   `json:"description"`
+	Tags                   []string `json:"tags,omitempty"`
+	Language               string   `json:"language"`
+	DoublePinyin           bool     `json:"doublePinyin"`
+	DoublePinyinScheme     string   `json:"doublePinyinScheme,omitempty"`
+	FuzzyInitials          []string `json:"fuzzyInitials,omitempty"`
+	Punctuation            string   `json:"punctuation,omitempty"`
+	CandidateLayout        string   `json:"candidateLayout,omitempty"`
+	ShowCandidateComments  bool     `json:"showCandidateComments"`
+	DictionarySourcePreset string   `json:"dictionarySourcePreset,omitempty"`
 }

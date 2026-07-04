@@ -50,6 +50,16 @@ type modeRequest struct {
 	Toggle bool   `json:"toggle,omitempty"`
 }
 
+type schemaRequest struct {
+	ID string `json:"id,omitempty"`
+}
+
+type schemaResponse struct {
+	Selected string                `json:"selected"`
+	Schemas  []engine.SchemaPreset `json:"schemas"`
+	Config   engine.Config         `json:"config,omitempty"`
+}
+
 type candidateActionRequest struct {
 	Action       string `json:"action,omitempty"`
 	Context      string `json:"context,omitempty"`
@@ -254,6 +264,8 @@ func main() {
 	mux.HandleFunc("POST /updates/apply", state.withCORS(state.applyUpdates))
 	mux.HandleFunc("GET /updates/sources", state.withCORS(state.updateSources))
 	mux.HandleFunc("POST /updates/source", state.withCORS(state.applyUpdateSource))
+	mux.HandleFunc("GET /schemas", state.withCORS(state.schemas))
+	mux.HandleFunc("POST /schemas/apply", state.withCORS(state.applySchema))
 	mux.HandleFunc("POST /ime/key", state.withCORS(state.imeKey))
 	mux.HandleFunc("POST /ime/backspace", state.withCORS(state.imeBackspace))
 	mux.HandleFunc("POST /ime/clear", state.withCORS(state.imeClear))
@@ -377,6 +389,46 @@ func (s *AppState) putConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.config)
+}
+
+func (s *AppState) schemas(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	writeJSON(w, schemaResponse{
+		Selected: s.config.Schema,
+		Schemas:  engine.BuiltinSchemaPresets(),
+		Config:   s.config,
+	})
+}
+
+func (s *AppState) applySchema(w http.ResponseWriter, r *http.Request) {
+	var req schemaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next, ok := engine.ApplySchemaPresetConfig(s.config, req.ID)
+	if !ok {
+		http.Error(w, "unknown schema id", http.StatusBadRequest)
+		return
+	}
+	next = normalizeConfig(next)
+	s.config = next
+	s.engine.Configure(next)
+	for _, session := range s.sessions {
+		session.Configure(next)
+	}
+	if err := s.saveLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, schemaResponse{
+		Selected: s.config.Schema,
+		Schemas:  engine.BuiltinSchemaPresets(),
+		Config:   s.config,
+	})
 }
 
 func (s *AppState) preview(w http.ResponseWriter, r *http.Request) {
@@ -1927,6 +1979,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	if config.Update.InstalledVersion == "" {
 		config.Update.InstalledVersion = defaults.Update.InstalledVersion
 	}
+	config = engine.NormalizeSchemaConfig(config)
 	return config
 }
 

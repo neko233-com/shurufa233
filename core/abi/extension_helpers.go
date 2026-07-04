@@ -18,6 +18,8 @@ var abiFeatureList = []string{
 	"reload-dictionaries",
 	"dictionary-manifest-json",
 	"dictionary-source-presets",
+	"schema-presets-json",
+	"apply-schema-json",
 	"user-scores-json",
 	"user-phrases-json",
 	"user-rejects-json",
@@ -107,6 +109,8 @@ type extensionCommandPayload struct {
 	PageSize     int              `json:"pageSize,omitempty"`
 	Delta        int              `json:"delta,omitempty"`
 	Side         string           `json:"side,omitempty"`
+	ID           string           `json:"id,omitempty"`
+	Schema       string           `json:"schema,omitempty"`
 	Reading      string           `json:"reading,omitempty"`
 	Text         string           `json:"text,omitempty"`
 	Kind         string           `json:"kind,omitempty"`
@@ -430,6 +434,12 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return map[string]any{
 			"ok":        true,
 			"sources":   engine.BuiltinDictionarySources(),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "schema-presets-json", "schemas", "schemas-json":
+		return map[string]any{
+			"ok":        true,
+			"schemas":   engine.BuiltinSchemaPresets(),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
 	case "candidate-action", "candidate-action-json":

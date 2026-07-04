@@ -1,0 +1,207 @@
+package engine
+
+import "strings"
+
+var builtinSchemaPresets = []SchemaPreset{
+	{
+		ID:                    "wechat-pinyin",
+		Name:                  "微信/微软全拼",
+		Kind:                  "full-pinyin",
+		Description:           "默认中文拼音方案，横排候选、中文标点、兼容微软输入法的日常交互。",
+		Tags:                  []string{"wechat", "microsoft", "default"},
+		Language:              "zh-CN",
+		DoublePinyin:          false,
+		FuzzyInitials:         []string{"zh=z", "ch=c", "sh=s"},
+		Punctuation:           "full",
+		CandidateLayout:       "horizontal",
+		ShowCandidateComments: true,
+	},
+	{
+		ID:                     "rime-luna-pinyin",
+		Name:                   "Rime 朙月拼音",
+		Kind:                   "full-pinyin",
+		RimeID:                 "luna_pinyin",
+		Description:            "面向小狼毫/鼠须管词库迁移的 Rime 朙月拼音兼容方案，保留候选注释与竖排习惯。",
+		Tags:                   []string{"rime", "luna-pinyin"},
+		Language:               "zh-CN",
+		DoublePinyin:           false,
+		FuzzyInitials:          []string{"zh=z", "ch=c", "sh=s"},
+		Punctuation:            "full",
+		CandidateLayout:        "vertical",
+		ShowCandidateComments:  true,
+		DictionarySourcePreset: "rime-luna-pinyin-source",
+	},
+	{
+		ID:                     "rime-ice-pinyin",
+		Name:                   "雾凇拼音",
+		Kind:                   "full-pinyin",
+		RimeID:                 "rime_ice",
+		Description:            "面向 Rime Ice 大词库迁移的全拼方案，适合用 GitHub 热更词库替代从零维护。",
+		Tags:                   []string{"rime", "rime-ice", "dictionary"},
+		Language:               "zh-CN",
+		DoublePinyin:           false,
+		FuzzyInitials:          []string{"zh=z", "ch=c", "sh=s"},
+		Punctuation:            "full",
+		CandidateLayout:        "horizontal",
+		ShowCandidateComments:  true,
+		DictionarySourcePreset: "rime-ice-source",
+	},
+	{
+		ID:                    "double-pinyin-xiaohe",
+		Name:                  "小鹤双拼",
+		Kind:                  "double-pinyin",
+		RimeID:                "double_pinyin_flypy",
+		Description:           "小鹤双拼键位，保留全拼 fallback，适合从 Rime 小鹤方案迁移。",
+		Tags:                  []string{"rime", "double-pinyin", "flypy"},
+		Language:              "zh-CN",
+		DoublePinyin:          true,
+		DoublePinyinScheme:    "xiaohe",
+		FuzzyInitials:         []string{"zh=z", "ch=c", "sh=s"},
+		Punctuation:           "full",
+		CandidateLayout:       "horizontal",
+		ShowCandidateComments: true,
+	},
+	{
+		ID:                    "double-pinyin-microsoft",
+		Name:                  "微软双拼",
+		Kind:                  "double-pinyin",
+		Description:           "微软双拼键位，TSF 胶水层会把分号作为 ing 韵母转交给 Go 内核。",
+		Tags:                  []string{"microsoft", "double-pinyin"},
+		Language:              "zh-CN",
+		DoublePinyin:          true,
+		DoublePinyinScheme:    "microsoft",
+		FuzzyInitials:         []string{"zh=z", "ch=c", "sh=s"},
+		Punctuation:           "full",
+		CandidateLayout:       "horizontal",
+		ShowCandidateComments: true,
+	},
+	{
+		ID:                    "double-pinyin-sogou",
+		Name:                  "搜狗双拼",
+		Kind:                  "double-pinyin",
+		Description:           "搜狗/微软兼容双拼入口，当前共用微软双拼底层映射，后续可独立替换键位表。",
+		Tags:                  []string{"sogou", "double-pinyin"},
+		Language:              "zh-CN",
+		DoublePinyin:          true,
+		DoublePinyinScheme:    "microsoft",
+		FuzzyInitials:         []string{"zh=z", "ch=c", "sh=s"},
+		Punctuation:           "full",
+		CandidateLayout:       "horizontal",
+		ShowCandidateComments: true,
+	},
+}
+
+func BuiltinSchemaPresets() []SchemaPreset {
+	out := make([]SchemaPreset, len(builtinSchemaPresets))
+	copy(out, builtinSchemaPresets)
+	for i := range out {
+		out[i].Tags = append([]string(nil), out[i].Tags...)
+		out[i].FuzzyInitials = append([]string(nil), out[i].FuzzyInitials...)
+	}
+	return out
+}
+
+func SchemaPresetByID(id string) (SchemaPreset, bool) {
+	normalized := NormalizeSchemaID(id)
+	for _, preset := range builtinSchemaPresets {
+		if preset.ID == normalized {
+			return cloneSchemaPreset(preset), true
+		}
+	}
+	return SchemaPreset{}, false
+}
+
+func NormalizeSchemaID(id string) string {
+	switch strings.ToLower(strings.TrimSpace(id)) {
+	case "", "default", "pinyin", "full-pinyin", "wechat", "microsoft-pinyin", "ms-pinyin":
+		return "wechat-pinyin"
+	case "luna", "luna-pinyin", "luna_pinyin", "rime-luna", "rime-luna-pinyin":
+		return "rime-luna-pinyin"
+	case "rime-ice", "rime_ice", "ice", "rime-ice-pinyin":
+		return "rime-ice-pinyin"
+	case "xiaohe", "flypy", "double-pinyin-flypy", "double_pinyin_flypy", "double-pinyin-xiaohe":
+		return "double-pinyin-xiaohe"
+	case "microsoft", "ms", "double-pinyin-ms", "double-pinyin-microsoft":
+		return "double-pinyin-microsoft"
+	case "sogou", "double-pinyin-sogou":
+		return "double-pinyin-sogou"
+	default:
+		return strings.ToLower(strings.TrimSpace(id))
+	}
+}
+
+func NormalizeSchemaConfig(config Config) Config {
+	if preset, ok := SchemaPresetByID(config.Schema); ok && schemaMatchesConfig(preset, config) {
+		config.Schema = NormalizeSchemaID(config.Schema)
+		return config
+	}
+	config.Schema = DeriveSchemaID(config)
+	return config
+}
+
+func DeriveSchemaID(config Config) string {
+	if config.DoublePinyin {
+		switch normalizeDoublePinyinScheme(config.DoublePinyinScheme) {
+		case "microsoft":
+			return "double-pinyin-microsoft"
+		default:
+			return "double-pinyin-xiaohe"
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(config.CandidateLayout), "vertical") {
+		return "rime-luna-pinyin"
+	}
+	if strings.EqualFold(strings.TrimSpace(config.Update.SourcePreset), "rime-ice-source") {
+		return "rime-ice-pinyin"
+	}
+	return "wechat-pinyin"
+}
+
+func ApplySchemaPresetConfig(config Config, id string) (Config, bool) {
+	preset, ok := SchemaPresetByID(id)
+	if !ok {
+		return NormalizeSchemaConfig(config), false
+	}
+	config.Schema = preset.ID
+	if preset.Language != "" {
+		config.Language = preset.Language
+	}
+	config.DoublePinyin = preset.DoublePinyin
+	config.DoublePinyinScheme = normalizeDoublePinyinScheme(preset.DoublePinyinScheme)
+	if len(preset.FuzzyInitials) > 0 {
+		config.FuzzyInitials = append([]string(nil), preset.FuzzyInitials...)
+	}
+	if preset.Punctuation != "" {
+		config.Punctuation = preset.Punctuation
+	}
+	if preset.CandidateLayout != "" {
+		config.CandidateLayout = preset.CandidateLayout
+	}
+	config.ShowCandidateComments = preset.ShowCandidateComments
+	if preset.DictionarySourcePreset != "" {
+		config.Update.SourcePreset = preset.DictionarySourcePreset
+	}
+	return NormalizeSchemaConfig(config), true
+}
+
+func cloneSchemaPreset(preset SchemaPreset) SchemaPreset {
+	preset.Tags = append([]string(nil), preset.Tags...)
+	preset.FuzzyInitials = append([]string(nil), preset.FuzzyInitials...)
+	return preset
+}
+
+func schemaMatchesConfig(preset SchemaPreset, config Config) bool {
+	if preset.DoublePinyin != config.DoublePinyin {
+		return false
+	}
+	if preset.DoublePinyin && normalizeDoublePinyinScheme(preset.DoublePinyinScheme) != normalizeDoublePinyinScheme(config.DoublePinyinScheme) {
+		return false
+	}
+	if preset.CandidateLayout != "" && normalizeCandidateLayout(preset.CandidateLayout) != normalizeCandidateLayout(config.CandidateLayout) {
+		return false
+	}
+	if preset.DictionarySourcePreset != "" && strings.TrimSpace(config.Update.SourcePreset) != preset.DictionarySourcePreset {
+		return false
+	}
+	return true
+}
