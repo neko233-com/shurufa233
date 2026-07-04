@@ -1614,7 +1614,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
 
     if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB) {
-      MoveSelection(1);
+      MoveSelection(key == VK_TAB && IsShiftPressed() ? -1 : 1);
       *eaten = TRUE;
       return S_OK;
     }

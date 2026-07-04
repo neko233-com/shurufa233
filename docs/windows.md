@@ -225,6 +225,6 @@ Candidate interaction:
 - mouse wheel over the candidate strip: page candidates
 - mouse click on the right-side page arrows: page candidates
 - `Right` / `Down` / `Tab`: move highlight to the next candidate
-- `Left` / `Up`: move highlight to the previous candidate
+- `Left` / `Up` / `Shift+Tab`: move highlight to the previous candidate
 - `PageDown` / `PageUp`, `=` / `-`, or `]` / `[`: page candidates
 - `Esc`: clear the active composition and hide the candidate window
