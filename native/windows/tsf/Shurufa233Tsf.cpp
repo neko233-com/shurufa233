@@ -815,6 +815,53 @@ bool IsShiftKey(WPARAM key) {
   return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT;
 }
 
+bool IsShiftPressed() {
+  return (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+}
+
+std::wstring ChinesePunctuationForKey(WPARAM key) {
+  const bool shifted = IsShiftPressed();
+  switch (key) {
+    case VK_OEM_COMMA:
+    case L',':
+      return shifted ? L"《" : L"，";
+    case VK_OEM_PERIOD:
+    case L'.':
+      return shifted ? L"》" : L"。";
+    case VK_OEM_1:
+    case L';':
+      return shifted ? L"：" : L"；";
+    case VK_OEM_2:
+    case L'/':
+      return shifted ? L"？" : L"、";
+    case VK_OEM_4:
+    case L'[':
+      return shifted ? L"【" : L"「";
+    case VK_OEM_6:
+    case L']':
+      return shifted ? L"】" : L"」";
+    case VK_OEM_7:
+    case L'\'':
+      return shifted ? L"“" : L"’";
+    case L'<':
+      return L"《";
+    case L'>':
+      return L"》";
+    case L':':
+      return L"：";
+    case L'?':
+      return L"？";
+    case L'{':
+      return L"【";
+    case L'}':
+      return L"】";
+    case L'"':
+      return L"“";
+    default:
+      return L"";
+  }
+}
+
 int CandidateIndexFromKey(WPARAM key) {
   if (key >= L'1' && key <= L'9') {
     return static_cast<int>(key - L'1');
@@ -986,6 +1033,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (!eaten) {
       return E_INVALIDARG;
     }
+    if (shiftDown_ && !IsShiftKey(key)) {
+      shiftToggleCandidate_ = false;
+    }
     *eaten = ShouldEatKey(key);
     return S_OK;
   }
@@ -1002,10 +1052,14 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (IsShiftKey(key)) {
       if (!shiftDown_) {
         shiftDown_ = true;
-        ToggleAsciiMode();
+        shiftToggleCandidate_ = true;
       }
       *eaten = TRUE;
       return S_OK;
+    }
+
+    if (shiftDown_) {
+      shiftToggleCandidate_ = false;
     }
 
     if (IsAsciiLetter(key)) {
@@ -1049,6 +1103,19 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return S_OK;
     }
 
+    const std::wstring punctuation = ChinesePunctuationForKey(key);
+    if (!asciiMode_ && !punctuation.empty()) {
+      if (cachedCandidateCount_ > 0) {
+        CommitCandidate(context, selectedIndex_);
+        selectedIndex_ = 0;
+        candidateWindow_.Hide();
+        cachedCandidateCount_ = 0;
+      }
+      CommitText(context, punctuation);
+      *eaten = TRUE;
+      return S_OK;
+    }
+
     if (key == VK_SPACE || key == VK_RETURN || (key >= L'1' && key <= L'9')) {
       const int index = (key >= L'1' && key <= L'9') ? CandidateIndexFromKey(key) : selectedIndex_;
       CommitCandidate(context, index);
@@ -1075,7 +1142,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return E_INVALIDARG;
     }
     if (IsShiftKey(key)) {
+      if (shiftDown_ && shiftToggleCandidate_) {
+        ToggleAsciiMode();
+      }
       shiftDown_ = false;
+      shiftToggleCandidate_ = false;
       *eaten = TRUE;
       return S_OK;
     }
@@ -1114,10 +1185,37 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (key == VK_SPACE || key == VK_RETURN) {
       return cachedCandidateCount_ > 0;
     }
+    if (!asciiMode_ && !ChinesePunctuationForKey(key).empty()) {
+      return true;
+    }
     if (key >= L'1' && key <= L'9') {
       return cachedCandidateCount_ > CandidateIndexFromKey(key);
     }
     return false;
+  }
+
+  void CommitText(ITfContext *context, const std::wstring &text) {
+    if (!context || text.empty()) {
+      LogLine(L"CommitText skipped: no context/text");
+      return;
+    }
+
+    EditSession *session = new EditSession(context, text);
+    HRESULT editResult = E_FAIL;
+    HRESULT hr = context->RequestEditSession(
+        clientId_, session, TF_ES_READWRITE | TF_ES_SYNC, &editResult);
+    session->Release();
+    wchar_t message[192]{};
+    StringCchPrintfW(message, ARRAYSIZE(message),
+                     L"CommitText text_len=%zu request_hr=0x%08X edit_hr=0x%08X",
+                     text.size(), static_cast<unsigned int>(hr), static_cast<unsigned int>(editResult));
+    LogLine(message);
+    if (hr == TF_E_SYNCHRONOUS || FAILED(hr)) {
+      EditSession *asyncSession = new EditSession(context, text);
+      HRESULT ignored = E_FAIL;
+      context->RequestEditSession(clientId_, asyncSession, TF_ES_READWRITE | TF_ES_ASYNC, &ignored);
+      asyncSession->Release();
+    }
   }
 
   void CommitCandidate(ITfContext *context, int index) {
@@ -1135,22 +1233,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return;
     }
 
-    EditSession *session = new EditSession(context, text);
-    HRESULT editResult = E_FAIL;
-    HRESULT hr = context->RequestEditSession(
-        clientId_, session, TF_ES_READWRITE | TF_ES_SYNC, &editResult);
-    session->Release();
-    wchar_t message[192]{};
-    StringCchPrintfW(message, ARRAYSIZE(message),
-                     L"CommitCandidate text_len=%zu request_hr=0x%08X edit_hr=0x%08X",
-                     text.size(), static_cast<unsigned int>(hr), static_cast<unsigned int>(editResult));
-    LogLine(message);
-    if (hr == TF_E_SYNCHRONOUS || FAILED(hr)) {
-      EditSession *asyncSession = new EditSession(context, text);
-      HRESULT ignored = E_FAIL;
-      context->RequestEditSession(clientId_, asyncSession, TF_ES_READWRITE | TF_ES_ASYNC, &ignored);
-      asyncSession->Release();
-    }
+    CommitText(context, text);
   }
 
   std::string BuildCandidatePayloadFromCore(int count) {
@@ -1263,6 +1346,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   int cachedCandidateCount_ = 0;
   bool asciiMode_ = false;
   bool shiftDown_ = false;
+  bool shiftToggleCandidate_ = false;
   CandidateWindow candidateWindow_;
 };
 
