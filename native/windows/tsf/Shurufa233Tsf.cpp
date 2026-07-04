@@ -451,6 +451,7 @@ class CandidateWindow {
     }
     composing_.clear();
     candidateHits_.clear();
+    pageHits_.clear();
   }
 
   void ShowStatus(const wchar_t *text) {
@@ -459,6 +460,7 @@ class CandidateWindow {
     statusText_ = text ? text : L"";
     candidates_.clear();
     candidateHits_.clear();
+    pageHits_.clear();
     composing_.clear();
     pageStart_ = 0;
     totalCount_ = 0;
@@ -493,6 +495,11 @@ class CandidateWindow {
       const int absoluteIndex = self->HitTestCandidate(point);
       if (absoluteIndex >= 0 && self->clickHandler_) {
         self->clickHandler_(self->clickOwner_, absoluteIndex);
+      } else if (self->pageHandler_) {
+        const int pageDelta = self->HitTestPage(point);
+        if (pageDelta != 0) {
+          self->pageHandler_(self->pageOwner_, pageDelta);
+        }
       }
       return 0;
     }
@@ -515,7 +522,7 @@ class CandidateWindow {
       POINT cursor{};
       GetCursorPos(&cursor);
       ScreenToClient(hwnd, &cursor);
-      if (self->HitTestCandidate(cursor) >= 0) {
+      if (self->HitTestCandidate(cursor) >= 0 || self->HitTestPage(cursor) != 0) {
         SetCursor(LoadCursorW(nullptr, IDC_HAND));
         return TRUE;
       }
@@ -635,9 +642,14 @@ class CandidateWindow {
     RECT rect{};
     int absoluteIndex = -1;
   };
+  struct PageHit {
+    RECT rect{};
+    int delta = 0;
+  };
   static constexpr UINT_PTR kStatusTimerId = 1;
   std::vector<CandidateView> candidates_;
   std::vector<CandidateHit> candidateHits_;
+  std::vector<PageHit> pageHits_;
   std::wstring composing_;
   std::wstring statusText_;
   int selectedIndex_ = 0;
@@ -713,6 +725,14 @@ class CandidateWindow {
     return max(66, min(280, 48 + textWidth + kindWidth));
   }
 
+  bool HasPageControls() const {
+    return totalCount_ > static_cast<int>(candidates_.size());
+  }
+
+  int PageControlsWidth() const {
+    return HasPageControls() ? 124 : 0;
+  }
+
   int MeasureWindowWidth() {
     HDC dc = GetDC(hwnd_);
     HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
@@ -720,9 +740,7 @@ class CandidateWindow {
     for (size_t i = 0; i < candidates_.size() && i < kCandidatesPerPage; ++i) {
       width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + 6;
     }
-    if (totalCount_ > static_cast<int>(candidates_.size())) {
-      width += 88;
-    }
+    width += PageControlsWidth();
     SelectObject(dc, oldFont);
     ReleaseDC(hwnd_, dc);
     return max(180, min(780, width));
@@ -1056,18 +1074,54 @@ class CandidateWindow {
     DeleteObject(brush);
   }
 
+  void DrawChevron(HDC dc, const RECT &rect, int delta, COLORREF color) const {
+    const int midX = (rect.left + rect.right) / 2;
+    const int midY = (rect.top + rect.bottom) / 2;
+    const int halfWidth = 4;
+    const int halfHeight = 6;
+    POINT points[3]{};
+    if (delta < 0) {
+      points[0] = POINT{midX + halfWidth / 2, midY - halfHeight};
+      points[1] = POINT{midX - halfWidth, midY};
+      points[2] = POINT{midX + halfWidth / 2, midY + halfHeight};
+    } else {
+      points[0] = POINT{midX - halfWidth / 2, midY - halfHeight};
+      points[1] = POINT{midX + halfWidth, midY};
+      points[2] = POINT{midX - halfWidth / 2, midY + halfHeight};
+    }
+    HPEN pen = CreatePen(PS_SOLID, 2, color);
+    HGDIOBJ oldPen = SelectObject(dc, pen);
+    Polyline(dc, points, 3);
+    SelectObject(dc, oldPen);
+    DeleteObject(pen);
+  }
+
+  void DrawPageButton(HDC dc, const RECT &rect, int delta) const {
+    DrawRoundedRect(dc, rect, CandidateIdleColor(), CandidateIdleBorderColor(), 10);
+    DrawChevron(dc, rect, delta, mutedText_);
+  }
+
   void DrawCandidates(HDC dc, const RECT &rect) {
     statusText_.clear();
     candidateHits_.clear();
+    pageHits_.clear();
     DrawComposition(dc, rect);
     int x = rect.left + 15;
     const int y = CandidateBandTop() + 8;
     const int itemHeight = max(34, fontSize_ + 20);
+    const int candidateRight = HasPageControls() ? rect.right - PageControlsWidth() - 8
+                                                 : rect.right - 14;
     for (size_t i = 0; i < candidates_.size() && i < kCandidatesPerPage; ++i) {
       const CandidateView &candidate = candidates_[i];
       const bool selected = static_cast<int>(i) == selectedIndex_;
       const int itemWidth = CandidateItemWidth(dc, candidate, selected);
       RECT itemRect{x, y, x + itemWidth, y + itemHeight};
+      if (itemRect.left >= candidateRight - 56) {
+        break;
+      }
+      if (itemRect.right > candidateRight) {
+        itemRect.right = candidateRight;
+      }
       candidateHits_.push_back(CandidateHit{itemRect, pageStart_ + static_cast<int>(i)});
 
       if (selected) {
@@ -1107,7 +1161,7 @@ class CandidateWindow {
       DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
                 DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
       x += itemWidth + 7;
-      if (x > rect.right - 40) {
+      if (x > candidateRight - 56) {
         break;
       }
     }
@@ -1121,6 +1175,15 @@ class CandidateWindow {
       }
     }
     return -1;
+  }
+
+  int HitTestPage(POINT point) const {
+    for (const PageHit &hit : pageHits_) {
+      if (hit.delta != 0 && PtInRect(&hit.rect, point)) {
+        return hit.delta;
+      }
+    }
+    return 0;
   }
 
   void SelectCandidate(int absoluteIndex) {
@@ -1140,17 +1203,23 @@ class CandidateWindow {
   }
 
   void DrawPageIndicator(HDC dc, const RECT &rect) {
-    if (totalCount_ <= static_cast<int>(candidates_.size())) {
+    if (!HasPageControls()) {
       return;
     }
     const int first = pageStart_ + 1;
     const int last = min(pageStart_ + static_cast<int>(candidates_.size()), totalCount_);
     wchar_t label[32]{};
     StringCchPrintfW(label, ARRAYSIZE(label), L"%d-%d/%d", first, last, totalCount_);
+    const int centerY = CandidateBandTop() + 8 + max(34, fontSize_ + 20) / 2;
+    RECT prevRect{rect.right - 112, centerY - 15, rect.right - 84, centerY + 15};
+    RECT nextRect{rect.right - 42, centerY - 15, rect.right - 14, centerY + 15};
+    DrawPageButton(dc, prevRect, -1);
+    DrawPageButton(dc, nextRect, 1);
+    pageHits_.push_back(PageHit{prevRect, -1});
+    pageHits_.push_back(PageHit{nextRect, 1});
     SetTextColor(dc, mutedText_);
-    RECT labelRect{max(rect.left + 12, rect.right - 96), CandidateBandTop() + 8,
-                   rect.right - 14, rect.bottom - 8};
-    DrawTextW(dc, label, -1, &labelRect, DT_SINGLELINE | DT_VCENTER | DT_RIGHT);
+    RECT labelRect{prevRect.right + 4, centerY - 15, nextRect.left - 4, centerY + 15};
+    DrawTextW(dc, label, -1, &labelRect, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
   }
 
   void DrawStatus(HDC dc, const RECT &rect) {

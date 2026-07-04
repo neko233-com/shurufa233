@@ -217,6 +217,8 @@ Candidate interaction:
 - mouse click: commit the clicked candidate in the native candidate strip
 - mouse hover: move the highlighted candidate under the pointer
 - mouse wheel over the candidate strip: page candidates
+- mouse click on the right-side page arrows: page candidates
 - `Right` / `Down` / `Tab`: move highlight to the next candidate
 - `Left` / `Up`: move highlight to the previous candidate
+- `PageDown` / `PageUp`: page candidates
 - `Esc`: clear the active composition and hide the candidate window
