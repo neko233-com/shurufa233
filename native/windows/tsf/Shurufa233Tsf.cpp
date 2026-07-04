@@ -221,14 +221,14 @@ int HttpInputKeyFast(uint64_t session, char key) {
   StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/key?key=%c&session=%llu",
                    static_cast<wchar_t>(key), session);
   HttpRequest(L"POST", path);
-  return 0;
+  return -1;
 }
 
 int HttpBackspaceFast(uint64_t session) {
   wchar_t path[64]{};
   StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/backspace?session=%llu", session);
   HttpRequest(L"POST", path);
-  return 0;
+  return -1;
 }
 
 int HttpCandidateCount(uint64_t session) {
@@ -845,6 +845,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   STDMETHODIMP Deactivate() override {
     LogLine(L"Deactivate called");
     candidateWindow_.Hide();
+    cachedCandidateCount_ = 0;
     if (session_ && g_core.Ready()) {
       g_core.destroySession(session_);
       session_ = 0;
@@ -898,16 +899,16 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
         ch = static_cast<char>(ch - 'A' + 'a');
       }
       selectedIndex_ = 0;
-      g_core.inputKeyFast(session_, ch);
-      UpdateCandidateWindow();
+      const int count = g_core.inputKeyFast(session_, ch);
+      UpdateCandidateWindow(count);
       *eaten = TRUE;
       return S_OK;
     }
 
     if (key == VK_BACK) {
       selectedIndex_ = 0;
-      g_core.backspaceFast(session_);
-      UpdateCandidateWindow();
+      const int count = g_core.backspaceFast(session_);
+      UpdateCandidateWindow(count);
       *eaten = TRUE;
       return S_OK;
     }
@@ -916,6 +917,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       selectedIndex_ = 0;
       ClearSession();
       candidateWindow_.Hide();
+      cachedCandidateCount_ = 0;
       *eaten = TRUE;
       return S_OK;
     }
@@ -937,6 +939,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       CommitCandidate(context, index);
       selectedIndex_ = 0;
       candidateWindow_.Hide();
+      cachedCandidateCount_ = 0;
       *eaten = TRUE;
       return S_OK;
     }
@@ -982,23 +985,22 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return true;
     }
     if (asciiMode_) {
-      return g_core.candidateCount(session_) > 0 &&
-             (key == VK_ESCAPE || key == VK_SPACE || key == VK_RETURN);
+      return cachedCandidateCount_ > 0 && (key == VK_ESCAPE || key == VK_SPACE || key == VK_RETURN);
     }
     if (IsAsciiLetter(key) || key == VK_BACK) {
       return true;
     }
     if (key == VK_ESCAPE) {
-      return g_core.candidateCount(session_) > 0;
+      return cachedCandidateCount_ > 0;
     }
     if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB || key == VK_LEFT || key == VK_UP) {
-      return g_core.candidateCount(session_) > 0;
+      return cachedCandidateCount_ > 0;
     }
     if (key == VK_SPACE || key == VK_RETURN) {
-      return g_core.candidateCount(session_) > 0;
+      return cachedCandidateCount_ > 0;
     }
     if (key >= L'1' && key <= L'9') {
-      return g_core.candidateCount(session_) > CandidateIndexFromKey(key);
+      return cachedCandidateCount_ > CandidateIndexFromKey(key);
     }
     return false;
   }
@@ -1078,8 +1080,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     return payload;
   }
 
-  void UpdateCandidateWindow() {
-    const int count = g_core.candidateCount(session_);
+  void UpdateCandidateWindow(int knownCount = -1) {
+    const int count = knownCount >= 0 ? knownCount : g_core.candidateCount(session_);
+    cachedCandidateCount_ = count;
     if (count <= 0) {
       candidateWindow_.Hide();
       return;
@@ -1100,13 +1103,14 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       StringCchPrintfW(message, ARRAYSIZE(message), L"UpdateCandidateWindow empty session=%llu", session_);
       LogLine(message);
       candidateWindow_.Hide();
+      cachedCandidateCount_ = 0;
       return;
     }
     candidateWindow_.Show(candidates, selectedIndex_);
   }
 
   void MoveSelection(int delta) {
-    const int count = g_core.candidateCount(session_);
+    const int count = cachedCandidateCount_;
     if (count <= 0) {
       return;
     }
@@ -1122,6 +1126,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (cleared) {
       g_core.freeValue(cleared);
     }
+    cachedCandidateCount_ = 0;
   }
 
   void ToggleAsciiMode() {
@@ -1140,6 +1145,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   TfClientId clientId_ = TF_CLIENTID_NULL;
   uint64_t session_ = 0;
   int selectedIndex_ = 0;
+  int cachedCandidateCount_ = 0;
   bool asciiMode_ = false;
   bool shiftDown_ = false;
   CandidateWindow candidateWindow_;
