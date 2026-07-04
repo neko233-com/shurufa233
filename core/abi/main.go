@@ -8,13 +8,9 @@ import "C"
 
 import (
 	"encoding/json"
-	"errors"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 	"unsafe"
 
 	"github.com/neko233-com/shurufa233/core/engine"
@@ -24,14 +20,7 @@ var (
 	sessionsMu sync.Mutex
 	nextID     uint64 = 1
 	sessions          = map[uint64]*engine.Engine{}
-	scoresMu   sync.Mutex
 )
-
-type userScoreStore struct {
-	Version   int            `json:"version"`
-	UpdatedAt time.Time      `json:"updatedAt"`
-	Scores    map[string]int `json:"scores"`
-}
 
 func main() {}
 
@@ -48,8 +37,12 @@ func ShurufaCreateSession() C.uint64_t {
 //export ShurufaDestroySession
 func ShurufaDestroySession(id C.uint64_t) {
 	sessionsMu.Lock()
-	defer sessionsMu.Unlock()
+	session := sessions[uint64(id)]
 	delete(sessions, uint64(id))
+	sessionsMu.Unlock()
+	if session != nil {
+		persistUserScoresSync(session.UserScores())
+	}
 }
 
 //export ShurufaInputKey
@@ -220,89 +213,6 @@ func newEngine() *engine.Engine {
 	}
 	session.ImportUserScores(loadUserScores())
 	return session
-}
-
-func userScoresPath() (string, error) {
-	if override := os.Getenv("SHURUFA233_USER_SCORES"); override != "" {
-		return override, nil
-	}
-	base := os.Getenv("APPDATA")
-	if base == "" {
-		var err error
-		base, err = os.UserConfigDir()
-		if err != nil {
-			return "", err
-		}
-	}
-	return filepath.Join(base, "shurufa233", "user-scores.json"), nil
-}
-
-func loadUserScores() map[string]int {
-	scoresMu.Lock()
-	defer scoresMu.Unlock()
-	path, err := userScoresPath()
-	if err != nil {
-		return nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	var store userScoreStore
-	if err := json.Unmarshal(data, &store); err != nil {
-		return nil
-	}
-	return store.Scores
-}
-
-func persistUserScores(scores map[string]int) {
-	if len(scores) == 0 {
-		return
-	}
-	scoresMu.Lock()
-	defer scoresMu.Unlock()
-	path, err := userScoresPath()
-	if err != nil {
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	merged := make(map[string]int, len(scores))
-	for key, value := range scores {
-		merged[key] = value
-	}
-	if data, err := os.ReadFile(path); err == nil {
-		var existing userScoreStore
-		if json.Unmarshal(data, &existing) == nil {
-			for key, value := range existing.Scores {
-				if value > merged[key] {
-					merged[key] = value
-				}
-			}
-		}
-	}
-	store := userScoreStore{
-		Version:   1,
-		UpdatedAt: time.Now().UTC(),
-		Scores:    merged,
-	}
-	data, err := json.MarshalIndent(store, "", "  ")
-	if err != nil {
-		return
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			_ = os.Remove(path)
-			_ = os.Rename(tmp, path)
-		} else {
-			_ = os.Remove(tmp)
-		}
-	}
 }
 
 func jsonCString(value any) *C.char {
