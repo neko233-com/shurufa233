@@ -63,6 +63,26 @@ func TestSegmentedCandidateDoesNotOverrideStrongExactPhrase(t *testing.T) {
 	}
 }
 
+func TestSegmentedCandidateUsesUserScoresInPath(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{
+		{Reading: "aa", Text: "甲", Weight: 500},
+		{Reading: "aa", Text: "乙", Weight: 100},
+		{Reading: "bb", Text: "丙", Weight: 500},
+	})
+
+	state := e.Preview("aabb")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "甲丙" {
+		t.Fatalf("expected static segment path 甲丙, got %#v", state.Candidates)
+	}
+
+	e.ImportUserScores(map[string]int{"aa|乙": 1000})
+	state = e.Preview("aabb")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "乙丙" {
+		t.Fatalf("expected learned segment path 乙丙, got %#v", state.Candidates)
+	}
+}
+
 func TestEnglishMode(t *testing.T) {
 	config := DefaultConfig()
 	config.Mode = "en"

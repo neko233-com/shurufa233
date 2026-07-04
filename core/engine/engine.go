@@ -284,14 +284,13 @@ func (e *Engine) candidatesLocked() []Candidate {
 	entries := e.lookupLocked(e.buffer)
 	candidates := make([]Candidate, 0, len(entries))
 	for _, entry := range entries {
-		scoreKey := entry.Reading + "|" + entry.Text
 		candidates = append(candidates, Candidate{
 			Text:      entry.Text,
 			Reading:   entry.Reading,
 			Kind:      entry.Kind,
 			Source:    entry.Source,
 			Weight:    entry.Weight,
-			UserScore: e.user[scoreKey],
+			UserScore: e.entryUserScoreLocked(entry),
 		})
 	}
 
@@ -475,8 +474,8 @@ func (e *Engine) segmentBestLocked(reading string) (string, int) {
 			if len(entries) == 0 {
 				continue
 			}
-			best := entries[0]
-			score := states[i].score + best.Weight - segmentedPiecePenalty
+			best := e.bestEntryLocked(entries)
+			score := states[i].score + e.entryScoreLocked(best) - segmentedPiecePenalty
 			pieces := states[i].pieces + 1
 			if !states[j].ok || score > states[j].score ||
 				(score == states[j].score && pieces < states[j].pieces) {
@@ -494,6 +493,27 @@ func (e *Engine) segmentBestLocked(reading string) (string, int) {
 		return "", 0
 	}
 	return best.text, max(1, best.score-segmentedCandidatePenalty)
+}
+
+func (e *Engine) bestEntryLocked(entries []Entry) Entry {
+	best := entries[0]
+	bestScore := e.entryScoreLocked(best)
+	for _, entry := range entries[1:] {
+		score := e.entryScoreLocked(entry)
+		if score > bestScore || (score == bestScore && len([]rune(entry.Text)) > len([]rune(best.Text))) {
+			best = entry
+			bestScore = score
+		}
+	}
+	return best
+}
+
+func (e *Engine) entryScoreLocked(entry Entry) int {
+	return entry.Weight + e.entryUserScoreLocked(entry)
+}
+
+func (e *Engine) entryUserScoreLocked(entry Entry) int {
+	return e.user[entry.Reading+"|"+entry.Text]
 }
 
 func normalizeReading(input string) string {
