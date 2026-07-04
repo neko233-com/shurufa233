@@ -394,8 +394,24 @@ func (s *AppState) imeMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req modeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	query := r.URL.Query()
+	if raw := strings.TrimSpace(query.Get("mode")); raw != "" {
+		req.Mode = raw
+	}
+	if raw := strings.TrimSpace(query.Get("toggle")); raw != "" {
+		req.Toggle = raw == "1" || strings.EqualFold(raw, "true")
+	}
+	if req.Mode == "" && !req.Toggle {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if req.Mode == "" && !req.Toggle {
+		req.Mode = engine.DefaultConfig().Mode
+	}
+	if req.Mode != "" && !req.Toggle && normalizeModeValue(req.Mode, "") == "" {
+		http.Error(w, "mode must be zh, en, or toggle", http.StatusBadRequest)
 		return
 	}
 	var state engine.State

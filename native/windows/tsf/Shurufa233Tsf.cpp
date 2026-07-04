@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -51,6 +52,9 @@ using CandidateScoreFn = int (*)(uint64_t, int);
 using CandidatePayloadFn = char *(*)(uint64_t, int);
 using CandidatePayloadRangeFn = char *(*)(uint64_t, int, int);
 using ClearSessionFn = char *(*)(uint64_t);
+using SetModeFn = char *(*)(uint64_t, const char *);
+using ToggleModeFn = char *(*)(uint64_t);
+using ModeFn = char *(*)(uint64_t);
 using CommitCandidateFn = char *(*)(uint64_t, int);
 using FreeFn = void (*)(char *);
 
@@ -68,6 +72,9 @@ struct CoreApi {
   CandidatePayloadFn candidatePayload = nullptr;
   CandidatePayloadRangeFn candidatePayloadRange = nullptr;
   ClearSessionFn clearSession = nullptr;
+  SetModeFn setMode = nullptr;
+  ToggleModeFn toggleMode = nullptr;
+  ModeFn mode = nullptr;
   CommitCandidateFn commitCandidate = nullptr;
   FreeFn freeValue = nullptr;
 
@@ -280,6 +287,27 @@ char *HttpClearSessionValue(uint64_t session) {
   return AllocCString(HttpRequest(L"POST", path));
 }
 
+char *HttpSetModeValue(uint64_t session, const char *mode) {
+  const bool english = mode && _stricmp(mode, "en") == 0;
+  wchar_t path[80]{};
+  StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/mode?session=%llu&mode=%s", session,
+                   english ? L"en" : L"zh");
+  return AllocCString(HttpRequest(L"POST", path));
+}
+
+char *HttpToggleModeValue(uint64_t session) {
+  wchar_t path[80]{};
+  StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/mode?session=%llu&toggle=1", session);
+  return AllocCString(HttpRequest(L"POST", path));
+}
+
+char *HttpModeValue(uint64_t session) {
+  wchar_t path[80]{};
+  StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/mode?session=%llu", session);
+  const std::string state = HttpRequest(L"GET", path);
+  return AllocCString(state.find("\"mode\":\"en\"") != std::string::npos ? "en" : "zh");
+}
+
 char *HttpCommitCandidate(uint64_t session, int index) {
   wchar_t path[64]{};
   StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/select?index=%d&session=%llu", index, session);
@@ -342,6 +370,9 @@ bool TryLoadInProcessCore() {
   api.candidatePayloadRange =
       LoadCoreProc<CandidatePayloadRangeFn>(module, "ShurufaCandidatePayloadRange");
   api.clearSession = LoadCoreProc<ClearSessionFn>(module, "ShurufaClear");
+  api.setMode = LoadCoreProc<SetModeFn>(module, "ShurufaSetMode");
+  api.toggleMode = LoadCoreProc<ToggleModeFn>(module, "ShurufaToggleMode");
+  api.mode = LoadCoreProc<ModeFn>(module, "ShurufaMode");
   api.commitCandidate = LoadCoreProc<CommitCandidateFn>(module, "ShurufaCommitCandidate");
   api.freeValue = LoadCoreProc<FreeFn>(module, "ShurufaFree");
   if (!api.Ready()) {
@@ -373,6 +404,9 @@ void UseHttpCoreFallback() {
   g_core.candidatePayload = nullptr;
   g_core.candidatePayloadRange = nullptr;
   g_core.clearSession = HttpClearSessionValue;
+  g_core.setMode = HttpSetModeValue;
+  g_core.toggleMode = HttpToggleModeValue;
+  g_core.mode = HttpModeValue;
   g_core.commitCandidate = HttpCommitCandidate;
   g_core.freeValue = HttpFree;
 }
@@ -400,6 +434,14 @@ std::wstring Utf8ToWide(const char *value) {
   std::wstring wide(static_cast<size_t>(len - 1), L'\0');
   MultiByteToWideChar(CP_UTF8, 0, value, -1, wide.data(), len);
   return wide;
+}
+
+bool ModePayloadIsEnglish(const char *value) {
+  if (!value || !*value) {
+    return false;
+  }
+  const std::string payload(value);
+  return payload == "en" || payload.find("\"mode\":\"en\"") != std::string::npos;
 }
 
 class CandidateWindow {
@@ -1657,6 +1699,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     threadMgr_->AddRef();
     clientId_ = clientId;
     session_ = g_core.createSession();
+    RefreshAsciiModeFromCore();
 
     HRESULT hr = threadMgr_->QueryInterface(IID_ITfKeystrokeMgr, reinterpret_cast<void **>(&keyMgr_));
     if (SUCCEEDED(hr) && keyMgr_) {
@@ -2191,6 +2234,10 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (cleared) {
       g_core.freeValue(cleared);
     }
+    ResetCompositionState();
+  }
+
+  void ResetCompositionState() {
     cachedCandidateCount_ = 0;
     selectedIndex_ = 0;
     pageOffset_ = 0;
@@ -2198,10 +2245,36 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     rawBuffer_.clear();
   }
 
+  void RefreshAsciiModeFromCore() {
+    if (!session_ || !g_core.mode) {
+      asciiMode_ = false;
+      return;
+    }
+    char *mode = g_core.mode(session_);
+    asciiMode_ = ModePayloadIsEnglish(mode);
+    if (mode) {
+      g_core.freeValue(mode);
+    }
+  }
+
   void ToggleAsciiMode() {
-    asciiMode_ = !asciiMode_;
-    selectedIndex_ = 0;
-    ClearSession();
+    if (session_ && g_core.toggleMode) {
+      char *state = g_core.toggleMode(session_);
+      asciiMode_ = ModePayloadIsEnglish(state);
+      if (state) {
+        g_core.freeValue(state);
+      }
+    } else {
+      asciiMode_ = !asciiMode_;
+      if (session_ && g_core.setMode) {
+        char *state = g_core.setMode(session_, asciiMode_ ? "en" : "zh");
+        if (state) {
+          g_core.freeValue(state);
+        }
+      }
+    }
+    ResetCompositionState();
+    candidateWindow_.Hide();
     wchar_t message[96]{};
     StringCchPrintfW(message, ARRAYSIZE(message), L"ToggleAsciiMode ascii=%d", asciiMode_ ? 1 : 0);
     LogDebugLine(message);

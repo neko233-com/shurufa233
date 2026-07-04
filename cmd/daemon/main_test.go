@@ -225,6 +225,41 @@ func TestImeModeCanToggleSessionMode(t *testing.T) {
 	}
 }
 
+func TestImeModeAcceptsQueryParametersForNativeFallback(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/ime/mode?toggle=1", nil)
+	rec := httptest.NewRecorder()
+	state.imeMode(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("toggle status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got engine.State
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Mode != "en" {
+		t.Fatalf("mode after query toggle = %q, want en", got.Mode)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/ime/mode?mode=zh", nil)
+	rec = httptest.NewRecorder()
+	state.imeMode(rec, req)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Mode != "zh" {
+		t.Fatalf("mode after query set = %q, want zh", got.Mode)
+	}
+}
+
 func TestAgentComposeReturnsStructuredCandidates(t *testing.T) {
 	got := composeAgentResponse("/rewrite", "这段话有点啰嗦")
 	if got.Context != "这段话有点啰嗦" {
