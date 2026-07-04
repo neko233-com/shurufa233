@@ -87,6 +87,35 @@ function Remove-StaleNativeArtifacts {
     }
 }
 
+function Test-DaemonHealth {
+  try {
+    $response = Invoke-RestMethod -Uri "http://127.0.0.1:23333/health" -TimeoutSec 2 -ErrorAction Stop
+    return $response.ok -eq $true
+  } catch {
+    return $false
+  }
+}
+
+function Start-DaemonAndWait {
+  param([string]$DaemonPath)
+
+  Get-Process -Name shurufa-daemon -ErrorAction SilentlyContinue |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+  for ($i = 0; $i -lt 20; $i++) {
+    if (-not (Get-Process -Name shurufa-daemon -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 250
+  }
+
+  Start-Process -FilePath $DaemonPath -WorkingDirectory (Split-Path $DaemonPath -Parent) -WindowStyle Hidden
+  for ($i = 0; $i -lt 30; $i++) {
+    if (Test-DaemonHealth) {
+      return
+    }
+    Start-Sleep -Milliseconds 250
+  }
+  throw "shurufa-daemon did not become healthy on http://127.0.0.1:23333/health"
+}
+
 $NativeArch = Get-CurrentNativeArch
 $GoArch = Get-CurrentGoArch
 
@@ -99,9 +128,10 @@ $CliSource = Join-Path $Root "build\windows\go-$GoArch\shurufa-imecli.exe"
 $CoreSource = Join-Path $Root "build\windows\go-$GoArch\shurufa_core.dll"
 $TsfSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233Tsf.dll"
 $ProfileCtlSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233ProfileCtl.exe"
+$SmokeEditSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233SmokeEdit.exe"
 
 if (-not $RegisterOnly) {
-  foreach ($Path in @($DaemonSource, $CliSource, $TsfSource, $ProfileCtlSource)) {
+  foreach ($Path in @($DaemonSource, $CliSource, $TsfSource, $ProfileCtlSource, $SmokeEditSource)) {
     if (-not (Test-Path $Path)) {
       throw "Missing artifact: $Path"
     }
@@ -131,6 +161,7 @@ if (-not $RegisterOnly) {
     Write-Warning "shurufa_core.dll was not found for $GoArch; TSF will use daemon IPC fallback."
   }
   Copy-Item -Force $ProfileCtlSource (Join-Path $InstallDir "Shurufa233ProfileCtl.exe")
+  Copy-Item -Force $SmokeEditSource (Join-Path $InstallDir "Shurufa233SmokeEdit.exe")
 
   $BundledDictionaryDir = Join-Path $Root "data\dictionaries"
   if (Test-Path $BundledDictionaryDir) {
@@ -150,9 +181,8 @@ $Daemon = Join-Path $InstallDir "shurufa-daemon.exe"
 New-Item -Path $RunKey -Force | Out-Null
 Set-ItemProperty -Path $RunKey -Name "shurufa233-daemon" -Value "`"$Daemon`""
 
-$existing = Get-Process shurufa-daemon -ErrorAction SilentlyContinue
-if (-not $existing) {
-  Start-Process -FilePath $Daemon -WorkingDirectory $InstallDir -WindowStyle Hidden
+if (-not $RegisterOnly) {
+  Start-DaemonAndWait -DaemonPath $Daemon
 }
 
 if (-not (Test-IsAdmin)) {
@@ -261,4 +291,5 @@ if (Test-Path $ProfileCtl) {
 Write-Host "Installed shurufa233 to $InstallDir"
 Write-Host "Registered $NativeArch TSF DLL for the current user."
 Write-Host "Daemon is configured for startup through HKCU Run."
+Write-Host "Input performance lab installed at $(Join-Path $InstallDir 'Shurufa233SmokeEdit.exe')."
 Write-Host "Open Windows Settings > Time & language > Typing > Advanced keyboard settings to select shurufa233, or rerun with -ActivateProfile when testing."

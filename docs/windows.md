@@ -73,6 +73,8 @@ The installer:
 
 - copies daemon, CLI, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
 - copies `Shurufa233ProfileCtl.exe` for current-session enable/activate/probe operations
+- copies `Shurufa233SmokeEdit.exe` for native TSF and typing performance validation
+- starts the daemon and verifies `http://127.0.0.1:23333/health`
 - registers the TSF DLL through UAC because TSF profiles live under HKLM
 - enables the profile for the current user
 - adds the input method tip to `zh-Hans-CN`
