@@ -133,6 +133,7 @@ bool EnsureHttpHandles() {
 
 std::string HttpRequest(const wchar_t *verb, const std::wstring &path) {
   if (!EnsureHttpHandles()) {
+    LogLine(L"HttpRequest skipped: handles unavailable");
     return "";
   }
   EnterCriticalSection(&g_httpLock);
@@ -140,6 +141,10 @@ std::string HttpRequest(const wchar_t *verb, const std::wstring &path) {
                                          WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
   LeaveCriticalSection(&g_httpLock);
   if (!request) {
+    wchar_t message[192]{};
+    StringCchPrintfW(message, ARRAYSIZE(message), L"HttpRequest open failed error=%lu path=%s",
+                     GetLastError(), path.c_str());
+    LogLine(message);
     return "";
   }
 
@@ -149,8 +154,8 @@ std::string HttpRequest(const wchar_t *verb, const std::wstring &path) {
   if (ok) {
     ok = WinHttpReceiveResponse(request, nullptr);
   }
+  DWORD status = 0;
   if (ok) {
-    DWORD status = 0;
     DWORD statusSize = sizeof(status);
     WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                         WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX);
@@ -166,6 +171,13 @@ std::string HttpRequest(const wchar_t *verb, const std::wstring &path) {
         response += chunk;
       }
     }
+  }
+  if (!ok || status < 200 || status >= 300) {
+    wchar_t message[256]{};
+    StringCchPrintfW(message, ARRAYSIZE(message),
+                     L"HttpRequest failed ok=%d status=%lu error=%lu path=%s",
+                     ok ? 1 : 0, status, GetLastError(), path.c_str());
+    LogLine(message);
   }
   WinHttpCloseHandle(request);
   return response;
@@ -267,6 +279,9 @@ class CandidateWindow {
       Hide();
       return;
     }
+    if (hwnd_) {
+      KillTimer(hwnd_, kStatusTimerId);
+    }
     selectedIndex_ = max(0, min(selectedIndex, static_cast<int>(candidates_.size()) - 1));
     EnsureWindow();
     RefreshSkin();
@@ -281,8 +296,21 @@ class CandidateWindow {
 
   void Hide() {
     if (hwnd_) {
+      KillTimer(hwnd_, kStatusTimerId);
       ShowWindow(hwnd_, SW_HIDE);
     }
+  }
+
+  void ShowStatus(const wchar_t *text) {
+    EnsureWindow();
+    RefreshSkin();
+    statusText_ = text ? text : L"";
+    candidates_.clear();
+    POINT anchor = CaretAnchor();
+    SetWindowPos(hwnd_, HWND_TOPMOST, anchor.x, anchor.y + 8, 96, max(42, fontSize_ + 28),
+                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    SetTimer(hwnd_, kStatusTimerId, 850, nullptr);
+    InvalidateRect(hwnd_, nullptr, TRUE);
   }
 
  private:
@@ -295,6 +323,10 @@ class CandidateWindow {
     }
     if (self && message == WM_PAINT) {
       self->Paint(hwnd);
+      return 0;
+    }
+    if (self && message == WM_TIMER && wparam == kStatusTimerId) {
+      self->Hide();
       return 0;
     }
     if (message == WM_ERASEBKGND) {
@@ -368,14 +400,20 @@ class CandidateWindow {
                              fontFamily_.c_str());
     HGDIOBJ oldFont = SelectObject(dc, font);
     SetBkMode(dc, TRANSPARENT);
-    DrawCandidates(dc, rect);
+    if (!statusText_.empty()) {
+      DrawStatus(dc, rect);
+    } else {
+      DrawCandidates(dc, rect);
+    }
     SelectObject(dc, oldFont);
     DeleteObject(font);
     EndPaint(hwnd, &ps);
   }
 
   HWND hwnd_ = nullptr;
+  static constexpr UINT_PTR kStatusTimerId = 1;
   std::vector<CandidateView> candidates_;
+  std::wstring statusText_;
   int selectedIndex_ = 0;
   std::wstring fontFamily_ = L"Microsoft YaHei UI";
   int fontSize_ = 18;
@@ -438,6 +476,7 @@ class CandidateWindow {
   }
 
   void DrawCandidates(HDC dc, const RECT &rect) {
+    statusText_.clear();
     int x = rect.left + 14;
     const int y = rect.top + 7;
     const int itemHeight = max(32, fontSize_ + 16);
@@ -486,6 +525,23 @@ class CandidateWindow {
     }
   }
 
+  void DrawStatus(HDC dc, const RECT &rect) {
+    RECT badge{rect.left + 10, rect.top + 7, rect.right - 10, rect.bottom - 7};
+    HBRUSH selected = CreateSolidBrush(accent_);
+    HPEN selectedPen = CreatePen(PS_SOLID, 1, accent_);
+    HGDIOBJ oldBrush = SelectObject(dc, selected);
+    HGDIOBJ oldPen = SelectObject(dc, selectedPen);
+    RoundRect(dc, badge.left, badge.top, badge.right, badge.bottom, 10, 10);
+    SelectObject(dc, oldPen);
+    SelectObject(dc, oldBrush);
+    DeleteObject(selectedPen);
+    DeleteObject(selected);
+
+    SetTextColor(dc, highlightText_);
+    DrawTextW(dc, statusText_.c_str(), static_cast<int>(statusText_.size()), &badge,
+              DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+  }
+
   void RefreshSkin() {
     const DWORD now = GetTickCount();
     if (lastSkinRefreshTick_ != 0 && now - lastSkinRefreshTick_ < 2000) {
@@ -523,6 +579,10 @@ class CandidateWindow {
 
 bool IsAsciiLetter(WPARAM key) {
   return (key >= L'A' && key <= L'Z') || (key >= L'a' && key <= L'z');
+}
+
+bool IsShiftKey(WPARAM key) {
+  return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT;
 }
 
 int CandidateIndexFromKey(WPARAM key) {
@@ -708,6 +768,15 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
                      static_cast<unsigned int>(key), session_);
     LogLine(message);
 
+    if (IsShiftKey(key)) {
+      if (!shiftDown_) {
+        shiftDown_ = true;
+        ToggleAsciiMode();
+      }
+      *eaten = TRUE;
+      return S_OK;
+    }
+
     if (IsAsciiLetter(key)) {
       char ch = static_cast<char>(key);
       if (ch >= 'A' && ch <= 'Z') {
@@ -760,17 +829,22 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     return S_OK;
   }
 
-  STDMETHODIMP OnTestKeyUp(ITfContext *, WPARAM, LPARAM, BOOL *eaten) override {
+  STDMETHODIMP OnTestKeyUp(ITfContext *, WPARAM key, LPARAM, BOOL *eaten) override {
     if (!eaten) {
       return E_INVALIDARG;
     }
-    *eaten = FALSE;
+    *eaten = IsShiftKey(key);
     return S_OK;
   }
 
-  STDMETHODIMP OnKeyUp(ITfContext *, WPARAM, LPARAM, BOOL *eaten) override {
+  STDMETHODIMP OnKeyUp(ITfContext *, WPARAM key, LPARAM, BOOL *eaten) override {
     if (!eaten) {
       return E_INVALIDARG;
+    }
+    if (IsShiftKey(key)) {
+      shiftDown_ = false;
+      *eaten = TRUE;
+      return S_OK;
     }
     *eaten = FALSE;
     return S_OK;
@@ -788,6 +862,13 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   bool ShouldEatKey(WPARAM key) const {
     if (!session_) {
       return false;
+    }
+    if (IsShiftKey(key)) {
+      return true;
+    }
+    if (asciiMode_) {
+      return g_core.candidateCount(session_) > 0 &&
+             (key == VK_ESCAPE || key == VK_SPACE || key == VK_RETURN);
     }
     if (IsAsciiLetter(key) || key == VK_BACK) {
       return true;
@@ -845,6 +926,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/candidates?session=%llu", session_);
     const std::string candidates = HttpRequest(L"GET", path);
     const int count = g_core.candidateCount(session_);
+    if (count <= 0 && candidates.empty()) {
+      wchar_t message[128]{};
+      StringCchPrintfW(message, ARRAYSIZE(message), L"UpdateCandidateWindow empty session=%llu", session_);
+      LogLine(message);
+    }
     if (count > 0 && selectedIndex_ >= count) {
       selectedIndex_ = count - 1;
     }
@@ -866,12 +952,24 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     HttpRequest(L"POST", path);
   }
 
+  void ToggleAsciiMode() {
+    asciiMode_ = !asciiMode_;
+    selectedIndex_ = 0;
+    ClearSession();
+    wchar_t message[96]{};
+    StringCchPrintfW(message, ARRAYSIZE(message), L"ToggleAsciiMode ascii=%d", asciiMode_ ? 1 : 0);
+    LogLine(message);
+    candidateWindow_.ShowStatus(asciiMode_ ? L"EN" : L"中");
+  }
+
   long refCount_ = 1;
   ITfThreadMgr *threadMgr_ = nullptr;
   ITfKeystrokeMgr *keyMgr_ = nullptr;
   TfClientId clientId_ = TF_CLIENTID_NULL;
   uint64_t session_ = 0;
   int selectedIndex_ = 0;
+  bool asciiMode_ = false;
+  bool shiftDown_ = false;
   CandidateWindow candidateWindow_;
 };
 
