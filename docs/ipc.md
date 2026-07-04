@@ -26,6 +26,13 @@ The background daemon listens on `127.0.0.1:23333`.
 { "input": "nihao" }
 ```
 
+The preview path accepts apostrophe-separated pinyin such as `xi'an`. The
+buffer keeps the visible apostrophe for Microsoft IME-style preedit display,
+while lookup collapses it to dictionary readings and adds a high-priority
+explicit segmentation candidate when every separated syllable can be resolved.
+The same behavior is used by the React/Wails preview strip and
+`shurufa-imecli preview "xi'an"`.
+
 The settings UI uses this IPC directly in development. A Wails v3 shell can host the same React bundle and call the same daemon API or proxy these methods through its Go backend.
 
 `GET /config` and `PUT /config` include `punctuation`, which is normalized to
@@ -98,6 +105,8 @@ page with metadata. This keeps React/Wails previews, daemon fallback clients,
 and native C++ glue aligned on the same candidate event model.
 The CLI mirrors this endpoint through `shurufa-imecli candidates <input>
 [action]`, which first previews the input and then posts the action payload.
+It can therefore be used for separator and paging smoke checks, for example
+`shurufa-imecli candidates "xi'an" view`.
 
 `GET /ime/candidates?start=0&limit=7` returns tab-separated candidate rows:
 `display_index`, `text`, `reading`, `score`, `kind`, `source`, and `comment`.

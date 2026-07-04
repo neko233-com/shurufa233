@@ -43,6 +43,13 @@ Example response:
 choice. Switching modes clears the active composition buffer, matching Microsoft
 IME-style Chinese/English toggling.
 
+`ShurufaPreview` and `ShurufaInputKey` preserve apostrophe pinyin separators in
+the returned `buffer`. The Go core collapses separators for dictionary lookup
+and emits an explicit `kind=phrase`, `source=separator` candidate when the
+separated syllables resolve cleanly, for example `xi'an` -> `西安`. Platform
+glue can therefore display the upper English/pinyin preedit exactly as typed
+while sharing one cross-platform segmentation result.
+
 ## Hot Path
 
 Windows TSF uses compact non-JSON calls on the per-key path:
@@ -111,7 +118,8 @@ comment text remains part of candidate payloads even when the UI hides it.
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
 `user-scores-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
-`abbreviation-candidates`, `emoji-kaomoji-symbol-candidates`, and
+`abbreviation-candidates`, `pinyin-separators`,
+`emoji-kaomoji-symbol-candidates`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
 `candidate-comments`, `candidate-action-json`, and `extension-command-json`.
 

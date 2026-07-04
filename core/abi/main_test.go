@@ -224,6 +224,15 @@ func TestCapabilitiesIncludeCandidateComments(t *testing.T) {
 	t.Fatalf("capabilities missing candidate-comments: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludePinyinSeparators(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "pinyin-separators" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing pinyin-separators: %#v", abiFeatureList)
+}
+
 func TestCapabilitiesIncludeCandidateActionJSON(t *testing.T) {
 	for _, feature := range abiFeatureList {
 		if feature == "candidate-action-json" {
@@ -240,6 +249,17 @@ func TestCapabilitiesIncludeExtensionCommandJSON(t *testing.T) {
 		}
 	}
 	t.Fatalf("capabilities missing extension-command-json: %#v", abiFeatureList)
+}
+
+func TestPreviewPreservesPinyinSeparatorCandidate(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	state := session.Preview("xi'an")
+	if state.Buffer != "xi'an" {
+		t.Fatalf("buffer = %q, want xi'an", state.Buffer)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "西安" {
+		t.Fatalf("expected separator candidate 西安, got %#v", state.Candidates)
+	}
 }
 
 func TestExecuteExtensionCommandCandidateActionPagingAndSelect(t *testing.T) {

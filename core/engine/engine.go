@@ -242,7 +242,7 @@ func decompressDictionaryData(data []byte) ([]byte, error) {
 func (e *Engine) InputKey(key rune) State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if unicode.IsLetter(key) || key == ';' {
+	if unicode.IsLetter(key) || key == ';' || key == '\'' {
 		e.buffer += strings.ToLower(string(key))
 	}
 	return e.stateLocked("")
@@ -428,8 +428,8 @@ func (e *Engine) candidatesLocked() []Candidate {
 
 func (e *Engine) lookupLocked(reading string) []Entry {
 	inputCode := normalizeInputCode(reading)
-	reading = normalizeReading(reading)
-	readings := e.lookupReadingsLocked(inputCode)
+	collapsedReading := normalizeReading(inputCode)
+	readings := e.lookupReadingsLocked(collapsedReading)
 	var exact []Entry
 	seen := map[string]int{}
 	appendEntries := func(entries []Entry, penalty int) {
@@ -455,7 +455,17 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 		}
 	}
 
-	appendEntries(dynamicEntriesForInput(inputCode, nowFunc()), 0)
+	appendEntries(dynamicEntriesForInput(collapsedReading, nowFunc()), 0)
+	if separated, weight := e.segmentSeparatedLocked(inputCode); separated != "" {
+		appendEntries([]Entry{{
+			Reading: collapsedReading,
+			Text:    separated,
+			Kind:    "phrase",
+			Source:  "separator",
+			Comment: "分词",
+			Weight:  weight,
+		}}, 0)
+	}
 	for _, item := range readings {
 		exactEntries := e.dict[item.reading]
 		appendEntries(exactEntries, item.penalty)
@@ -464,7 +474,7 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 		}
 		if len(exactEntries) > 0 {
 			segmented, weight := e.segmentBestLocked(item.reading)
-			if segmented == "" || segmented == reading {
+			if segmented == "" || segmented == collapsedReading {
 				continue
 			}
 			appendEntries([]Entry{{
@@ -506,7 +516,7 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 	for _, item := range readings {
 		for _, variant := range append([]string{item.reading}, e.fuzzyReadingsLocked(item.reading)...) {
 			segmented, weight := e.segmentBestLocked(variant)
-			if segmented != "" && segmented != reading {
+			if segmented != "" && segmented != collapsedReading {
 				penalty := item.penalty
 				if variant != item.reading {
 					penalty += fuzzyCandidatePenalty
@@ -708,6 +718,25 @@ func (e *Engine) segmentBestLocked(reading string) (string, int) {
 	return best.text, max(1, best.score-segmentedCandidatePenalty)
 }
 
+func (e *Engine) segmentSeparatedLocked(input string) (string, int) {
+	parts := separatedInputParts(input)
+	if len(parts) < 2 {
+		return "", 0
+	}
+	var builder strings.Builder
+	score := 0
+	for _, part := range parts {
+		entries := e.dict[part]
+		if len(entries) == 0 {
+			return "", 0
+		}
+		best := e.bestEntryLocked(entries)
+		builder.WriteString(best.Text)
+		score += e.entryScoreLocked(best) - segmentedPiecePenalty
+	}
+	return builder.String(), max(1, score)
+}
+
 func (e *Engine) bestEntryLocked(entries []Entry) Entry {
 	best := entries[0]
 	bestScore := e.entryScoreLocked(best)
@@ -742,11 +771,27 @@ func normalizeReading(input string) string {
 func normalizeInputCode(input string) string {
 	var builder strings.Builder
 	for _, r := range strings.ToLower(input) {
-		if r >= 'a' && r <= 'z' || r == ';' {
+		if r >= 'a' && r <= 'z' || r == ';' || r == '\'' {
 			builder.WriteRune(r)
 		}
 	}
 	return builder.String()
+}
+
+func separatedInputParts(input string) []string {
+	if !strings.Contains(input, "'") {
+		return nil
+	}
+	rawParts := strings.Split(input, "'")
+	parts := make([]string, 0, len(rawParts))
+	for _, raw := range rawParts {
+		part := normalizeReading(raw)
+		if part == "" {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	return parts
 }
 
 func normalizeMode(mode string) string {

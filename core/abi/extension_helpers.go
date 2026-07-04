@@ -23,6 +23,7 @@ var abiFeatureList = []string{
 	"rime-compatible-dictionaries",
 	"gzip-dictionaries",
 	"abbreviation-candidates",
+	"pinyin-separators",
 	"emoji-kaomoji-symbol-candidates",
 	"dynamic-datetime-candidates",
 	"candidate-char-commit",

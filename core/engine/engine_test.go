@@ -143,6 +143,40 @@ func TestSegmentedCandidateUsesUserScoresInPath(t *testing.T) {
 	}
 }
 
+func TestApostropheSeparatorPreservesBufferAndForcesSegmentation(t *testing.T) {
+	e := New(DefaultConfig())
+
+	plain := e.Preview("xian")
+	if len(plain.Candidates) == 0 || plain.Candidates[0].Text != "先" {
+		t.Fatalf("expected plain xian to keep exact candidate first, got %#v", plain.Candidates)
+	}
+
+	state := e.Preview("xi'an")
+	if state.Buffer != "xi'an" {
+		t.Fatalf("expected apostrophe buffer to be preserved, got %q", state.Buffer)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "西安" {
+		t.Fatalf("expected xi'an to force 西安 segmentation, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Kind != "phrase" || state.Candidates[0].Source != "separator" {
+		t.Fatalf("expected separator phrase metadata, got %#v", state.Candidates[0])
+	}
+}
+
+func TestInputKeyAcceptsApostropheSeparator(t *testing.T) {
+	e := New(DefaultConfig())
+	for _, r := range "xi'an" {
+		e.InputKey(r)
+	}
+	state := e.State()
+	if state.Buffer != "xi'an" {
+		t.Fatalf("expected typed apostrophe buffer, got %q", state.Buffer)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "西安" {
+		t.Fatalf("expected typed xi'an to produce 西安, got %#v", state.Candidates)
+	}
+}
+
 func TestAbbreviationCandidates(t *testing.T) {
 	e := New(DefaultConfig())
 
