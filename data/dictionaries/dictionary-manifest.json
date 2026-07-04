@@ -2,16 +2,28 @@
   "version": "2026.07.04",
   "channel": "stable",
   "generatedAt": "2026-07-04T00:00:00Z",
+  "source": {
+    "preset": "shurufa233-github",
+    "url": "https://github.com/neko233-com/shurufa233",
+    "license": "mixed-source-manifest",
+    "convertCommand": "shurufa-dictmanifest -version 2026.07.04 -base-url https://github.com/neko233-com/shurufa233/releases/latest/download data/dictionaries/zh-CN.2026.07.04.json data/dictionaries/en-US.2026.07.04.json"
+  },
   "dictionaries": [
     {
       "language": "zh-CN",
       "version": "2026.07.04",
-      "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.2026.07.04.json"
+      "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.2026.07.04.json",
+      "source": {
+        "preset": "shurufa233-github"
+      }
     },
     {
       "language": "en-US",
       "version": "2026.07.04",
-      "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/en-US.2026.07.04.json"
+      "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/en-US.2026.07.04.json",
+      "source": {
+        "preset": "shurufa233-github"
+      }
     }
   ]
 }

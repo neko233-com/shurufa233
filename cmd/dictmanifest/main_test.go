@@ -84,6 +84,39 @@ func TestBuildManifestForGzipDictionary(t *testing.T) {
 	}
 }
 
+func TestBuildManifestIncludesSourceProvenance(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "zh-CN.rime-ice.json")
+	dictionary := []byte(`{
+		"language": "zh-CN",
+		"version": "rime-ice-test",
+		"entries": [{ "reading": "wusong", "text": "雾凇", "weight": 100 }]
+	}`)
+	if err := os.WriteFile(path, dictionary, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest, err := buildManifest([]string{path}, manifestOptions{
+		Channel:        "stable",
+		BaseURL:        "https://example.com/releases",
+		GeneratedAt:    "2026-07-05T00:00:00Z",
+		SourcePreset:   "rime-ice-source",
+		SourceURL:      "https://github.com/iDvel/rime-ice",
+		SourceCommit:   "abcdef0",
+		SourceLicense:  "GPL-3.0",
+		ConvertCommand: "shurufa-dictimport ...",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Source == nil || manifest.Source.Preset != "rime-ice-source" || manifest.Source.Commit != "abcdef0" {
+		t.Fatalf("manifest source = %#v", manifest.Source)
+	}
+	got := manifest.Dictionaries[0]
+	if got.Source == nil || got.Source.URL != "https://github.com/iDvel/rime-ice" || got.Source.License != "GPL-3.0" {
+		t.Fatalf("dictionary source = %#v", got.Source)
+	}
+}
+
 func TestBuildManifestRequiresDictionaryMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.json")
 	if err := os.WriteFile(path, []byte(`{"entries":[]}`), 0o644); err != nil {

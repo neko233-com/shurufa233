@@ -122,16 +122,26 @@ type dictionaryManifest struct {
 	Version      string                 `json:"version"`
 	Channel      string                 `json:"channel"`
 	GeneratedAt  string                 `json:"generatedAt"`
+	Source       *sourceProvenance      `json:"source,omitempty"`
 	Dictionaries []dictionaryDescriptor `json:"dictionaries"`
 }
 
+type sourceProvenance struct {
+	Preset         string `json:"preset,omitempty"`
+	URL            string `json:"url,omitempty"`
+	Commit         string `json:"commit,omitempty"`
+	License        string `json:"license,omitempty"`
+	ConvertCommand string `json:"convertCommand,omitempty"`
+}
+
 type dictionaryDescriptor struct {
-	Language      string `json:"language"`
-	Version       string `json:"version"`
-	URL           string `json:"url"`
-	SHA256        string `json:"sha256,omitempty"`
-	Compression   string `json:"compression,omitempty"`
-	ContentSHA256 string `json:"contentSha256,omitempty"`
+	Language      string            `json:"language"`
+	Version       string            `json:"version"`
+	URL           string            `json:"url"`
+	SHA256        string            `json:"sha256,omitempty"`
+	Compression   string            `json:"compression,omitempty"`
+	ContentSHA256 string            `json:"contentSha256,omitempty"`
+	Source        *sourceProvenance `json:"source,omitempty"`
 }
 
 type updateCheck struct {

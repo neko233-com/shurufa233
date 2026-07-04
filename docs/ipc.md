@@ -292,6 +292,13 @@ Manifest shape:
 {
   "version": "2026.07.04",
   "channel": "stable",
+  "source": {
+    "preset": "rime-ice-source",
+    "url": "https://github.com/iDvel/rime-ice",
+    "commit": "upstream commit or tag",
+    "license": "GPL-3.0",
+    "convertCommand": "shurufa-dictimport ..."
+  },
   "dictionaries": [
     {
       "language": "zh-CN",
@@ -299,7 +306,8 @@ Manifest shape:
       "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.2026.07.04.json",
       "sha256": "optional downloaded artifact lowercase hex",
       "compression": "gzip",
-      "contentSha256": "optional decompressed JSON lowercase hex"
+      "contentSha256": "optional decompressed JSON lowercase hex",
+      "source": { "preset": "rime-ice-source" }
     }
   ]
 }

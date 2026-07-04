@@ -221,6 +221,11 @@ Generate that manifest instead of writing hashes by hand:
 go run ./cmd/dictmanifest `
   -version rime-ice-2026-07-05 `
   -channel stable `
+  -source-preset rime-ice-source `
+  -source-url https://github.com/iDvel/rime-ice `
+  -source-commit <pinned-upstream-commit> `
+  -license GPL-3.0 `
+  -convert-command "go run ./cmd/dictimport -language zh-CN -version rime-ice-2026-07-05 -source rime-ice -out data/dictionaries/zh-CN.rime-ice.json.gz path\to\rime_ice.dict.yaml" `
   -base-url https://github.com/neko233-com/shurufa233/releases/latest/download `
   -out data/dictionaries/dictionary-manifest.json `
   data/dictionaries/zh-CN.rime-ice.json.gz
@@ -230,3 +235,6 @@ go run ./cmd/dictmanifest `
 real shurufa233 dictionary, detects gzip automatically, computes both artifact
 and decompressed-content SHA-256 hashes, and emits the manifest shape consumed
 by `GET /updates/check` and `POST /updates/apply`.
+The optional source fields are copied to the manifest and each dictionary row,
+so settings UI, daemon logs, and future native panels can show where a hot-update
+dictionary came from without baking upstream details into C++.

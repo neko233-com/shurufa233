@@ -17,26 +17,41 @@ import (
 )
 
 type manifestOptions struct {
-	Version     string
-	Channel     string
-	BaseURL     string
-	GeneratedAt string
+	Version        string
+	Channel        string
+	BaseURL        string
+	GeneratedAt    string
+	SourcePreset   string
+	SourceURL      string
+	SourceCommit   string
+	SourceLicense  string
+	ConvertCommand string
 }
 
 type dictionaryManifest struct {
 	Version      string                 `json:"version"`
 	Channel      string                 `json:"channel"`
 	GeneratedAt  string                 `json:"generatedAt"`
+	Source       *sourceProvenance      `json:"source,omitempty"`
 	Dictionaries []dictionaryDescriptor `json:"dictionaries"`
 }
 
+type sourceProvenance struct {
+	Preset         string `json:"preset,omitempty"`
+	URL            string `json:"url,omitempty"`
+	Commit         string `json:"commit,omitempty"`
+	License        string `json:"license,omitempty"`
+	ConvertCommand string `json:"convertCommand,omitempty"`
+}
+
 type dictionaryDescriptor struct {
-	Language      string `json:"language"`
-	Version       string `json:"version"`
-	URL           string `json:"url"`
-	SHA256        string `json:"sha256,omitempty"`
-	Compression   string `json:"compression,omitempty"`
-	ContentSHA256 string `json:"contentSha256,omitempty"`
+	Language      string            `json:"language"`
+	Version       string            `json:"version"`
+	URL           string            `json:"url"`
+	SHA256        string            `json:"sha256,omitempty"`
+	Compression   string            `json:"compression,omitempty"`
+	ContentSHA256 string            `json:"contentSha256,omitempty"`
+	Source        *sourceProvenance `json:"source,omitempty"`
 }
 
 func main() {
@@ -44,6 +59,11 @@ func main() {
 	channel := flag.String("channel", "stable", "release channel")
 	baseURL := flag.String("base-url", "", "release base URL, for example https://github.com/owner/repo/releases/latest/download")
 	generatedAt := flag.String("generated-at", "", "RFC3339 generated timestamp; defaults to now")
+	sourcePreset := flag.String("source-preset", "", "dictionary source preset id, for example rime-ice-source")
+	sourceURL := flag.String("source-url", "", "upstream source URL used to generate this manifest")
+	sourceCommit := flag.String("source-commit", "", "upstream source commit, tag, or release identifier")
+	sourceLicense := flag.String("license", "", "upstream dictionary license")
+	convertCommand := flag.String("convert-command", "", "command used to convert upstream sources")
 	outPath := flag.String("out", "", "output manifest path, stdout when empty")
 	flag.Parse()
 	if flag.NArg() == 0 {
@@ -52,10 +72,15 @@ func main() {
 	}
 
 	manifest, err := buildManifest(flag.Args(), manifestOptions{
-		Version:     *version,
-		Channel:     *channel,
-		BaseURL:     *baseURL,
-		GeneratedAt: *generatedAt,
+		Version:        *version,
+		Channel:        *channel,
+		BaseURL:        *baseURL,
+		GeneratedAt:    *generatedAt,
+		SourcePreset:   *sourcePreset,
+		SourceURL:      *sourceURL,
+		SourceCommit:   *sourceCommit,
+		SourceLicense:  *sourceLicense,
+		ConvertCommand: *convertCommand,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -81,11 +106,21 @@ func main() {
 }
 
 func buildManifest(paths []string, options manifestOptions) (dictionaryManifest, error) {
+	source := sourceProvenance{
+		Preset:         strings.TrimSpace(options.SourcePreset),
+		URL:            strings.TrimSpace(options.SourceURL),
+		Commit:         strings.TrimSpace(options.SourceCommit),
+		License:        strings.TrimSpace(options.SourceLicense),
+		ConvertCommand: strings.TrimSpace(options.ConvertCommand),
+	}
 	manifest := dictionaryManifest{
 		Version:      strings.TrimSpace(options.Version),
 		Channel:      strings.TrimSpace(options.Channel),
 		GeneratedAt:  strings.TrimSpace(options.GeneratedAt),
 		Dictionaries: make([]dictionaryDescriptor, 0, len(paths)),
+	}
+	if !isEmptySourceProvenance(source) {
+		manifest.Source = &source
 	}
 	if manifest.Channel == "" {
 		manifest.Channel = "stable"
@@ -101,12 +136,23 @@ func buildManifest(paths []string, options manifestOptions) (dictionaryManifest,
 		if manifest.Version == "" {
 			manifest.Version = descriptor.Version
 		}
+		if manifest.Source != nil {
+			descriptor.Source = manifest.Source
+		}
 		manifest.Dictionaries = append(manifest.Dictionaries, descriptor)
 	}
 	if manifest.Version == "" {
 		manifest.Version = "dictionary-release"
 	}
 	return manifest, nil
+}
+
+func isEmptySourceProvenance(source sourceProvenance) bool {
+	return source.Preset == "" &&
+		source.URL == "" &&
+		source.Commit == "" &&
+		source.License == "" &&
+		source.ConvertCommand == ""
 }
 
 func describeDictionaryArtifact(path string, baseURL string) (dictionaryDescriptor, error) {

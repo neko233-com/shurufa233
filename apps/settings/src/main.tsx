@@ -68,6 +68,22 @@ type UpdateCheckResult = {
   latestVersion: string;
   updateAvailable: boolean;
   manifestUrl?: string;
+  manifest?: DictionaryManifest;
+};
+
+type SourceProvenance = {
+  preset?: string;
+  url?: string;
+  commit?: string;
+  license?: string;
+  convertCommand?: string;
+};
+
+type DictionaryManifest = {
+  version: string;
+  channel: string;
+  generatedAt?: string;
+  source?: SourceProvenance;
 };
 
 type UpdateApplyResult = {
@@ -780,7 +796,13 @@ function App() {
       const res = await fetch(`${apiBase}/updates/check`);
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as UpdateCheckResult;
-      setUpdateText(data.updateAvailable ? `发现 ${data.latestVersion}` : `已是最新 ${data.currentVersion}`);
+      const source = data.manifest?.source?.preset || data.manifest?.source?.license || data.manifestUrl || "";
+      const sourceText = source ? ` · ${source}` : "";
+      setUpdateText(
+        data.updateAvailable
+          ? `发现 ${data.latestVersion}${sourceText}`
+          : `已是最新 ${data.currentVersion}${sourceText}`,
+      );
       setError("");
     } catch (err) {
       setUpdateText("检查失败");
