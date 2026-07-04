@@ -10,6 +10,8 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path "$PSScriptRoot\.."
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\shurufa233"
 $NativeInstallDir = Join-Path $env:ProgramFiles "shurufa233"
+$ConfigDir = Join-Path $env:APPDATA "shurufa233"
+$InputMethodBackupPath = Join-Path $ConfigDir "input-method-backup.json"
 $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $Tip = "0804:{3D7B8D06-9872-4C31-B77D-3B87327CBF64}{B68911A2-4478-491C-A624-978441648E20}"
 
@@ -34,6 +36,32 @@ function Get-CurrentGoArch {
     "x86" { return "386" }
     default { throw "Unsupported PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE" }
   }
+}
+
+function Save-InputMethodBackup {
+  if (Test-Path $InputMethodBackupPath) {
+    Write-Host "Input method backup already exists at $InputMethodBackupPath"
+    return
+  }
+
+  New-Item -ItemType Directory -Force $ConfigDir | Out-Null
+  $defaultOverride = Get-WinDefaultInputMethodOverride -ErrorAction SilentlyContinue
+  $languages = @(
+    Get-WinUserLanguageList | ForEach-Object {
+      [pscustomobject]@{
+        LanguageTag = $_.LanguageTag
+        InputMethodTips = @($_.InputMethodTips)
+      }
+    }
+  )
+  $backup = [pscustomobject]@{
+    Version = 1
+    CreatedAt = (Get-Date).ToString("o")
+    DefaultInputMethodTip = $defaultOverride.InputMethodTip
+    Languages = $languages
+  }
+  $backup | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $InputMethodBackupPath
+  Write-Host "Saved input method backup to $InputMethodBackupPath"
 }
 
 $NativeArch = Get-CurrentNativeArch
@@ -137,6 +165,8 @@ if (-not (Test-IsAdmin)) {
 }
 
 if (-not $RegisterOnly) {
+  Save-InputMethodBackup
+
   Get-ChildItem $InstallDir -Filter "Shurufa233Tsf-*.dll" -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -ne $TsfDll } |
     ForEach-Object {

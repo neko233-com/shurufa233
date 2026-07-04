@@ -54,6 +54,23 @@ The installer:
 - starts `ctfmon.exe`
 - registers a versioned TSF DLL path so loaded DLLs do not block updates
 - activates the profile for the current session with `ITfInputProcessorProfileMgr::ActivateProfile`
+- saves the pre-install input method list to `%APPDATA%\shurufa233\input-method-backup.json` if no backup exists yet
+
+## Uninstall Current Machine
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-windows.ps1
+```
+
+The uninstaller:
+
+- unregisters the TSF DLL through UAC when needed
+- removes the daemon from `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+- stops the daemon process
+- restores `%APPDATA%\shurufa233\input-method-backup.json` when present
+- removes `%LOCALAPPDATA%\Programs\shurufa233` and `C:\Program Files\shurufa233`
+
+Pass `-RemoveUserData` to also remove `%APPDATA%\shurufa233`.
 
 Current input method tip:
 
