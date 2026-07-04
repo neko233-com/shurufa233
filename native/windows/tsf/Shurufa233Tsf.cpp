@@ -5,7 +5,10 @@
 #include <winhttp.h>
 
 #include <cstdint>
+#include <cctype>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -591,6 +594,8 @@ class CandidateWindow {
   COLORREF highlightText_ = RGB(255, 255, 255);
   std::string theme_ = "system";
   DWORD lastSkinRefreshTick_ = 0;
+  FILETIME lastSkinConfigWriteTime_{};
+  bool hasSkinConfigWriteTime_ = false;
   HFONT font_ = nullptr;
   std::wstring fontFamilyKey_;
   int fontSizeKey_ = 0;
@@ -728,6 +733,155 @@ class CandidateWindow {
 
   COLORREF CandidateAccentEdgeColor() const {
     return MixColor(accent_, RGB(255, 255, 255), theme_ == "dark" ? 18 : 10);
+  }
+
+  static std::wstring SkinConfigPath() {
+    wchar_t appData[MAX_PATH]{};
+    const DWORD len = GetEnvironmentVariableW(L"APPDATA", appData, ARRAYSIZE(appData));
+    if (len == 0 || len >= ARRAYSIZE(appData)) {
+      return L"";
+    }
+    return std::wstring(appData) + L"\\shurufa233\\config.json";
+  }
+
+  static bool SameFileTime(const FILETIME &left, const FILETIME &right) {
+    return left.dwLowDateTime == right.dwLowDateTime &&
+           left.dwHighDateTime == right.dwHighDateTime;
+  }
+
+  static std::string ReadUtf8File(const std::wstring &path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+      return "";
+    }
+    return std::string(std::istreambuf_iterator<char>(file),
+                       std::istreambuf_iterator<char>());
+  }
+
+  static std::string JsonStringField(const std::string &json, const char *field) {
+    const std::string key = std::string("\"") + field + "\"";
+    size_t pos = json.find(key);
+    if (pos == std::string::npos) {
+      return "";
+    }
+    pos = json.find(':', pos + key.size());
+    if (pos == std::string::npos) {
+      return "";
+    }
+    pos = json.find('"', pos + 1);
+    if (pos == std::string::npos) {
+      return "";
+    }
+    std::string out;
+    bool escaped = false;
+    for (size_t i = pos + 1; i < json.size(); ++i) {
+      const char ch = json[i];
+      if (escaped) {
+        out.push_back(ch);
+        escaped = false;
+        continue;
+      }
+      if (ch == '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch == '"') {
+        return out;
+      }
+      out.push_back(ch);
+    }
+    return "";
+  }
+
+  static int JsonIntField(const std::string &json, const char *field) {
+    const std::string key = std::string("\"") + field + "\"";
+    size_t pos = json.find(key);
+    if (pos == std::string::npos) {
+      return 0;
+    }
+    pos = json.find(':', pos + key.size());
+    if (pos == std::string::npos) {
+      return 0;
+    }
+    while (pos + 1 < json.size() && isspace(static_cast<unsigned char>(json[pos + 1]))) {
+      ++pos;
+    }
+    return atoi(json.c_str() + pos + 1);
+  }
+
+  bool ApplySkinPayload(const std::string &skin) {
+    size_t first = skin.find('|');
+    size_t second = first == std::string::npos ? std::string::npos : skin.find('|', first + 1);
+    size_t third = second == std::string::npos ? std::string::npos : skin.find('|', second + 1);
+    size_t fourth = third == std::string::npos ? std::string::npos : skin.find('|', third + 1);
+    size_t fifth = fourth == std::string::npos ? std::string::npos : skin.find('|', fourth + 1);
+    size_t sixth = fifth == std::string::npos ? std::string::npos : skin.find('|', fifth + 1);
+    size_t seventh = sixth == std::string::npos ? std::string::npos : skin.find('|', sixth + 1);
+    size_t eighth = seventh == std::string::npos ? std::string::npos : skin.find('|', seventh + 1);
+    if (first == std::string::npos || second == std::string::npos || third == std::string::npos ||
+        fourth == std::string::npos || fifth == std::string::npos || sixth == std::string::npos ||
+        seventh == std::string::npos || eighth == std::string::npos) {
+      return false;
+    }
+    std::wstring nextFontFamily = Utf8ToWide(skin.substr(0, first).c_str());
+    if (nextFontFamily.empty()) {
+      nextFontFamily = L"Microsoft YaHei UI";
+    }
+    const int nextFontSize = max(13, min(28, atoi(skin.substr(first + 1, second - first - 1).c_str()) + 3));
+    if (nextFontFamily != fontFamily_ || nextFontSize != fontSize_) {
+      fontFamily_ = nextFontFamily;
+      fontSize_ = nextFontSize;
+      ResetFont();
+    }
+    accent_ = ParseColor(skin.substr(second + 1, third - second - 1));
+    surface_ = ParseColor(skin.substr(third + 1, fourth - third - 1));
+    text_ = ParseColor(skin.substr(fourth + 1, fifth - fourth - 1));
+    mutedText_ = ParseColor(skin.substr(fifth + 1, sixth - fifth - 1));
+    border_ = ParseColor(skin.substr(sixth + 1, seventh - sixth - 1));
+    highlightText_ = ParseColor(skin.substr(seventh + 1, eighth - seventh - 1));
+    theme_ = skin.substr(eighth + 1);
+    return true;
+  }
+
+  bool RefreshSkinFromConfigFile() {
+    const std::wstring path = SkinConfigPath();
+    if (path.empty()) {
+      return false;
+    }
+    WIN32_FILE_ATTRIBUTE_DATA attrs{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attrs)) {
+      return false;
+    }
+    if (hasSkinConfigWriteTime_ &&
+        SameFileTime(lastSkinConfigWriteTime_, attrs.ftLastWriteTime)) {
+      return true;
+    }
+    const std::string json = ReadUtf8File(path);
+    if (json.empty()) {
+      return false;
+    }
+    const std::string fontFamily = JsonStringField(json, "fontFamily");
+    const int fontSize = JsonIntField(json, "fontSize");
+    const std::string accent = JsonStringField(json, "accent");
+    const std::string surface = JsonStringField(json, "surface");
+    const std::string text = JsonStringField(json, "text");
+    const std::string mutedText = JsonStringField(json, "mutedText");
+    const std::string border = JsonStringField(json, "border");
+    const std::string highlightText = JsonStringField(json, "highlightText");
+    const std::string theme = JsonStringField(json, "theme");
+    if (fontFamily.empty() || fontSize <= 0 || accent.empty() || surface.empty() ||
+        text.empty() || mutedText.empty() || border.empty() || highlightText.empty()) {
+      return false;
+    }
+    std::string payload = fontFamily + "|" + std::to_string(fontSize) + "|" + accent + "|" +
+                          surface + "|" + text + "|" + mutedText + "|" + border + "|" +
+                          highlightText + "|" + theme;
+    if (!ApplySkinPayload(payload)) {
+      return false;
+    }
+    lastSkinConfigWriteTime_ = attrs.ftLastWriteTime;
+    hasSkinConfigWriteTime_ = true;
+    return true;
   }
 
   static COLORREF ParseColor(const std::string &value) {
@@ -930,40 +1084,14 @@ class CandidateWindow {
       return;
     }
     lastSkinRefreshTick_ = now;
+    if (RefreshSkinFromConfigFile()) {
+      return;
+    }
     const std::string skin = HttpRequest(L"GET", L"/ime/skin");
     if (skin.empty()) {
       return;
     }
-    size_t first = skin.find('|');
-    size_t second = first == std::string::npos ? std::string::npos : skin.find('|', first + 1);
-    size_t third = second == std::string::npos ? std::string::npos : skin.find('|', second + 1);
-    size_t fourth = third == std::string::npos ? std::string::npos : skin.find('|', third + 1);
-    size_t fifth = fourth == std::string::npos ? std::string::npos : skin.find('|', fourth + 1);
-    size_t sixth = fifth == std::string::npos ? std::string::npos : skin.find('|', fifth + 1);
-    size_t seventh = sixth == std::string::npos ? std::string::npos : skin.find('|', sixth + 1);
-    size_t eighth = seventh == std::string::npos ? std::string::npos : skin.find('|', seventh + 1);
-    if (first == std::string::npos || second == std::string::npos || third == std::string::npos ||
-        fourth == std::string::npos || fifth == std::string::npos || sixth == std::string::npos ||
-        seventh == std::string::npos || eighth == std::string::npos) {
-      return;
-    }
-    std::wstring nextFontFamily = Utf8ToWide(skin.substr(0, first).c_str());
-    if (nextFontFamily.empty()) {
-      nextFontFamily = L"Microsoft YaHei UI";
-    }
-    const int nextFontSize = max(13, min(28, atoi(skin.substr(first + 1, second - first - 1).c_str()) + 3));
-    if (nextFontFamily != fontFamily_ || nextFontSize != fontSize_) {
-      fontFamily_ = nextFontFamily;
-      fontSize_ = nextFontSize;
-      ResetFont();
-    }
-    accent_ = ParseColor(skin.substr(second + 1, third - second - 1));
-    surface_ = ParseColor(skin.substr(third + 1, fourth - third - 1));
-    text_ = ParseColor(skin.substr(fourth + 1, fifth - fourth - 1));
-    mutedText_ = ParseColor(skin.substr(fifth + 1, sixth - fifth - 1));
-    border_ = ParseColor(skin.substr(sixth + 1, seventh - sixth - 1));
-    highlightText_ = ParseColor(skin.substr(seventh + 1, eighth - seventh - 1));
-    theme_ = skin.substr(eighth + 1);
+    ApplySkinPayload(skin);
   }
 };
 
