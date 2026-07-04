@@ -40,6 +40,8 @@ The background daemon listens on `127.0.0.1:23333`.
 - `POST /ime/select-char`
 - `POST /ime/candidate-action`
 - `GET /ime/candidates`
+- `GET /agent/config`
+- `PUT /agent/config`
 - `POST /agent/compose`
 
 `POST /engine/preview` body:
@@ -317,6 +319,29 @@ comments or pin markers yet.
 Older nine-field, ten-field, or eleven-field payloads are still treated as the
 default seven-candidate horizontal strip with comments shown.
 
+`GET /agent/config` returns the normalized provider-neutral agent settings from
+the shared config. `PUT /agent/config` accepts:
+
+```json
+{
+  "agent": {
+    "enabled": true,
+    "provider": "builtin",
+    "endpoint": "http://127.0.0.1:8787",
+    "model": "prompt-router",
+    "systemPrompt": "作为输入法 agent，优先生成可直接上屏、复制或交给外部 agent 的短指令。",
+    "triggers": ["/ask", "/rewrite", "/translate"],
+    "actions": ["commit", "copy", "open-settings", "handoff"],
+    "timeoutMs": 12000
+  }
+}
+```
+
+The daemon normalizes empty provider/model/triggers/actions back to safe built-in
+defaults, clamps `timeoutMs`, persists `config.json`, and refreshes active Go
+sessions. The endpoint is intentionally just configuration for now; built-in
+composition remains local until a provider runner is attached.
+
 `POST /agent/compose` body:
 
 ```json
@@ -327,8 +352,11 @@ Response:
 
 ```json
 {
+  "ok": true,
   "input": "/rewrite",
   "context": "optional selected or nearby text",
+  "provider": "builtin",
+  "model": "prompt-router",
   "candidates": ["请润色这段文字：optional selected or nearby text"],
   "items": [
     {
@@ -339,7 +367,7 @@ Response:
       "context": "optional selected or nearby text"
     }
   ],
-  "actions": ["commit", "copy", "open-settings"]
+  "actions": ["commit", "copy", "open-settings", "handoff"]
 }
 ```
 

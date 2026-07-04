@@ -1053,6 +1053,51 @@ func TestAgentComposeDefaultUsesContextSignal(t *testing.T) {
 	}
 }
 
+func TestAgentConfigEndpointPersistsProvider(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/agent/config", strings.NewReader(`{"agent":{"enabled":true,"provider":"local","model":"qwen","endpoint":"http://127.0.0.1:8787","timeoutMs":2500,"triggers":["/ask"],"actions":["copy","handoff"]}}`))
+	rec := httptest.NewRecorder()
+	state.putAgentConfig(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if state.config.Agent.Provider != "local" || state.config.Agent.Model != "qwen" || session.Config().Agent.Provider != "local" {
+		t.Fatalf("agent config did not update state/session: state=%#v session=%#v", state.config.Agent, session.Config().Agent)
+	}
+	saved, err := os.ReadFile(state.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(saved), `"provider": "local"`) || !strings.Contains(string(saved), `"endpoint": "http://127.0.0.1:8787"`) {
+		t.Fatalf("saved config does not include agent provider/endpoint: %s", saved)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/agent/config", nil)
+	rec = httptest.NewRecorder()
+	state.agentConfig(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		OK    bool         `json:"ok"`
+		Agent engine.Agent `json:"agent"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || got.Agent.Provider != "local" || got.Agent.TimeoutMs != 2500 {
+		t.Fatalf("agent config response = %#v", got)
+	}
+}
+
 func TestNewSessionLoadsLocalDictionaries(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "shurufa233", "config.json")

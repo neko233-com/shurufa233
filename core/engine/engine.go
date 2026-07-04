@@ -89,6 +89,7 @@ func DefaultConfig() Config {
 			AutoApply:        false,
 			InstalledVersion: "builtin",
 		},
+		Agent: defaultAgentConfig(),
 	}
 }
 
@@ -105,6 +106,7 @@ func New(config Config) *Engine {
 	config = NormalizeKeyBehavior(config)
 	config.RecognizerPatterns = NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = NormalizeAppRules(config.AppRules)
+	config.Agent = NormalizeAgent(config.Agent)
 	e := &Engine{
 		config:  config,
 		dict:    make(map[string][]Entry),
@@ -133,6 +135,7 @@ func (e *Engine) Configure(config Config) {
 	config = NormalizeKeyBehavior(config)
 	config.RecognizerPatterns = NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = NormalizeAppRules(config.AppRules)
+	config.Agent = NormalizeAgent(config.Agent)
 	e.config = config
 }
 

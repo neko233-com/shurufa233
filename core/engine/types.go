@@ -30,6 +30,7 @@ type Config struct {
 	AppRules              []AppRule           `json:"appRules,omitempty"`
 	Skin                  Skin                `json:"skin"`
 	Update                Update              `json:"update"`
+	Agent                 Agent               `json:"agent"`
 }
 
 type AppRule struct {
@@ -169,6 +170,44 @@ type Update struct {
 	AutoCheck        bool     `json:"autoCheck"`
 	AutoApply        bool     `json:"autoApply"`
 	InstalledVersion string   `json:"installedVersion"`
+}
+
+type Agent struct {
+	Enabled      bool     `json:"enabled"`
+	Provider     string   `json:"provider"`
+	Endpoint     string   `json:"endpoint,omitempty"`
+	Model        string   `json:"model,omitempty"`
+	SystemPrompt string   `json:"systemPrompt,omitempty"`
+	Triggers     []string `json:"triggers,omitempty"`
+	Actions      []string `json:"actions,omitempty"`
+	TimeoutMs    int      `json:"timeoutMs"`
+}
+
+type AgentComposeRequest struct {
+	Input   string `json:"input,omitempty"`
+	Context string `json:"context,omitempty"`
+}
+
+type AgentComposeResponse struct {
+	OK         bool             `json:"ok"`
+	Input      string           `json:"input"`
+	Context    string           `json:"context,omitempty"`
+	Provider   string           `json:"provider"`
+	Model      string           `json:"model,omitempty"`
+	Actions    []string         `json:"actions"`
+	Candidates []string         `json:"candidates"`
+	Items      []AgentCandidate `json:"items"`
+	UpdatedAt  time.Time        `json:"updatedAt"`
+}
+
+type AgentCandidate struct {
+	Text     string `json:"text"`
+	Intent   string `json:"intent"`
+	Action   string `json:"action"`
+	Source   string `json:"source"`
+	Context  string `json:"context,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 type DictionaryFile struct {

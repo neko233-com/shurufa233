@@ -532,6 +532,27 @@ h2 {
   font-size: 12px;
 }
 
+.agentGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.agentGrid .toggle {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.agentGrid .field {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.agentGrid .field input {
+  width: 100%;
+}
+
 .swatches {
   display: flex;
   gap: 10px;
@@ -1542,6 +1563,7 @@ h2 {
   }
 
   .appRuleGrid,
+  .agentGrid,
   .contextProbe {
     grid-template-columns: 1fr;
   }

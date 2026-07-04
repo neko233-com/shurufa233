@@ -139,6 +139,8 @@ char* ShurufaDeleteUserPinJSON(uint64_t session, char* json);
 char* ShurufaProfileJSON(uint64_t session);
 char* ShurufaImportProfileJSON(uint64_t session, char* json);
 char* ShurufaCommitText(uint64_t session, char* reading, char* text);
+char* ShurufaAgentConfigJSON(void);
+char* ShurufaApplyAgentConfigJSON(char* json);
 char* ShurufaAgentCompose(char* input, char* context);
 char* ShurufaSelectCandidateChar(uint64_t session, int index, const char* side);
 char* ShurufaExecuteCommand(uint64_t session, const char* command, const char* json);
@@ -163,7 +165,7 @@ C++ export on developer machines that only consume packaged builds.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `commit-text`, `agent-compose`,
+`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -212,6 +214,8 @@ select                  {"index":0}
 select-candidate-char   {"index":0,"side":"first"}
 config-json
 apply-config-json       { ...engine.Config } or {"config":{...}}
+agent-config-json
+apply-agent-config-json {"agent":{"provider":"local","model":"qwen","endpoint":"http://127.0.0.1:8787"}}
 schema-presets-json
 apply-schema-json       {"id":"double-pinyin-microsoft"}
 rime-custom-json        {"yaml":"patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n"}
@@ -441,3 +445,9 @@ local profile sections when `merge=false`:
 `ShurufaAgentCompose` is the native bridge for agent-style input actions. It
 returns built-in prompt candidates today and keeps the ABI stable for later
 local/cloud model routing in the Go daemon.
+`ShurufaAgentConfigJSON`, `ShurufaApplyAgentConfigJSON`, `agent-config-json`,
+and `apply-agent-config-json` expose the shared provider-neutral agent config to
+native menus and future TSF candidate actions. The payload carries `enabled`,
+`provider`, optional `endpoint`, `model`, `systemPrompt`, `triggers`, `actions`,
+and `timeoutMs`; applying it normalizes defaults, persists `config.json`, and
+refreshes active Go sessions without requiring another Windows C++ export.

@@ -10,17 +10,10 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unsafe"
 
 	"github.com/neko233-com/shurufa233/core/engine"
-)
-
-var (
-	sessionsMu sync.Mutex
-	nextID     uint64 = 1
-	sessions          = map[uint64]*engine.Engine{}
 )
 
 func main() {}
@@ -325,29 +318,6 @@ func commitCandidateChar(id uint64, index int, side string) (string, error) {
 		return "", err
 	}
 	return state.Committed, nil
-}
-
-func getSession(id uint64) *engine.Engine {
-	sessionsMu.Lock()
-	defer sessionsMu.Unlock()
-	session := sessions[id]
-	if session == nil {
-		session = newEngine()
-		sessions[id] = session
-	}
-	return session
-}
-
-func newEngine() *engine.Engine {
-	session := engine.New(loadConfig())
-	for _, entry := range loadLocalDictionaryEntries() {
-		session.AddEntries(entry)
-	}
-	session.AddUserPhrases(loadUserPhrases())
-	session.AddUserRejects(loadUserRejects())
-	session.AddUserPins(loadUserPins())
-	session.ImportUserScores(loadUserScores())
-	return session
 }
 
 func jsonCString(value any) *C.char {

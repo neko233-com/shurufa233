@@ -260,6 +260,20 @@ func ShurufaImportProfileJSON(id C.uint64_t, payload *C.char) *C.char {
 	return jsonCString(importProfileBundle(getSession(uint64(id)), bundle))
 }
 
+//export ShurufaAgentConfigJSON
+func ShurufaAgentConfigJSON() *C.char {
+	return jsonCString(agentConfigEnvelope())
+}
+
+//export ShurufaApplyAgentConfigJSON
+func ShurufaApplyAgentConfigJSON(payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(applyAgentConfigPayload(req))
+}
+
 //export ShurufaReloadConfig
 func ShurufaReloadConfig() *C.char {
 	config := loadConfig()
@@ -274,54 +288,6 @@ func ShurufaReloadDictionaries() *C.char {
 //export ShurufaDictionaryManifestJSON
 func ShurufaDictionaryManifestJSON() *C.char {
 	return jsonCString(dictionaryManifestEnvelope())
-}
-
-func configEnvelope() map[string]any {
-	return map[string]any{
-		"ok":        true,
-		"config":    loadConfig(),
-		"updatedAt": time.Now().UTC(),
-	}
-}
-
-func applyConfigEnvelope(config engine.Config) map[string]any {
-	config = normalizeConfig(config)
-	updated := configureActiveSessions(config)
-	persisted := true
-	var persistError string
-	if err := persistConfig(config); err != nil {
-		persisted = false
-		persistError = err.Error()
-	}
-	return map[string]any{
-		"ok":              true,
-		"config":          config,
-		"persisted":       persisted,
-		"persistError":    persistError,
-		"sessionsUpdated": updated,
-		"updatedAt":       time.Now().UTC(),
-	}
-}
-
-func reloadDictionariesEnvelope() map[string]any {
-	groups := loadLocalDictionaryEntries()
-	sessions := activeSessions()
-	entryCount := 0
-	for _, group := range groups {
-		entryCount += len(group)
-	}
-	for _, session := range sessions {
-		for _, group := range groups {
-			session.AddEntries(group)
-		}
-	}
-	return map[string]any{
-		"ok":               true,
-		"dictionaryGroups": len(groups),
-		"entries":          entryCount,
-		"sessionsUpdated":  len(sessions),
-		"updatedAt":        time.Now().UTC(),
-	}
 }
 
 func dictionaryManifestEnvelope() map[string]any {
@@ -550,24 +516,4 @@ func ShurufaCommitText(id C.uint64_t, reading *C.char, text *C.char) *C.char {
 //export ShurufaAgentCompose
 func ShurufaAgentCompose(input *C.char, context *C.char) *C.char {
 	return jsonCString(composeAgentABI(C.GoString(input), C.GoString(context)))
-}
-
-func configureActiveSessions(config engine.Config) int {
-	sessions := activeSessions()
-	for _, session := range sessions {
-		session.Configure(config)
-	}
-	return len(sessions)
-}
-
-func activeSessions() []*engine.Engine {
-	sessionsMu.Lock()
-	defer sessionsMu.Unlock()
-	out := make([]*engine.Engine, 0, len(sessions))
-	for _, session := range sessions {
-		if session != nil {
-			out = append(out, session)
-		}
-	}
-	return out
 }

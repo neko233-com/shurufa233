@@ -140,26 +140,9 @@ type candidatePageItem struct {
 	Pinned       bool   `json:"pinned,omitempty"`
 }
 
-type agentRequest struct {
-	Input   string `json:"input"`
-	Context string `json:"context,omitempty"`
-}
+type agentRequest = engine.AgentComposeRequest
 
-type agentCandidate struct {
-	Text    string `json:"text"`
-	Intent  string `json:"intent"`
-	Action  string `json:"action"`
-	Source  string `json:"source"`
-	Context string `json:"context,omitempty"`
-}
-
-type agentResponse struct {
-	Input      string           `json:"input"`
-	Context    string           `json:"context,omitempty"`
-	Candidates []string         `json:"candidates"`
-	Items      []agentCandidate `json:"items"`
-	Actions    []string         `json:"actions"`
-}
+type agentResponse = engine.AgentComposeResponse
 
 type dictionaryManifest struct {
 	Version      string                 `json:"version"`
@@ -355,6 +338,8 @@ func main() {
 	mux.HandleFunc("GET /ime/skin", state.withCORS(state.imeSkin))
 	mux.HandleFunc("GET /ime/mode", state.withCORS(state.imeMode))
 	mux.HandleFunc("POST /ime/mode", state.withCORS(state.imeMode))
+	mux.HandleFunc("GET /agent/config", state.withCORS(state.agentConfig))
+	mux.HandleFunc("PUT /agent/config", state.withCORS(state.putAgentConfig))
 	mux.HandleFunc("POST /agent/compose", state.withCORS(state.agentCompose))
 	if settingsDir := settingsStaticDir(); settingsDir != "" {
 		fileServer := http.StripPrefix("/settings/", http.FileServer(http.Dir(settingsDir)))
@@ -1463,7 +1448,50 @@ func (s *AppState) agentCompose(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing input", http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, composeAgentResponse(input, req.Context))
+	writeJSON(w, engine.ComposeAgent(s.config, engine.AgentComposeRequest{Input: input, Context: req.Context}))
+}
+
+func (s *AppState) agentConfig(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	writeJSON(w, map[string]any{
+		"ok":        true,
+		"agent":     engine.NormalizeAgent(s.config.Agent),
+		"config":    s.config,
+		"updatedAt": time.Now().UTC(),
+	})
+}
+
+func (s *AppState) putAgentConfig(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Agent *engine.Agent `json:"agent,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.config
+	if req.Agent != nil {
+		next.Agent = *req.Agent
+	}
+	next = normalizeConfig(next)
+	s.config = next
+	s.engine.Configure(next)
+	for _, session := range s.sessions {
+		session.Configure(next)
+	}
+	if err := s.saveLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":        true,
+		"agent":     next.Agent,
+		"config":    next,
+		"updatedAt": time.Now().UTC(),
+	})
 }
 
 func (s *AppState) checkUpdates(w http.ResponseWriter, _ *http.Request) {
@@ -1476,62 +1504,7 @@ func (s *AppState) checkUpdates(w http.ResponseWriter, _ *http.Request) {
 }
 
 func composeAgentResponse(input string, context string) agentResponse {
-	lower := strings.ToLower(input)
-	response := agentResponse{
-		Input:   input,
-		Context: strings.TrimSpace(context),
-		Actions: []string{"commit", "copy", "open-settings"},
-	}
-	add := func(intent string, action string, text string) {
-		item := agentCandidate{
-			Text:   text,
-			Intent: intent,
-			Action: action,
-			Source: "builtin-agent",
-		}
-		if response.Context != "" {
-			item.Context = response.Context
-		}
-		response.Items = append(response.Items, item)
-		response.Candidates = append(response.Candidates, text)
-	}
-	switch {
-	case lower == "/rewrite" || strings.HasPrefix(lower, "/rewrite "):
-		text := commandText(input, "/rewrite")
-		if text == "" {
-			text = response.Context
-		}
-		add("rewrite", "agent.rewrite.polish", "请润色这段文字："+text)
-		add("rewrite", "agent.rewrite.concise", "把下面内容改得更自然、更简洁："+text)
-	case lower == "/translate" || strings.HasPrefix(lower, "/translate "):
-		text := commandText(input, "/translate")
-		if text == "" {
-			text = response.Context
-		}
-		add("translate", "agent.translate.zh", "请把这段内容翻译成中文："+text)
-		add("translate", "agent.translate.en", "请把这段内容翻译成英文："+text)
-	case lower == "/ask" || strings.HasPrefix(lower, "/ask "):
-		text := commandText(input, "/ask")
-		if text == "" {
-			text = response.Context
-		}
-		add("ask", "agent.ask.answer", "请回答："+text)
-		add("ask", "agent.ask.steps", "请分步骤分析："+text)
-	default:
-		prefix := "作为输入法 agent，请处理："
-		if response.Context != "" {
-			prefix = "结合当前上下文，作为输入法 agent，请处理："
-		}
-		add("compose", "agent.compose", prefix+input)
-	}
-	return response
-}
-
-func commandText(input string, command string) string {
-	if len(input) <= len(command) {
-		return ""
-	}
-	return strings.TrimSpace(input[len(command):])
+	return engine.ComposeAgent(engine.DefaultConfig(), engine.AgentComposeRequest{Input: input, Context: context})
 }
 
 func (s *AppState) applyUpdates(w http.ResponseWriter, _ *http.Request) {
@@ -2529,6 +2502,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	config = engine.NormalizeKeyBehavior(config)
 	config.RecognizerPatterns = engine.NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = engine.NormalizeAppRules(config.AppRules)
+	config.Agent = engine.NormalizeAgent(config.Agent)
 	return config
 }
 

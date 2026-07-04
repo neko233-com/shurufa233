@@ -372,8 +372,10 @@ func TestCapabilitiesIncludeKeyEventJSON(t *testing.T) {
 
 func TestCapabilitiesIncludeApplyAppRulesAndUserDataDelete(t *testing.T) {
 	want := map[string]bool{
-		"apply-app-rules-json":  false,
-		"user-data-delete-json": false,
+		"agent-config-json":       false,
+		"apply-agent-config-json": false,
+		"apply-app-rules-json":    false,
+		"user-data-delete-json":   false,
 	}
 	for _, feature := range abiFeatureList {
 		if _, ok := want[feature]; ok {
@@ -736,6 +738,34 @@ func TestExecuteExtensionCommandApplyAppRules(t *testing.T) {
 	}
 }
 
+func TestExecuteExtensionCommandAgentConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("SHURUFA233_CONFIG", configPath)
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "apply-agent-config-json", `{"agent":{"enabled":true,"provider":"local","model":"qwen","endpoint":"http://127.0.0.1:8787","timeoutMs":2500,"triggers":["/ask","/rewrite"],"actions":["copy","handoff"]}}`)
+	if !handled {
+		t.Fatal("apply-agent-config-json command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("apply agent config = %#v", got)
+	}
+	config := loadConfig()
+	if config.Agent.Provider != "local" || config.Agent.Model != "qwen" || config.Agent.TimeoutMs != 2500 || len(config.Agent.Triggers) != 2 {
+		t.Fatalf("persisted agent config = %#v", config.Agent)
+	}
+
+	list, handled := executeSessionExtensionCommand(session, "agent-config-json", `{}`)
+	if !handled {
+		t.Fatal("agent-config-json command was not handled")
+	}
+	payload, ok := list.(map[string]any)
+	if !ok || payload["ok"] != true {
+		t.Fatalf("agent config payload = %#v", list)
+	}
+}
+
 func TestExecuteExtensionCommandProfileBundle(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	session.ImportUserScores(map[string]int{"nihao|你好": 25})
@@ -1048,7 +1078,7 @@ func TestExecuteExtensionCommandPreviewAndCandidatePayload(t *testing.T) {
 }
 
 func TestExecuteExtensionCommandAgentCompose(t *testing.T) {
-	got, handled := executeSessionExtensionCommand(engine.New(engine.DefaultConfig()), "agent-compose", `{"input":"/rewrite","context":"保留上下文"}`)
+	got, handled := executeSessionExtensionCommand(engine.New(engine.DefaultConfig()), "agent-compose", `{"input":"/ask 输入法怎么优化","context":"保留上下文"}`)
 	if !handled {
 		t.Fatal("agent-compose command was not handled")
 	}
@@ -1056,7 +1086,7 @@ func TestExecuteExtensionCommandAgentCompose(t *testing.T) {
 	if !ok || !result.OK || len(result.Items) == 0 {
 		t.Fatalf("agent-compose command = %#v", got)
 	}
-	if result.Items[0].Intent != "rewrite" || !strings.Contains(result.Items[0].Text, "保留上下文") {
+	if result.Items[0].Intent != "ask" || !strings.Contains(result.Items[0].Text, "输入法怎么优化") || result.Provider == "" {
 		t.Fatalf("unexpected agent-compose command result: %#v", result.Items[0])
 	}
 }

@@ -64,6 +64,18 @@ type Config = {
   appRules: AppRule[];
   skin: Skin;
   update: UpdateConfig;
+  agent: AgentConfig;
+};
+
+type AgentConfig = {
+  enabled: boolean;
+  provider: string;
+  endpoint?: string;
+  model?: string;
+  systemPrompt?: string;
+  triggers?: string[];
+  actions?: string[];
+  timeoutMs: number;
 };
 
 type AppRule = {
@@ -463,6 +475,16 @@ const defaultConfig: Config = {
     autoApply: false,
     installedVersion: "builtin",
   },
+  agent: {
+    enabled: true,
+    provider: "builtin",
+    endpoint: "",
+    model: "prompt-router",
+    systemPrompt: "作为输入法 agent，优先生成可直接上屏、复制或交给外部 agent 的短指令。",
+    triggers: ["/ask", "/rewrite", "/translate"],
+    actions: ["commit", "copy", "open-settings", "handoff"],
+    timeoutMs: 12000,
+  },
 };
 
 const skinPresets: SkinPreset[] = [
@@ -667,6 +689,13 @@ function hydrateConfig(config: Config): Config {
       ...config.update,
       manifestUrls: config.update?.manifestUrls ?? defaultConfig.update.manifestUrls,
       mirrorBaseUrls: config.update?.mirrorBaseUrls ?? defaultConfig.update.mirrorBaseUrls,
+    },
+    agent: {
+      ...defaultConfig.agent,
+      ...config.agent,
+      triggers: config.agent?.triggers?.length ? config.agent.triggers : defaultConfig.agent.triggers,
+      actions: config.agent?.actions?.length ? config.agent.actions : defaultConfig.agent.actions,
+      timeoutMs: Math.min(120000, Math.max(1000, config.agent?.timeoutMs || defaultConfig.agent.timeoutMs)),
     },
   };
 }
@@ -1976,6 +2005,68 @@ function App() {
                 <strong>{appContextDecision.mode} · {appContextDecision.punctuation}{appContextDecision.disableCandidates ? " · 禁候选" : ""}</strong>
               </div>
             )}
+            <div className="subHeader">
+              <span>Agent</span>
+              <small>{config.agent.provider || "builtin"} · {config.agent.model || "prompt-router"}</small>
+            </div>
+            <div className="agentGrid">
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.agent.enabled}
+                  onChange={(event) => setConfig({ ...config, agent: { ...config.agent, enabled: event.target.checked } })}
+                />
+                <span>启用 Agent 候选</span>
+              </label>
+              <label className="field">
+                <span>Provider</span>
+                <input
+                  value={config.agent.provider}
+                  onChange={(event) => setConfig({ ...config, agent: { ...config.agent, provider: event.target.value } })}
+                />
+              </label>
+              <label className="field">
+                <span>Model</span>
+                <input
+                  value={config.agent.model ?? ""}
+                  onChange={(event) => setConfig({ ...config, agent: { ...config.agent, model: event.target.value } })}
+                />
+              </label>
+              <label className="field">
+                <span>Endpoint</span>
+                <input
+                  value={config.agent.endpoint ?? ""}
+                  onChange={(event) => setConfig({ ...config, agent: { ...config.agent, endpoint: event.target.value } })}
+                  placeholder="http://127.0.0.1:xxxx"
+                />
+              </label>
+              <label className="field">
+                <span>触发词</span>
+                <input
+                  value={(config.agent.triggers ?? []).join(", ")}
+                  onChange={(event) =>
+                    setConfig({
+                      ...config,
+                      agent: {
+                        ...config.agent,
+                        triggers: event.target.value.split(",").map((item) => item.trim()).filter(Boolean),
+                      },
+                    })
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Timeout</span>
+                <input
+                  type="number"
+                  min={1000}
+                  max={120000}
+                  step={1000}
+                  value={config.agent.timeoutMs}
+                  onChange={(event) => setConfig({ ...config, agent: { ...config.agent, timeoutMs: Number(event.target.value) } })}
+                />
+              </label>
+            </div>
             <div className="segmented">
               <button className={config.mode === "zh" ? "selected" : ""} onClick={() => setConfig({ ...config, mode: "zh" })}>
                 中文

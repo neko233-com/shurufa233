@@ -125,6 +125,8 @@ struct CoreApi {
   SessionStringFn userPinsJson = nullptr;
   ImportUserPinsJsonFn importUserPinsJson = nullptr;
   SessionPayloadFn deleteUserPinJson = nullptr;
+  CoreStringFn agentConfigJson = nullptr;
+  ApplyConfigJsonFn applyAgentConfigJson = nullptr;
   CommitTextFn commitText = nullptr;
   AgentComposeFn agentCompose = nullptr;
   ExecuteCommandFn executeCommand = nullptr;
@@ -460,6 +462,8 @@ bool TryLoadInProcessCore() {
   api.importUserPinsJson =
       LoadCoreProc<ImportUserPinsJsonFn>(module, "ShurufaImportUserPinsJSON");
   api.deleteUserPinJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaDeleteUserPinJSON");
+  api.agentConfigJson = LoadCoreProc<CoreStringFn>(module, "ShurufaAgentConfigJSON");
+  api.applyAgentConfigJson = LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplyAgentConfigJSON");
   api.commitText = LoadCoreProc<CommitTextFn>(module, "ShurufaCommitText");
   api.agentCompose = LoadCoreProc<AgentComposeFn>(module, "ShurufaAgentCompose");
   api.executeCommand = LoadCoreProc<ExecuteCommandFn>(module, "ShurufaExecuteCommand");
@@ -525,6 +529,8 @@ void UseHttpCoreFallback() {
   g_core.userPinsJson = nullptr;
   g_core.importUserPinsJson = nullptr;
   g_core.deleteUserPinJson = nullptr;
+  g_core.agentConfigJson = nullptr;
+  g_core.applyAgentConfigJson = nullptr;
   g_core.commitText = nullptr;
   g_core.agentCompose = nullptr;
   g_core.executeCommand = nullptr;

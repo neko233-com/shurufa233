@@ -1303,6 +1303,29 @@ func TestBundledZhDictionaryHasPagingCandidates(t *testing.T) {
 	}
 }
 
+func TestComposeAgentSharedProtocol(t *testing.T) {
+	config := DefaultConfig()
+	config.Agent.Provider = "local"
+	config.Agent.Model = "qwen-local"
+	got := ComposeAgent(config, AgentComposeRequest{Input: "/ask 怎么优化输入法", Context: "低延迟"})
+	if !got.OK || got.Provider != "local" || got.Model != "qwen-local" {
+		t.Fatalf("agent protocol metadata = %#v", got)
+	}
+	if len(got.Items) != 2 || got.Items[0].Intent != "ask" || got.Items[0].Context != "低延迟" {
+		t.Fatalf("ask agent items = %#v", got.Items)
+	}
+	if len(got.Actions) == 0 || len(got.Candidates) != len(got.Items) {
+		t.Fatalf("agent actions/candidates = %#v", got)
+	}
+}
+
+func TestNormalizeAgentDefaultsAndClamps(t *testing.T) {
+	got := NormalizeAgent(Agent{Provider: " LOCAL ", TimeoutMs: 1})
+	if got.Provider != "local" || got.TimeoutMs != 1000 || got.Model == "" || len(got.Triggers) == 0 || len(got.Actions) == 0 {
+		t.Fatalf("normalized agent = %#v", got)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

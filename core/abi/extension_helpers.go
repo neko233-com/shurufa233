@@ -29,6 +29,8 @@ var abiFeatureList = []string{
 	"user-pins-json",
 	"commit-text",
 	"agent-compose",
+	"agent-config-json",
+	"apply-agent-config-json",
 	"rime-compatible-dictionaries",
 	"gzip-dictionaries",
 	"abbreviation-candidates",
@@ -81,20 +83,7 @@ type candidatePayloadV2Item struct {
 	Pinned       bool   `json:"pinned,omitempty"`
 }
 
-type agentComposeResult struct {
-	OK        bool             `json:"ok"`
-	Input     string           `json:"input"`
-	Context   string           `json:"context,omitempty"`
-	Items     []agentCandidate `json:"items"`
-	UpdatedAt time.Time        `json:"updatedAt"`
-}
-
-type agentCandidate struct {
-	Intent string `json:"intent"`
-	Action string `json:"action"`
-	Text   string `json:"text"`
-	Source string `json:"source"`
-}
+type agentComposeResult = engine.AgentComposeResponse
 
 type candidateActionResult struct {
 	OK         bool               `json:"ok"`
@@ -181,6 +170,7 @@ type extensionCommandPayload struct {
 	Kind         string             `json:"kind,omitempty"`
 	Query        string             `json:"query,omitempty"`
 	Config       *engine.Config     `json:"config,omitempty"`
+	Agent        *engine.Agent      `json:"agent,omitempty"`
 	AppContext   *engine.AppContext `json:"appContext,omitempty"`
 	Rules        []engine.AppRule   `json:"rules,omitempty"`
 	UserScores   map[string]int     `json:"userScores,omitempty"`
@@ -320,6 +310,73 @@ func applyAppRulesPayload(session *engine.Engine, req extensionCommandPayload) m
 	}
 }
 
+func configEnvelope() map[string]any {
+	return map[string]any{
+		"ok":        true,
+		"config":    loadConfig(),
+		"updatedAt": time.Now().UTC(),
+	}
+}
+
+func applyConfigEnvelope(config engine.Config) map[string]any {
+	config = normalizeConfig(config)
+	updated := configureActiveSessions(config)
+	persisted := true
+	var persistError string
+	if err := persistConfig(config); err != nil {
+		persisted = false
+		persistError = err.Error()
+	}
+	return map[string]any{
+		"ok":              true,
+		"config":          config,
+		"persisted":       persisted,
+		"persistError":    persistError,
+		"sessionsUpdated": updated,
+		"updatedAt":       time.Now().UTC(),
+	}
+}
+
+func reloadDictionariesEnvelope() map[string]any {
+	groups := loadLocalDictionaryEntries()
+	sessions := activeSessions()
+	entryCount := 0
+	for _, group := range groups {
+		entryCount += len(group)
+	}
+	for _, session := range sessions {
+		for _, group := range groups {
+			session.AddEntries(group)
+		}
+	}
+	return map[string]any{
+		"ok":               true,
+		"dictionaryGroups": len(groups),
+		"entries":          entryCount,
+		"sessionsUpdated":  len(sessions),
+		"updatedAt":        time.Now().UTC(),
+	}
+}
+
+func agentConfigEnvelope() map[string]any {
+	config := loadConfig()
+	return map[string]any{
+		"ok":        true,
+		"agent":     engine.NormalizeAgent(config.Agent),
+		"config":    config,
+		"updatedAt": time.Now().UTC(),
+	}
+}
+
+func applyAgentConfigPayload(req extensionCommandPayload) map[string]any {
+	config := loadConfig()
+	if req.Agent != nil {
+		config.Agent = *req.Agent
+	}
+	config = normalizeConfig(config)
+	return applyConfigEnvelope(config)
+}
+
 func decodeRimeCustomText(payload string) (string, error) {
 	req, err := decodeExtensionCommandPayload(payload)
 	if err != nil {
@@ -429,42 +486,7 @@ func normalizeABIReading(input string) string {
 }
 
 func composeAgentABI(input string, context string) agentComposeResult {
-	input = strings.TrimSpace(input)
-	context = strings.TrimSpace(context)
-	text := input
-	if context != "" {
-		text = context
-	}
-	result := agentComposeResult{
-		OK:        true,
-		Input:     input,
-		Context:   context,
-		UpdatedAt: time.Now().UTC(),
-	}
-	add := func(intent string, action string, value string) {
-		result.Items = append(result.Items, agentCandidate{
-			Intent: intent,
-			Action: action,
-			Text:   value,
-			Source: "builtin-agent",
-		})
-	}
-	lowered := strings.ToLower(input)
-	switch {
-	case strings.Contains(lowered, "rewrite") || strings.Contains(input, "润色"):
-		add("rewrite", "agent.rewrite.polish", "请润色这段文字："+text)
-		add("rewrite", "agent.rewrite.concise", "把下面内容改得更自然、更简洁："+text)
-	case strings.Contains(lowered, "translate") || strings.Contains(input, "翻译"):
-		add("translate", "agent.translate.zh", "请把这段内容翻译成中文："+text)
-		add("translate", "agent.translate.en", "请把这段内容翻译成英文："+text)
-	default:
-		prefix := "作为输入法 agent，请处理："
-		if context != "" {
-			prefix = "结合当前上下文，作为输入法 agent，请处理："
-		}
-		add("compose", "agent.compose", prefix+input)
-	}
-	return result
+	return engine.ComposeAgent(loadConfig(), engine.AgentComposeRequest{Input: input, Context: context})
 }
 
 func executeCandidateAction(session *engine.Engine, req extensionCommandPayload) any {
@@ -1158,6 +1180,10 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return buildCandidatePayloadV2(session, req.Start, req.Limit), true
 	case "associate", "associate-json", "association", "predict", "suggest":
 		return session.Associate(firstNonEmpty(req.Context, req.Input, req.Text), req.Limit), true
+	case "agent-config-json", "agent-config":
+		return agentConfigEnvelope(), true
+	case "apply-agent-config-json", "apply-agent-config":
+		return applyAgentConfigPayload(req), true
 	case "dictionary-sources-json", "dictionary-source-presets", "update-sources":
 		return map[string]any{
 			"ok":        true,
