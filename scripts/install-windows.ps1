@@ -189,6 +189,26 @@ function Copy-OptionalFile {
   }
 }
 
+function Copy-VersionedTool {
+  param(
+    [string]$Source,
+    [string]$InstallDir,
+    [string]$BaseName,
+    [string]$Stamp
+  )
+
+  $fixedPath = Join-Path $InstallDir "$BaseName.exe"
+  try {
+    Copy-Item -Force $Source $fixedPath -ErrorAction Stop
+    return $fixedPath
+  } catch {
+    $versionedPath = Join-Path $InstallDir "$BaseName-$Stamp.exe"
+    Copy-Item -Force $Source $versionedPath
+    Write-Warning "Could not update $fixedPath because it is locked; installed latest tool at $versionedPath."
+    return $versionedPath
+  }
+}
+
 function Test-DaemonHealth {
   try {
     $response = Invoke-RestMethod -Uri "http://127.0.0.1:23333/health" -TimeoutSec 2 -ErrorAction Stop
@@ -248,7 +268,10 @@ function New-ShurufaShortcut {
 }
 
 function Install-StartMenuShortcuts {
-  param([string]$InstallDir)
+  param(
+    [string]$InstallDir,
+    [string]$SmokeEditPath
+  )
 
   try {
     $startMenuDir = Get-StartMenuDir
@@ -262,7 +285,7 @@ function Install-StartMenuShortcuts {
       -IconLocation $settingsIcon `
       -WorkingDirectory $InstallDir
 
-    $smokeEdit = Join-Path $InstallDir "Shurufa233SmokeEdit.exe"
+    $smokeEdit = if ($SmokeEditPath) { $SmokeEditPath } else { Join-Path $InstallDir "Shurufa233SmokeEdit.exe" }
     New-ShurufaShortcut `
       -Path (Join-Path $startMenuDir "Input Performance Lab.lnk") `
       -TargetPath $smokeEdit `
@@ -393,6 +416,7 @@ $TsfSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233Tsf.dll"
 $ProfileCtlSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233ProfileCtl.exe"
 $SmokeEditSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233SmokeEdit.exe"
 $SettingsSource = Join-Path $Root "apps\settings\dist"
+$SmokeEditInstalledPath = Join-Path $InstallDir "Shurufa233SmokeEdit.exe"
 
 if (-not $RegisterOnly) {
   foreach ($Path in @($DaemonSource, $CliSource, $TsfSource, $ProfileCtlSource, $SmokeEditSource)) {
@@ -429,7 +453,14 @@ if (-not $RegisterOnly) {
     Write-Warning "shurufa_core.dll was not found for $GoArch; TSF will use daemon IPC fallback."
   }
   Copy-Item -Force $ProfileCtlSource (Join-Path $InstallDir "Shurufa233ProfileCtl.exe")
-  Copy-OptionalFile -Source $SmokeEditSource -Destination (Join-Path $InstallDir "Shurufa233SmokeEdit.exe")
+  $SmokeEditInstalledPath = Copy-VersionedTool `
+    -Source $SmokeEditSource `
+    -InstallDir $InstallDir `
+    -BaseName "Shurufa233SmokeEdit" `
+    -Stamp $stamp
+  Get-ChildItem -Path $InstallDir -Filter "Shurufa233SmokeEdit-*.exe" -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -ne $SmokeEditInstalledPath } |
+    ForEach-Object { Remove-OrScheduleFile -Path $_.FullName }
   if (Test-Path (Join-Path $SettingsSource "index.html")) {
     $SettingsInstallDir = Join-Path $InstallDir "settings"
     Remove-Item -LiteralPath $SettingsInstallDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -445,7 +476,7 @@ if (-not $RegisterOnly) {
     New-Item -ItemType Directory -Force $UserDictionaryDir | Out-Null
     Copy-Item -Force (Join-Path $BundledDictionaryDir "*.json") $UserDictionaryDir
   }
-  Install-StartMenuShortcuts -InstallDir $InstallDir
+  Install-StartMenuShortcuts -InstallDir $InstallDir -SmokeEditPath $SmokeEditInstalledPath
 } else {
   $TsfDll = $TsfDllPath
   if ($CoreDllPath) {
@@ -546,5 +577,5 @@ Write-Host "Registered $NativeArch TSF DLL for the current user."
 Write-Host "Daemon is configured for startup through HKCU Run."
 Write-Host "Settings UI is served at http://127.0.0.1:23333/settings/."
 Write-Host "Start Menu shortcuts are installed under shurufa233."
-Write-Host "Input performance lab installed at $(Join-Path $InstallDir 'Shurufa233SmokeEdit.exe')."
+Write-Host "Input performance lab installed at $SmokeEditInstalledPath."
 Write-Host "Open Windows Settings > Time & language > Typing > Advanced keyboard settings to select shurufa233, or rerun with -ActivateProfile when testing."

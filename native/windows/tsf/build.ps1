@@ -190,6 +190,8 @@ foreach ($TargetArch in $Arch) {
     "/Fo`"$SmokeEditObj`"",
     "/Fe:`"$SmokeEdit`"",
     "/link",
+    "ole32.lib",
+    "uuid.lib",
     "user32.lib",
     "gdi32.lib",
     "/SUBSYSTEM:WINDOWS",

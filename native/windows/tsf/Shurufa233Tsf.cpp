@@ -730,7 +730,7 @@ class CandidateWindow {
   }
 
   int PageControlsWidth() const {
-    return HasPageControls() ? 124 : 0;
+    return HasPageControls() ? 168 : 0;
   }
 
   int MeasureWindowWidth() {
@@ -1211,14 +1211,14 @@ class CandidateWindow {
     wchar_t label[32]{};
     StringCchPrintfW(label, ARRAYSIZE(label), L"%d-%d/%d", first, last, totalCount_);
     const int centerY = CandidateBandTop() + 8 + max(34, fontSize_ + 20) / 2;
-    RECT prevRect{rect.right - 112, centerY - 15, rect.right - 84, centerY + 15};
+    RECT prevRect{rect.right - 156, centerY - 15, rect.right - 128, centerY + 15};
     RECT nextRect{rect.right - 42, centerY - 15, rect.right - 14, centerY + 15};
     DrawPageButton(dc, prevRect, -1);
     DrawPageButton(dc, nextRect, 1);
     pageHits_.push_back(PageHit{prevRect, -1});
     pageHits_.push_back(PageHit{nextRect, 1});
     SetTextColor(dc, mutedText_);
-    RECT labelRect{prevRect.right + 4, centerY - 15, nextRect.left - 4, centerY + 15};
+    RECT labelRect{prevRect.right + 6, centerY - 15, nextRect.left - 6, centerY + 15};
     DrawTextW(dc, label, -1, &labelRect, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
   }
 

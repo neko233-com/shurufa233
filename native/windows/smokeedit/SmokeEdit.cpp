@@ -1,14 +1,30 @@
 #define NOMINMAX
 #include <windows.h>
+#include <msctf.h>
 #include <strsafe.h>
 
 #include <algorithm>
+#include <cwchar>
 
 namespace {
 
 constexpr wchar_t kClassName[] = L"Shurufa233SmokeEditWindow";
 constexpr UINT_PTR kStatsTimer = 1;
 constexpr int kEditTop = 300;
+
+const CLSID kClsidTextService = {
+    0x3d7b8d06,
+    0x9872,
+    0x4c31,
+    {0xb7, 0x7d, 0x3b, 0x87, 0x32, 0x7c, 0xbf, 0x64}};
+
+const GUID kProfileGuid = {
+    0xb68911a2,
+    0x4478,
+    0x491c,
+    {0xa6, 0x24, 0x97, 0x84, 0x41, 0x64, 0x8e, 0x20}};
+
+constexpr LANGID kLanguage = MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
 
 struct Metrics {
   LARGE_INTEGER frequency{};
@@ -31,6 +47,8 @@ HFONT g_bodyFont = nullptr;
 HFONT g_editFont = nullptr;
 WNDPROC g_originalEditProc = nullptr;
 Metrics g_metrics{};
+wchar_t g_imeStatus[128] = L"F6 activate shurufa233 for this lab";
+bool g_shurufaActive = false;
 
 COLORREF Rgb(int r, int g, int b) {
   return RGB(r, g, b);
@@ -65,6 +83,91 @@ void EnsureStarted() {
     g_metrics.startedAt = Now();
     g_metrics.started = true;
   }
+}
+
+HRESULT GetActiveKeyboardProfile(TF_INPUTPROCESSORPROFILE *profile) {
+  if (!profile) {
+    return E_INVALIDARG;
+  }
+  ITfInputProcessorProfileMgr *mgr = nullptr;
+  HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_ITfInputProcessorProfileMgr,
+                                reinterpret_cast<void **>(&mgr));
+  if (SUCCEEDED(hr) && mgr) {
+    hr = mgr->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, profile);
+    mgr->Release();
+  }
+  return hr;
+}
+
+bool IsShurufaActive() {
+  TF_INPUTPROCESSORPROFILE active{};
+  if (FAILED(GetActiveKeyboardProfile(&active))) {
+    return false;
+  }
+  return active.langid == kLanguage && IsEqualGUID(active.clsid, kClsidTextService) &&
+         IsEqualGUID(active.guidProfile, kProfileGuid);
+}
+
+HRESULT ActivateShurufaProfileOnce() {
+  HRESULT hr = S_OK;
+  ITfInputProcessorProfiles *profiles = nullptr;
+  hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                        IID_ITfInputProcessorProfiles,
+                        reinterpret_cast<void **>(&profiles));
+  if (SUCCEEDED(hr) && profiles) {
+    profiles->EnableLanguageProfile(kClsidTextService, kLanguage, kProfileGuid, TRUE);
+    profiles->ChangeCurrentLanguage(kLanguage);
+    profiles->ActivateLanguageProfile(kClsidTextService, kLanguage, kProfileGuid);
+    profiles->Release();
+  }
+
+  ITfInputProcessorProfileMgr *mgr = nullptr;
+  hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                        IID_ITfInputProcessorProfileMgr,
+                        reinterpret_cast<void **>(&mgr));
+  if (SUCCEEDED(hr) && mgr) {
+    DWORD flags = TF_IPPMF_FORSESSION | TF_IPPMF_ENABLEPROFILE;
+#ifdef TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE
+    flags |= TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE;
+#endif
+    hr = mgr->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, kLanguage, kClsidTextService,
+                              kProfileGuid, nullptr, flags);
+    if (FAILED(hr)) {
+      hr = mgr->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, kLanguage, kClsidTextService,
+                                kProfileGuid, nullptr, TF_IPPMF_FORSESSION);
+    }
+    mgr->Release();
+  }
+  return hr;
+}
+
+HRESULT ActivateShurufaProfile() {
+  HRESULT hr = S_OK;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    hr = ActivateShurufaProfileOnce();
+    if (SUCCEEDED(hr) && IsShurufaActive()) {
+      return S_OK;
+    }
+    Sleep(120);
+  }
+  return SUCCEEDED(hr) ? HRESULT_FROM_WIN32(ERROR_RETRY) : hr;
+}
+
+void UpdateImeStatus(HWND hwnd, HRESULT hr) {
+  if (SUCCEEDED(hr)) {
+    g_shurufaActive = true;
+    StringCchCopyW(g_imeStatus, ARRAYSIZE(g_imeStatus),
+                   L"shurufa233 active in this lab");
+  } else {
+    g_shurufaActive = false;
+    StringCchPrintfW(g_imeStatus, ARRAYSIZE(g_imeStatus),
+                     L"F6 activation failed: 0x%08X", static_cast<unsigned int>(hr));
+  }
+  if (g_edit) {
+    SetFocus(g_edit);
+  }
+  InvalidateRect(hwnd, nullptr, FALSE);
 }
 
 void RoundedFill(HDC dc, RECT rect, COLORREF fill, COLORREF border, int radius) {
@@ -149,8 +252,11 @@ void Paint(HWND hwnd) {
   RECT editTitle{editFrame.left + 18, editFrame.top + 12, editFrame.right - 18, editFrame.top + 42};
   DrawTextLine(dc, L"输入区", editTitle, g_titleFont, Rgb(31, 41, 55));
   RECT hint{editFrame.left + 100, editFrame.top + 14, editFrame.right - 18, editFrame.top + 40};
-  DrawTextLine(dc, L"F5 reset", hint, g_bodyFont, Rgb(100, 116, 139),
+  DrawTextLine(dc, L"F5 reset / F6 activate IME", hint, g_bodyFont, Rgb(100, 116, 139),
                DT_SINGLELINE | DT_VCENTER | DT_RIGHT);
+  RECT imeHint{editFrame.left + 18, editFrame.top + 44, editFrame.right - 18, editFrame.top + 70};
+  DrawTextLine(dc, g_imeStatus, imeHint, g_bodyFont,
+               g_shurufaActive ? Rgb(5, 150, 105) : Rgb(100, 116, 139));
 
   EndPaint(hwnd, &ps);
 }
@@ -158,6 +264,13 @@ void Paint(HWND hwnd) {
 LRESULT CALLBACK EditProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
   switch (message) {
     case WM_KEYDOWN:
+      if (wparam == VK_F5 || wparam == VK_F6) {
+        HWND parent = GetParent(hwnd);
+        if (parent) {
+          SendMessageW(parent, WM_KEYDOWN, wparam, lparam);
+          return 0;
+        }
+      }
       EnsureStarted();
       g_metrics.keyDowns++;
       g_metrics.lastKeyAt = Now();
@@ -233,6 +346,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
       SendMessageW(g_edit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(14, 14));
       g_originalEditProc = reinterpret_cast<WNDPROC>(
           SetWindowLongPtrW(g_edit, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(EditProc)));
+      g_shurufaActive = IsShurufaActive();
+      if (g_shurufaActive) {
+        StringCchCopyW(g_imeStatus, ARRAYSIZE(g_imeStatus),
+                       L"shurufa233 active in this lab");
+      }
       SetTimer(hwnd, kStatsTimer, 100, nullptr);
       SetFocus(g_edit);
       return 0;
@@ -254,6 +372,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
     case WM_KEYDOWN:
       if (wparam == VK_F5) {
         ResetMetrics(hwnd);
+        return 0;
+      }
+      if (wparam == VK_F6) {
+        UpdateImeStatus(hwnd, ActivateShurufaProfile());
         return 0;
       }
       break;
@@ -287,6 +409,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
+  HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const bool didCoInit = SUCCEEDED(hr);
+  if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
+    return 1;
+  }
+
   WNDCLASSW wc{};
   wc.lpfnWndProc = WindowProc;
   wc.hInstance = instance;
@@ -308,6 +436,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
   while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
     TranslateMessage(&msg);
     DispatchMessageW(&msg);
+  }
+  if (didCoInit) {
+    CoUninitialize();
   }
   return static_cast<int>(msg.wParam);
 }

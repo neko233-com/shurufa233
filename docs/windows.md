@@ -74,6 +74,7 @@ The installer:
 - copies daemon, CLI, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
 - copies `Shurufa233ProfileCtl.exe` for current-session enable/activate/probe operations
 - copies `Shurufa233SmokeEdit.exe` for native TSF and typing performance validation
+- if `Shurufa233SmokeEdit.exe` is locked by a stale validation process, installs the latest lab as `Shurufa233SmokeEdit-<stamp>.exe` and points the Start Menu shortcut to that fresh binary
 - copies the React settings UI bundle and serves it from `http://127.0.0.1:23333/settings/`
 - creates Start Menu shortcuts under `shurufa233` for the settings panel and input performance lab
 - starts the daemon and verifies `http://127.0.0.1:23333/health`
@@ -168,6 +169,8 @@ Local TSF diagnostics are written to:
 ## Input Performance Lab
 
 Native packages include `Shurufa233SmokeEdit.exe`. It is a polished Win32 EDIT-based performance lab rather than a React surface, because it validates the real TSF path used by native Windows apps and latency-sensitive games. It tracks WPM, key events per second, average key-to-text-change latency, IME composition activity, and committed character count.
+
+Inside SmokeEdit, press `F6` to activate the shurufa233 TSF profile for the current test session and immediately refocus the native edit control. This is intended for local validation and does not change the Windows default input method. Press `F5` to clear the test buffer and reset metrics.
 
 The React/Vite settings app also includes an esports-style typing lab for the browser/settings-panel path. It tracks WPM, CPM, input event rate, average key-to-input latency when key events are available, accuracy, and IME composition activity. This React lab is useful for UI and Wails-hosted settings validation, while `Shurufa233SmokeEdit.exe` remains the authoritative native TSF validation target.
 
