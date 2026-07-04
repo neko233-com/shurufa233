@@ -1478,46 +1478,41 @@ bool HasSystemModifier() {
   return IsControlPressed() || IsAltPressed();
 }
 
-std::wstring ChinesePunctuationForKey(WPARAM key) {
+bool IsChinesePunctuationKey(WPARAM key) {
   const bool shifted = IsShiftPressed();
   switch (key) {
     case VK_OEM_COMMA:
     case L',':
-      return shifted ? L"《" : L"，";
     case VK_OEM_PERIOD:
     case L'.':
-      return shifted ? L"》" : L"。";
     case VK_OEM_1:
     case L';':
-      return shifted ? L"：" : L"；";
     case VK_OEM_2:
     case L'/':
-      return shifted ? L"？" : L"、";
     case VK_OEM_4:
     case L'[':
-      return shifted ? L"【" : L"「";
     case VK_OEM_6:
     case L']':
-      return shifted ? L"】" : L"」";
     case VK_OEM_7:
     case L'\'':
-      return shifted ? L"“" : L"’";
+    case VK_OEM_MINUS:
+    case L'-':
+      return true;
     case L'<':
-      return L"《";
     case L'>':
-      return L"》";
     case L':':
-      return L"：";
     case L'?':
-      return L"？";
     case L'{':
-      return L"【";
     case L'}':
-      return L"】";
     case L'"':
-      return L"“";
+      return true;
+    case L'1':
+    case L'6':
+    case L'9':
+    case L'0':
+      return shifted;
     default:
-      return L"";
+      return false;
   }
 }
 
@@ -1720,6 +1715,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     candidateWindow_.Hide();
     cachedCandidateCount_ = 0;
     compositionLength_ = 0;
+    ResetPunctuationState();
     if (session_ && g_core.Ready()) {
       g_core.destroySession(session_);
       session_ = 0;
@@ -2036,7 +2032,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (quickIndex >= 0) {
       return cachedCandidateCount_ > pageOffset_ + quickIndex;
     }
-    if (!asciiMode_ && !ChinesePunctuationForKey(key).empty()) {
+    if (!asciiMode_ && IsChinesePunctuationKey(key)) {
       return true;
     }
     if (IsCandidateNumberKey(key)) {
@@ -2248,6 +2244,71 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     rawBuffer_.clear();
   }
 
+  void ResetPunctuationState() {
+    doubleQuoteOpen_ = false;
+    singleQuoteOpen_ = false;
+  }
+
+  std::wstring ChinesePunctuationForKey(WPARAM key) {
+    const bool shifted = IsShiftPressed();
+    switch (key) {
+      case VK_OEM_COMMA:
+      case L',':
+        return shifted ? L"《" : L"，";
+      case VK_OEM_PERIOD:
+      case L'.':
+        return shifted ? L"》" : L"。";
+      case VK_OEM_1:
+      case L';':
+        return shifted ? L"：" : L"；";
+      case VK_OEM_2:
+      case L'/':
+        return shifted ? L"？" : L"、";
+      case VK_OEM_4:
+      case L'[':
+        return shifted ? L"【" : L"「";
+      case VK_OEM_6:
+      case L']':
+        return shifted ? L"】" : L"」";
+      case VK_OEM_7:
+      case L'\'':
+        if (shifted) {
+          doubleQuoteOpen_ = !doubleQuoteOpen_;
+          return doubleQuoteOpen_ ? L"“" : L"”";
+        }
+        singleQuoteOpen_ = !singleQuoteOpen_;
+        return singleQuoteOpen_ ? L"‘" : L"’";
+      case L'<':
+        return L"《";
+      case L'>':
+        return L"》";
+      case L':':
+        return L"：";
+      case L'?':
+        return L"？";
+      case L'{':
+        return L"【";
+      case L'}':
+        return L"】";
+      case L'"':
+        doubleQuoteOpen_ = !doubleQuoteOpen_;
+        return doubleQuoteOpen_ ? L"“" : L"”";
+      case L'1':
+        return shifted ? L"！" : L"";
+      case L'6':
+        return shifted ? L"……" : L"";
+      case L'9':
+        return shifted ? L"（" : L"";
+      case L'0':
+        return shifted ? L"）" : L"";
+      case VK_OEM_MINUS:
+      case L'-':
+        return shifted ? L"——" : L"-";
+      default:
+        return L"";
+    }
+  }
+
   void RefreshAsciiModeFromCore() {
     if (!session_ || !g_core.mode) {
       asciiMode_ = false;
@@ -2277,6 +2338,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       }
     }
     ResetCompositionState();
+    ResetPunctuationState();
     candidateWindow_.Hide();
     wchar_t message[96]{};
     StringCchPrintfW(message, ARRAYSIZE(message), L"ToggleAsciiMode ascii=%d", asciiMode_ ? 1 : 0);
@@ -2297,6 +2359,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   bool asciiMode_ = false;
   bool shiftDown_ = false;
   bool shiftToggleCandidate_ = false;
+  bool doubleQuoteOpen_ = false;
+  bool singleQuoteOpen_ = false;
   ITfContext *lastContext_ = nullptr;
   CandidateWindow candidateWindow_;
 };

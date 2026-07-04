@@ -173,7 +173,7 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 - when double pinyin is enabled, the Go core decodes the Xiaohe layout while keeping full-pinyin fallback available
 - full-sentence input can fall back to a scored segmenter that chooses the best dictionary path, including user-learned word scores, instead of the first greedy split, while strong exact phrases still stay ahead
 - space, enter, main-row or numpad number keys, semicolon, apostrophe, brackets, page up/down, home/end, `-`, and `=` operate the visible candidate page
-- Chinese punctuation commits the selected candidate first, then inserts the punctuation
+- Chinese punctuation commits the selected candidate first, then inserts the punctuation; common shifted punctuation such as `!`, `^`, `(`, `)`, and `-` maps to `！`, `……`, `（`, `）`, and `——`, while quote keys alternate paired Chinese quotes `“”` and `‘’`
 - if a raw letter buffer has no candidates, space, enter, or Chinese punctuation commits the raw letters instead of dropping the buffer
 
 Local TSF diagnostics are written to:
