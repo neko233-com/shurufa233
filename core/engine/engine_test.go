@@ -248,6 +248,12 @@ func TestToggleModeClearsBufferAndNormalizesMode(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigShowsCandidateComments(t *testing.T) {
+	if !DefaultConfig().ShowCandidateComments {
+		t.Fatal("showCandidateComments should default to true")
+	}
+}
+
 func TestFuzzyInitialsExpandCandidates(t *testing.T) {
 	e := New(DefaultConfig())
 

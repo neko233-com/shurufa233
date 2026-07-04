@@ -210,6 +210,7 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 - the optional `ShurufaExecuteCommand(session, command, json)` C ABI is loaded by the Windows TSF DLL as a forward-compatible JSON command bus, so future features such as richer candidate actions, agent hooks, wordbook tools, and config reloads can be added in Go before requiring any new C++ glue
 - visible candidates per page come from `candidatePageSize` in the shared config, defaulting to 7 and clamped to 3..9 so the native strip, HTTP fallback, and React previews stay aligned
 - candidate layout comes from `candidateLayout`, defaulting to Microsoft IME/WeChat-style horizontal rows while allowing a Rime-style vertical list without changing the input engine
+- candidate comment hints are controlled by `showCandidateComments`, defaulting on for Rime/OpenCC-style annotations while allowing a cleaner Microsoft/WeChat-like strip without dropping comment data from the engine or ABI
 - full-sentence input can fall back to a scored segmenter that chooses the best dictionary path, including user-learned word scores, instead of the first greedy split, while strong exact phrases still stay ahead
 - space, enter, main-row or numpad number keys, semicolon outside Microsoft double pinyin, apostrophe, brackets, page up/down, home/end, `-`, and `=` operate the visible candidate page
 - Chinese punctuation commits the selected candidate first, then inserts the punctuation; default `punctuation=full` maps common shifted punctuation such as `!`, `^`, `(`, `)`, and `-` to `！`, `……`, `（`, `）`, and `——`, while quote keys alternate paired Chinese quotes `“”` and `‘’`
@@ -282,7 +283,10 @@ Candidate type badges are intentionally short localized labels (`表情`, `颜`,
 `短`, `时`, `AI`) so emoji, kaomoji, symbol, phrase, dynamic datetime, and agent candidates stay readable without
 making the native strip feel like a debug surface. Candidate comments are drawn
 as muted inline hints after the candidate text, preserving Rime/OpenCC annotations
-without turning the lower candidate strip into a table.
+without turning the lower candidate strip into a table. Set
+`showCandidateComments=false` in the shared config to hide those hints in both
+the native strip and the React preview while keeping them available in candidate
+payloads.
 
 Current skin fields come from the settings UI:
 

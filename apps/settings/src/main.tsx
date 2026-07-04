@@ -36,6 +36,7 @@ type Config = {
   maxCandidates: number;
   candidatePageSize: number;
   candidateLayout: "horizontal" | "vertical" | "auto";
+  showCandidateComments: boolean;
   fuzzyInitials: string[];
   doublePinyin: boolean;
   doublePinyinScheme: "xiaohe" | "microsoft";
@@ -140,6 +141,7 @@ const defaultConfig: Config = {
   maxCandidates: 42,
   candidatePageSize: 7,
   candidateLayout: "horizontal",
+  showCandidateComments: true,
   fuzzyInitials: ["zh=z", "ch=c", "sh=s"],
   doublePinyin: false,
   doublePinyinScheme: "xiaohe",
@@ -330,6 +332,7 @@ function hydrateConfig(config: Config): Config {
     ...config,
     candidatePageSize: Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize)),
     candidateLayout: normalizeCandidateLayout(config.candidateLayout),
+    showCandidateComments: config.showCandidateComments ?? defaultConfig.showCandidateComments,
     skin: {
       ...defaultConfig.skin,
       ...config.skin,
@@ -383,6 +386,7 @@ function App() {
   const candidateCount = state?.candidates?.length ?? 0;
   const candidatePageSize = Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize));
   const candidateLayout = normalizeCandidateLayout(config.candidateLayout);
+  const showCandidateComments = config.showCandidateComments ?? defaultConfig.showCandidateComments;
   const typingPrompt = useMemo(
     () => typingPrompts.find((prompt) => prompt.id === typingPromptId) ?? typingPrompts[0],
     [typingPromptId],
@@ -855,6 +859,14 @@ function App() {
             <label className="toggle">
               <input
                 type="checkbox"
+                checked={showCandidateComments}
+                onChange={(event) => setConfig({ ...config, showCandidateComments: event.target.checked })}
+              />
+              <span>显示候选注释</span>
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
                 checked={config.doublePinyin}
                 onChange={(event) =>
                   setConfig({
@@ -1148,7 +1160,7 @@ function App() {
                       >
                         <b>{index + 1}</b>
                         <span className="candidateText">{candidate.text}</span>
-                        {candidate.comment && <span className="candidateComment">{candidate.comment}</span>}
+                        {showCandidateComments && candidate.comment && <span className="candidateComment">{candidate.comment}</span>}
                         {kindLabel(candidate.kind) && <i>{kindLabel(candidate.kind)}</i>}
                       </button>
                     ))
@@ -1226,7 +1238,7 @@ function App() {
                       <span className={index === 0 ? "probeCandidate selected" : "probeCandidate"} key={`${candidate.reading}-${candidate.text}-${index}`}>
                         <b>{index + 1}</b>
                         <span>{candidate.text}</span>
-                        {candidate.comment && <em>{candidate.comment}</em>}
+                        {showCandidateComments && candidate.comment && <em>{candidate.comment}</em>}
                         {kindLabel(candidate.kind) && <i>{kindLabel(candidate.kind)}</i>}
                       </span>
                     ))

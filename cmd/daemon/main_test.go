@@ -97,6 +97,7 @@ func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.CandidatePageSize = 5
 	config.CandidateLayout = "vertical"
+	config.ShowCandidateComments = false
 	state := &AppState{config: config}
 	req := httptest.NewRequest(http.MethodGet, "/ime/skin", nil)
 	rec := httptest.NewRecorder()
@@ -107,7 +108,7 @@ func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	parts := strings.Split(rec.Body.String(), "|")
-	if len(parts) != 11 {
+	if len(parts) != 12 {
 		t.Fatalf("skin payload parts = %#v", parts)
 	}
 	if parts[9] != "5" {
@@ -115,6 +116,9 @@ func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 	}
 	if parts[10] != "vertical" {
 		t.Fatalf("candidate layout payload = %q, want vertical", parts[10])
+	}
+	if parts[11] != "false" {
+		t.Fatalf("candidate comment visibility payload = %q, want false", parts[11])
 	}
 }
 

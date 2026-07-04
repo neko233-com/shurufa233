@@ -805,6 +805,7 @@ class CandidateWindow {
   COLORREF highlightText_ = RGB(255, 255, 255);
   std::string theme_ = "system";
   std::string layout_ = "horizontal";
+  bool showComments_ = true;
   std::wstring skinConfigPath_;
   bool skinConfigPathResolved_ = false;
   DWORD lastLocalSkinCheckTick_ = 0;
@@ -935,7 +936,7 @@ class CandidateWindow {
 
   int CandidateItemWidth(HDC dc, const CandidateView &candidate, bool selected) const {
     const int textWidth = TextWidth(dc, candidate.text);
-    const int commentWidth = candidate.comment.empty() ? 0 : min(Scale(88), TextWidth(dc, candidate.comment) + Scale(10));
+    const int commentWidth = !showComments_ || candidate.comment.empty() ? 0 : min(Scale(88), TextWidth(dc, candidate.comment) + Scale(10));
     const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
     const int kindWidth = kindLabel.empty() ? 0 : CandidateBadgeWidth(dc, kindLabel) + Scale(10);
     return max(Scale(66), min(Scale(320), Scale(48) + textWidth + commentWidth + kindWidth));
@@ -1128,6 +1129,44 @@ class CandidateWindow {
     return atoi(json.c_str() + pos + 1);
   }
 
+  static bool ParseBoolLike(const std::string &value, bool fallback) {
+    std::string normalized;
+    normalized.reserve(value.size());
+    for (char ch : value) {
+      if (!isspace(static_cast<unsigned char>(ch))) {
+        normalized.push_back(static_cast<char>(tolower(static_cast<unsigned char>(ch))));
+      }
+    }
+    if (normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on") {
+      return true;
+    }
+    if (normalized == "0" || normalized == "false" || normalized == "no" || normalized == "off") {
+      return false;
+    }
+    return fallback;
+  }
+
+  static bool JsonBoolField(const std::string &json, const char *field, bool fallback) {
+    const std::string key = std::string("\"") + field + "\"";
+    size_t pos = json.find(key);
+    if (pos == std::string::npos) {
+      return fallback;
+    }
+    pos = json.find(':', pos + key.size());
+    if (pos == std::string::npos) {
+      return fallback;
+    }
+    size_t start = pos + 1;
+    while (start < json.size() && isspace(static_cast<unsigned char>(json[start]))) {
+      ++start;
+    }
+    size_t end = start;
+    while (end < json.size() && json[end] != ',' && json[end] != '}' && json[end] != '\n' && json[end] != '\r') {
+      ++end;
+    }
+    return ParseBoolLike(json.substr(start, end - start), fallback);
+  }
+
   bool ApplySkinPayload(const std::string &skin) {
     size_t first = skin.find('|');
     size_t second = first == std::string::npos ? std::string::npos : skin.find('|', first + 1);
@@ -1139,6 +1178,7 @@ class CandidateWindow {
     size_t eighth = seventh == std::string::npos ? std::string::npos : skin.find('|', seventh + 1);
     size_t ninth = eighth == std::string::npos ? std::string::npos : skin.find('|', eighth + 1);
     size_t tenth = ninth == std::string::npos ? std::string::npos : skin.find('|', ninth + 1);
+    size_t eleventh = tenth == std::string::npos ? std::string::npos : skin.find('|', tenth + 1);
     if (first == std::string::npos || second == std::string::npos || third == std::string::npos ||
         fourth == std::string::npos || fifth == std::string::npos || sixth == std::string::npos ||
         seventh == std::string::npos || eighth == std::string::npos) {
@@ -1166,7 +1206,10 @@ class CandidateWindow {
                       min(kMaxCandidatesPerPage, atoi(skin.substr(ninth + 1, tenth == std::string::npos ? std::string::npos : tenth - ninth - 1).c_str())));
     }
     if (tenth != std::string::npos) {
-      layout_ = NormalizeCandidateLayout(skin.substr(tenth + 1));
+      layout_ = NormalizeCandidateLayout(skin.substr(tenth + 1, eleventh == std::string::npos ? std::string::npos : eleventh - tenth - 1));
+    }
+    if (eleventh != std::string::npos) {
+      showComments_ = ParseBoolLike(skin.substr(eleventh + 1), true);
     }
     return true;
   }
@@ -1207,6 +1250,7 @@ class CandidateWindow {
       pageSize = kDefaultCandidatesPerPage;
     }
     const std::string layout = JsonStringField(json, "candidateLayout");
+    const bool showComments = JsonBoolField(json, "showCandidateComments", true);
     if (fontFamily.empty() || fontSize <= 0 || accent.empty() || surface.empty() ||
         text.empty() || mutedText.empty() || border.empty() || highlightText.empty()) {
       return false;
@@ -1214,7 +1258,8 @@ class CandidateWindow {
     std::string payload = fontFamily + "|" + std::to_string(fontSize) + "|" + accent + "|" +
                           surface + "|" + text + "|" + mutedText + "|" + border + "|" +
                           highlightText + "|" + theme + "|" + std::to_string(pageSize) + "|" +
-                          NormalizeCandidateLayout(layout);
+                          NormalizeCandidateLayout(layout) + "|" +
+                          (showComments ? "true" : "false");
     if (!ApplySkinPayload(payload)) {
       return false;
     }
@@ -1429,7 +1474,7 @@ class CandidateWindow {
                 DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS);
       SetTextColor(dc, selected ? highlightText_ : text_);
     }
-    if (!candidate.comment.empty()) {
+    if (showComments_ && !candidate.comment.empty()) {
       const int commentWidth = min(Scale(88), max(Scale(30), TextWidth(dc, candidate.comment) + Scale(8)));
       RECT commentRect{max(textRect.left + Scale(30), rightEdge - commentWidth), itemRect.top,
                        rightEdge - Scale(4), itemRect.bottom};

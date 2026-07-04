@@ -102,6 +102,10 @@ All returned strings are UTF-8 and must be released with `ShurufaFree`.
 `ShurufaAbiVersion` returns a plain version string; every other extension export
 returns JSON with an `ok` field and `updatedAt`.
 
+The shared `config-json` payload includes display-only fields such as
+`candidatePageSize`, `candidateLayout`, and `showCandidateComments`; candidate
+comment text remains part of candidate payloads even when the UI hides it.
+
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
 `user-scores-json`, `commit-text`, `agent-compose`,

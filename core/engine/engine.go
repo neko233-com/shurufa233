@@ -38,9 +38,10 @@ var nowFunc = time.Now
 
 func DefaultConfig() Config {
 	return Config{
-		MaxCandidates:     42,
-		CandidatePageSize: 7,
-		CandidateLayout:   "horizontal",
+		MaxCandidates:         42,
+		CandidatePageSize:     7,
+		CandidateLayout:       "horizontal",
+		ShowCandidateComments: true,
 		FuzzyInitials: []string{
 			"zh=z",
 			"ch=c",
