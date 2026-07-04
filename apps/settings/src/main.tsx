@@ -4,6 +4,7 @@ import {
   BookOpen,
   Check,
   CircleAlert,
+  Download,
   Keyboard,
   Palette,
   RotateCcw,
@@ -47,6 +48,20 @@ type UpdateConfig = {
   autoCheck: boolean;
   autoApply: boolean;
   installedVersion: string;
+};
+
+type UpdateCheckResult = {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  manifestUrl?: string;
+};
+
+type UpdateApplyResult = {
+  ok: boolean;
+  manifestUrl: string;
+  version: string;
+  applied: string[];
 };
 
 type Candidate = {
@@ -247,6 +262,7 @@ function App() {
   const [state, setState] = useState<EngineState | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "offline" | "saved">("loading");
   const [updateText, setUpdateText] = useState("未检查");
+  const [updateBusy, setUpdateBusy] = useState<"idle" | "checking" | "applying">("idle");
   const [error, setError] = useState("");
   const [typingPromptId, setTypingPromptId] = useState(typingPrompts[0].id);
   const [typingText, setTypingText] = useState("");
@@ -420,15 +436,43 @@ function App() {
   }
 
   async function checkUpdates() {
+    setUpdateBusy("checking");
     try {
       const res = await fetch(`${apiBase}/updates/check`);
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      const data = (await res.json()) as UpdateCheckResult;
       setUpdateText(data.updateAvailable ? `发现 ${data.latestVersion}` : `已是最新 ${data.currentVersion}`);
       setError("");
     } catch (err) {
       setUpdateText("检查失败");
       setError(err instanceof Error ? err.message : "update check failed");
+    } finally {
+      setUpdateBusy("idle");
+    }
+  }
+
+  async function applyUpdates() {
+    setUpdateBusy("applying");
+    try {
+      const res = await fetch(`${apiBase}/updates/apply`, { method: "POST" });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as UpdateApplyResult;
+      const applied = data.applied.length > 0 ? data.applied.join(", ") : "无需更新";
+      setUpdateText(`已应用 ${data.version} · ${applied}`);
+      setConfig({
+        ...config,
+        update: {
+          ...config.update,
+          installedVersion: data.version,
+        },
+      });
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setUpdateText("更新失败");
+      setError(err instanceof Error ? err.message : "update apply failed");
+    } finally {
+      setUpdateBusy("idle");
     }
   }
 
@@ -716,9 +760,13 @@ function App() {
                 />
                 <span>自动应用</span>
               </label>
-              <button className="secondary" onClick={checkUpdates}>
+              <button className="secondary" disabled={updateBusy !== "idle"} onClick={checkUpdates}>
                 <RefreshCw size={18} />
-                检查更新
+                {updateBusy === "checking" ? "检查中" : "检查更新"}
+              </button>
+              <button className="secondary" disabled={updateBusy !== "idle"} onClick={applyUpdates}>
+                <Download size={18} />
+                {updateBusy === "applying" ? "更新中" : "应用更新"}
               </button>
             </div>
           </section>

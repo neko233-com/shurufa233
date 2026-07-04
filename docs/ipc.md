@@ -28,6 +28,12 @@ The settings UI uses this IPC directly in development. A Wails v3 shell can host
 ASCII punctuation while preserving candidate-first commit behavior during active
 composition.
 
+`GET /updates/check` returns the current and latest dictionary manifest version.
+`POST /updates/apply` downloads the matching language dictionary from configured
+mirror/CDN URLs first and then GitHub, verifies hashes when provided, loads it
+into active IME sessions, persists it locally, and returns the applied language
+versions.
+
 `GET /ime/mode` returns the current session state, including `mode`.
 
 `POST /ime/mode` body:

@@ -28,7 +28,7 @@ npm run dev
 
 Open the Vite URL and keep `go run ./cmd/daemon` running. The UI talks to `http://127.0.0.1:23333`.
 
-Default mode is Chinese pinyin (`zh-CN`, `zh`). The settings UI supports Chinese/English mode switching, full-width/half-width punctuation mode, skin colors, candidate size, dictionary update source configuration, and update checks.
+Default mode is Chinese pinyin (`zh-CN`, `zh`). The settings UI supports Chinese/English mode switching, full-width/half-width punctuation mode, skin colors, candidate size, dictionary update source configuration, update checks, and one-click dictionary update apply.
 
 ## Architecture
 
