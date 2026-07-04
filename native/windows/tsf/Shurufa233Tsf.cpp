@@ -112,6 +112,21 @@ void LogLine(const wchar_t *message) {
   CloseHandle(file);
 }
 
+bool IsDebugLogEnabled() {
+  static const bool enabled = []() {
+    wchar_t value[16]{};
+    const DWORD len = GetEnvironmentVariableW(L"SHURUFA233_TSF_DEBUG", value, ARRAYSIZE(value));
+    return len > 0 && value[0] != L'\0' && value[0] != L'0';
+  }();
+  return enabled;
+}
+
+void LogDebugLine(const wchar_t *message) {
+  if (IsDebugLogEnabled()) {
+    LogLine(message);
+  }
+}
+
 void AddDllRef() {
   InterlockedIncrement(&g_dllRefCount);
 }
@@ -1583,7 +1598,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
   STDMETHODIMP ActivateEx(ITfThreadMgr *threadMgr, TfClientId clientId, DWORD) override {
-    LogLine(L"ActivateEx called");
+    LogDebugLine(L"ActivateEx called");
     if (!threadMgr || !EnsureCoreLoaded()) {
       LogLine(L"ActivateEx failed: threadMgr/core unavailable");
       return E_FAIL;
@@ -1605,7 +1620,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
   STDMETHODIMP Deactivate() override {
-    LogLine(L"Deactivate called");
+    LogDebugLine(L"Deactivate called");
     candidateWindow_.Hide();
     cachedCandidateCount_ = 0;
     compositionLength_ = 0;
@@ -1942,7 +1957,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     StringCchPrintfW(message, ARRAYSIZE(message),
                      L"CommitText text_len=%zu request_hr=0x%08X edit_hr=0x%08X",
                      text.size(), static_cast<unsigned int>(hr), static_cast<unsigned int>(editResult));
-    LogLine(message);
+    LogDebugLine(message);
     if (hr == TF_E_SYNCHRONOUS || FAILED(hr)) {
       EditSession *asyncSession = new EditSession(context, text);
       HRESULT ignored = E_FAIL;
@@ -2120,7 +2135,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     ClearSession();
     wchar_t message[96]{};
     StringCchPrintfW(message, ARRAYSIZE(message), L"ToggleAsciiMode ascii=%d", asciiMode_ ? 1 : 0);
-    LogLine(message);
+    LogDebugLine(message);
     candidateWindow_.ShowStatus(asciiMode_ ? L"EN" : L"中");
   }
 
@@ -2177,7 +2192,7 @@ class ClassFactory final : public IClassFactory {
   }
 
   STDMETHODIMP CreateInstance(IUnknown *outer, REFIID riid, void **out) override {
-    LogLine(L"ClassFactory CreateInstance called");
+    LogDebugLine(L"ClassFactory CreateInstance called");
     if (outer) {
       return CLASS_E_NOAGGREGATION;
     }
@@ -2338,9 +2353,9 @@ BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
   if (reason == DLL_PROCESS_ATTACH) {
     g_instance = instance;
     DisableThreadLibraryCalls(instance);
-    LogLine(L"DllMain PROCESS_ATTACH");
+    LogDebugLine(L"DllMain PROCESS_ATTACH");
   } else if (reason == DLL_PROCESS_DETACH) {
-    LogLine(L"DllMain PROCESS_DETACH");
+    LogDebugLine(L"DllMain PROCESS_DETACH");
     if (g_httpConnect) {
       WinHttpCloseHandle(g_httpConnect);
       g_httpConnect = nullptr;
@@ -2363,7 +2378,7 @@ STDAPI DllCanUnloadNow() {
 }
 
 STDAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out) {
-  LogLine(L"DllGetClassObject called");
+  LogDebugLine(L"DllGetClassObject called");
   if (clsid != kClsidTextService) {
     LogLine(L"DllGetClassObject class not available");
     return CLASS_E_CLASSNOTAVAILABLE;

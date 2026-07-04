@@ -177,6 +177,10 @@ Local TSF diagnostics are written to:
 %LOCALAPPDATA%\shurufa233-daemon.log
 ```
 
+TSF keeps hot-path success logs off by default for typing latency. Set
+`SHURUFA233_TSF_DEBUG=1` before starting the text service host when you need
+verbose lifecycle and commit diagnostics.
+
 ## Input Performance Lab
 
 Native packages include `Shurufa233SmokeEdit.exe`. It is a polished Win32 EDIT-based esports typing and performance lab rather than a React surface, because it validates the real TSF path used by native Windows apps and latency-sensitive games. It tracks WPM, key events per second, average key-to-text-change latency, IME composition state, committed character count, and text-change events.
