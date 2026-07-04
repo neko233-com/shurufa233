@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/neko233-com/shurufa233/core/engine"
@@ -121,6 +122,14 @@ type keyEventResult struct {
 	Candidates  candidatePayloadV2         `json:"candidates"`
 	UpdatedAt   time.Time                  `json:"updatedAt"`
 }
+
+type keyEventPunctuationState struct {
+	mu              sync.Mutex
+	doubleQuoteOpen bool
+	singleQuoteOpen bool
+}
+
+var keyEventPunctuationStates sync.Map
 
 type profileBundle struct {
 	OK         bool           `json:"ok,omitempty"`
@@ -609,6 +618,26 @@ func executeKeyEvent(session *engine.Engine, req extensionCommandPayload) keyEve
 		persistUserScores(session.UserScores())
 		return buildKeyEventResultFromState("commit-candidate", key, character, state.Committed, "", "", decision, true, 0, limit, state)
 	}
+	if punctuation, label, ok := keyEventPunctuation(session, req, key, character); ok {
+		if len(before.Candidates) > 0 {
+			index := req.Index
+			state, err := session.Select(index)
+			if err != nil {
+				return buildKeyEventResult(session, "error", key, character, "", "", err.Error(), decision, true, req.Start, limit)
+			}
+			persistUserScores(session.UserScores())
+			return buildKeyEventResultFromState("commit-candidate-punctuation", key, character, state.Committed+punctuation, "", label, decision, true, 0, limit, state)
+		}
+		if before.Buffer != "" {
+			committed := before.Buffer + punctuation
+			state := session.Clear()
+			return buildKeyEventResultFromState("commit-raw-punctuation", key, character, committed, "", label, decision, true, 0, limit, state)
+		}
+		if strings.EqualFold(session.Config().Punctuation, "half") {
+			return buildKeyEventResult(session, "pass-through", key, character, "", punctuation, "half-punctuation", decision, false, req.Start, limit)
+		}
+		return buildKeyEventResult(session, "commit-punctuation", key, character, punctuation, "", label, decision, true, req.Start, limit)
+	}
 	if character != "" {
 		runes := []rune(character)
 		if len(runes) != 1 || !isABIKeyEventInputRune(runes[0]) {
@@ -710,6 +739,164 @@ func keyEventCandidateIndex(key string, start int) (int, bool) {
 		start = 0
 	}
 	return start + int(key[0]-'1'), true
+}
+
+func keyEventPunctuation(session *engine.Engine, req extensionCommandPayload, key string, character string) (string, string, bool) {
+	label := keyEventPunctuationLabel(req, key, character)
+	if label == "" {
+		return "", "", false
+	}
+	config := session.Config()
+	if strings.EqualFold(config.Punctuation, "half") {
+		if value := punctuationShapeValue(config.PunctuationHalfShape, label); value != "" {
+			return value, label, true
+		}
+		if value := defaultHalfPunctuation(label); value != "" {
+			return value, label, true
+		}
+		return "", "", false
+	}
+	if value := punctuationShapeValue(config.PunctuationFullShape, label); value != "" {
+		return value, label, true
+	}
+	if value := defaultFullPunctuation(session, label); value != "" {
+		return value, label, true
+	}
+	return "", "", false
+}
+
+func keyEventPunctuationLabel(req extensionCommandPayload, key string, character string) string {
+	source := character
+	if source == "" {
+		source = key
+	}
+	if source == "" {
+		return ""
+	}
+	if req.Shift {
+		switch source {
+		case ",":
+			return "<"
+		case ".":
+			return ">"
+		case ";":
+			return ":"
+		case "/":
+			return "?"
+		case "[":
+			return "{"
+		case "]":
+			return "}"
+		case "'":
+			return "\""
+		case "-":
+			return "_"
+		case "1":
+			return "!"
+		case "6":
+			return "^"
+		case "9":
+			return "("
+		case "0":
+			return ")"
+		}
+	}
+	switch source {
+	case ",", "<", ".", ">", ";", ":", "/", "?", "[", "{", "]", "}", "'", "\"", "-", "_", "!", "^", "(", ")":
+		return source
+	default:
+		return ""
+	}
+}
+
+func punctuationShapeValue(shape map[string][]string, label string) string {
+	if len(shape) == 0 {
+		return ""
+	}
+	values := shape[label]
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(values[0])
+}
+
+func defaultFullPunctuation(session *engine.Engine, label string) string {
+	switch label {
+	case ",":
+		return "，"
+	case "<":
+		return "《"
+	case ".":
+		return "。"
+	case ">":
+		return "》"
+	case ";":
+		return "；"
+	case ":":
+		return "："
+	case "/":
+		return "、"
+	case "?":
+		return "？"
+	case "[":
+		return "「"
+	case "{":
+		return "【"
+	case "]":
+		return "」"
+	case "}":
+		return "】"
+	case "'":
+		state := punctuationStateForSession(session)
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		state.singleQuoteOpen = !state.singleQuoteOpen
+		if state.singleQuoteOpen {
+			return "‘"
+		}
+		return "’"
+	case "\"":
+		state := punctuationStateForSession(session)
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		state.doubleQuoteOpen = !state.doubleQuoteOpen
+		if state.doubleQuoteOpen {
+			return "“"
+		}
+		return "”"
+	case "-":
+		return "-"
+	case "_":
+		return "——"
+	case "!":
+		return "！"
+	case "^":
+		return "……"
+	case "(":
+		return "（"
+	case ")":
+		return "）"
+	default:
+		return ""
+	}
+}
+
+func defaultHalfPunctuation(label string) string {
+	switch label {
+	case ",", "<", ".", ">", ";", ":", "/", "?", "[", "{", "]", "}", "'", "\"", "-", "_", "!", "^", "(", ")":
+		return label
+	default:
+		return ""
+	}
+}
+
+func punctuationStateForSession(session *engine.Engine) *keyEventPunctuationState {
+	if existing, ok := keyEventPunctuationStates.Load(session); ok {
+		return existing.(*keyEventPunctuationState)
+	}
+	state := &keyEventPunctuationState{}
+	actual, _ := keyEventPunctuationStates.LoadOrStore(session, state)
+	return actual.(*keyEventPunctuationState)
 }
 
 func isABIKeyEventInputRune(r rune) bool {

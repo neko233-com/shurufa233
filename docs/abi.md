@@ -255,9 +255,12 @@ was `handled`, which `committed` text should be inserted, which text should be
 `passThrough` to the host app, the refreshed `state`, and the current candidate
 page. It already covers composing characters, Backspace, Escape, Space/Enter
 candidate commit, number-key candidate selection, Shift tap mode toggle, and
-game/password/terminal app-context pass-through. This keeps future
-WeChat/Rime-style key behavior in Go/config first, instead of requiring another
-round of platform C++ or IMKit changes.
+game/password/terminal app-context pass-through. It also resolves full-width and
+half-width punctuation through the shared config, including Rime
+`punctuator/full_shape` and `punctuator/half_shape` overrides, and follows the
+candidate-first punctuation flow used by Microsoft/WeChat-style IMEs. This keeps
+future WeChat/Rime-style key behavior in Go/config first, instead of requiring
+another round of platform C++ or IMKit changes.
 
 `switches-json`, `apply-switch-json`, `toggle-switch`, `ShurufaSwitchesJSON`,
 and `ShurufaApplySwitchJSON` reserve a Rime-style runtime switch surface.

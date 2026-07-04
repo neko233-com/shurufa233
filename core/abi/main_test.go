@@ -779,6 +779,62 @@ func TestExecuteExtensionCommandKeyEventShiftToggle(t *testing.T) {
 	}
 }
 
+func TestExecuteExtensionCommandKeyEventCommitsFullWidthPunctuation(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":",","character":","}`)
+	if !handled {
+		t.Fatal("key-event-json command was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || !result.Handled || result.Action != "commit-punctuation" || result.Committed != "，" {
+		t.Fatalf("key-event punctuation = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventCommitsCandidateBeforePunctuation(t *testing.T) {
+	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(t.TempDir(), "user-scores.json"))
+	session := engine.New(engine.DefaultConfig())
+	session.Preview("nihao")
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":",","character":","}`)
+	if !handled {
+		t.Fatal("key-event-json command was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || !result.Handled || result.Action != "commit-candidate-punctuation" || result.Committed != "你好，" || result.State.Buffer != "" {
+		t.Fatalf("key-event candidate punctuation = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventHalfPunctuationPassesThroughWhenIdle(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.Punctuation = "half"
+	session := engine.New(config)
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":".","character":"."}`)
+	if !handled {
+		t.Fatal("key-event-json command was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || result.Handled || result.PassThrough != "." || result.Reason != "half-punctuation" {
+		t.Fatalf("key-event half punctuation = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventUsesConfiguredRimePunctuationShape(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.PunctuationFullShape = map[string][]string{
+		",": {"，自定义"},
+	}
+	session := engine.New(config)
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":",","character":","}`)
+	if !handled {
+		t.Fatal("key-event-json command was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || !result.Handled || result.Committed != "，自定义" {
+		t.Fatalf("key-event configured punctuation = %#v", got)
+	}
+}
+
 func TestExecuteExtensionCommandPreviewAndCandidatePayload(t *testing.T) {
 	t.Setenv("SHURUFA233_CONFIG", filepath.Join(t.TempDir(), "config.json"))
 	t.Setenv("SHURUFA233_DICTIONARY_DIR", t.TempDir())
