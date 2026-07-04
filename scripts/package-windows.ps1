@@ -74,6 +74,30 @@ function Add-ArtifactHash {
   })
 }
 
+function Get-ArtifactRole {
+  param(
+    [string]$RelativePath,
+    [string]$NativeArch,
+    [string]$GoArch
+  )
+
+  $normalized = $RelativePath -replace '/', '\'
+  switch -Regex ($normalized) {
+    "^build\\windows\\$([regex]::Escape($NativeArch))\\Shurufa233Tsf\.dll$" { return "tsf-dll" }
+    "^build\\windows\\$([regex]::Escape($NativeArch))\\Shurufa233ProfileCtl\.exe$" { return "profilectl" }
+    "^build\\windows\\$([regex]::Escape($NativeArch))\\Shurufa233SmokeEdit\.exe$" { return "smokeedit" }
+    "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa-daemon\.exe$" { return "daemon" }
+    "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa-imecli\.exe$" { return "cli" }
+    "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa_core\.dll$" { return "go-core" }
+    "^apps\\settings\\dist\\index\.html$" { return "settings-ui" }
+    "^scripts\\install-windows\.ps1$" { return "installer" }
+    "^scripts\\uninstall-windows\.ps1$" { return "uninstaller" }
+    "^data\\dictionaries\\" { return "dictionary" }
+    "^docs\\" { return "docs" }
+    default { return "package-file" }
+  }
+}
+
 if (-not $Version) {
   $Version = (Get-Date -Format "yyyyMMddHHmmss")
 }
@@ -143,7 +167,8 @@ foreach ($NativeArch in $Arch) {
   Get-ChildItem $Stage -Recurse -File | ForEach-Object {
     $fullName = $_.FullName
     $relative = $fullName.Substring($stagePrefix.Length)
-    Add-ArtifactHash -Artifacts $artifacts -Path $fullName -RelativePath $relative -Role "package-file" -Required $true
+    $role = Get-ArtifactRole -RelativePath $relative -NativeArch $NativeArch -GoArch $GoArch
+    Add-ArtifactHash -Artifacts $artifacts -Path $fullName -RelativePath $relative -Role $role -Required $true
   }
 
   $manifest = [pscustomobject]@{

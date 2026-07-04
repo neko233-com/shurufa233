@@ -78,9 +78,24 @@ function Test-PackageManifest {
     throw "Package performanceMode is '$($manifest.performanceMode)'. Production install requires in-process-core."
   }
 
+  $requiredRoles = @("tsf-dll", "profilectl", "smokeedit", "daemon", "cli", "go-core", "settings-ui", "installer", "uninstaller")
+  $presentRoles = @{}
+  foreach ($artifact in @($manifest.artifacts)) {
+    if ($artifact.required -eq $true -and $artifact.present -eq $true -and $artifact.role) {
+      $presentRoles[[string]$artifact.role] = $true
+    }
+  }
+  $missingRoles = @($requiredRoles | Where-Object { -not $presentRoles.ContainsKey($_) })
+  if ($missingRoles.Count -gt 0) {
+    throw "Package manifest is missing required production artifact role(s): $($missingRoles -join ', ')"
+  }
+
   foreach ($artifact in @($manifest.artifacts)) {
     if ($artifact.required -ne $true) {
       continue
+    }
+    if ($artifact.present -ne $true) {
+      throw "Package manifest marks required artifact as not present: $($artifact.path)"
     }
     $relativePath = [string]$artifact.path
     if ([IO.Path]::IsPathRooted($relativePath) -or $relativePath -match '(^|[\\/])\.\.([\\/]|$)') {
