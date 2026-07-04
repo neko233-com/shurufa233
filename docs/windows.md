@@ -219,6 +219,9 @@ GET /ime/candidates?start=0&limit=7
 `limit` query parameters let the native window request only the visible page, so
 HTTP fallback keeps the same paging, emoji, kaomoji, and symbol badge behavior as
 the in-process core path.
+Candidate type badges are intentionally short localized labels (`表情`, `颜`, `符`,
+`短`) so emoji, kaomoji, symbol, and phrase candidates stay readable without
+making the native strip feel like a debug surface.
 
 Current skin fields come from the settings UI:
 

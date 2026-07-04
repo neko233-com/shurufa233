@@ -1109,7 +1109,7 @@ class CandidateWindow {
 
   std::wstring CandidateKindLabel(const std::wstring &kind) const {
     if (kind == L"emoji") {
-      return L"Emoji";
+      return L"表情";
     }
     if (kind == L"kaomoji") {
       return L"颜";
@@ -1121,6 +1121,29 @@ class CandidateWindow {
       return L"短";
     }
     return L"";
+  }
+
+  COLORREF CandidateBadgeFillColor(bool selected) const {
+    if (selected) {
+      return MixColor(accent_, highlightText_, ColorLuminance(accent_) < 120 ? 18 : 24);
+    }
+    return IsDarkSkin() ? MixColor(CandidateBandColor(), accent_, 20)
+                        : MixColor(CandidateBandColor(), accent_, 8);
+  }
+
+  COLORREF CandidateBadgeBorderColor(bool selected) const {
+    if (selected) {
+      return MixColor(accent_, highlightText_, ColorLuminance(accent_) < 120 ? 24 : 32);
+    }
+    return IsDarkSkin() ? MixColor(border_, accent_, 36)
+                        : MixColor(border_, accent_, 20);
+  }
+
+  COLORREF CandidateBadgeTextColor(bool selected) const {
+    if (selected) {
+      return highlightText_;
+    }
+    return IsDarkSkin() ? MixColor(mutedText_, accent_, 24) : mutedText_;
   }
 
   void DrawComposition(HDC dc, const RECT &rect) {
@@ -1228,17 +1251,13 @@ class CandidateWindow {
       RECT textRect{itemRect.left + Scale(30), itemRect.top, itemRect.right - Scale(10), itemRect.bottom};
       const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
       if (!kindLabel.empty()) {
-        const int badgeWidth = TextWidth(dc, kindLabel) + Scale(14);
-        textRect.right = max(textRect.left + Scale(24), itemRect.right - badgeWidth - Scale(9));
+        const int badgeWidth = max(Scale(30), TextWidth(dc, kindLabel) + Scale(12));
+        textRect.right = max(textRect.left + Scale(24), itemRect.right - badgeWidth - Scale(8));
         RECT badgeRect{itemRect.right - badgeWidth - Scale(7), itemRect.top + Scale(7),
                        itemRect.right - Scale(7), itemRect.bottom - Scale(7)};
-        DrawRoundedRect(dc, badgeRect,
-                        selected ? MixColor(accent_, highlightText_, 22)
-                                 : MixColor(CandidateBandColor(), accent_, 10),
-                        selected ? MixColor(accent_, highlightText_, 28)
-                                 : MixColor(border_, accent_, 22),
-                        9);
-        SetTextColor(dc, selected ? highlightText_ : mutedText_);
+        DrawRoundedRect(dc, badgeRect, CandidateBadgeFillColor(selected),
+                        CandidateBadgeBorderColor(selected), 9);
+        SetTextColor(dc, CandidateBadgeTextColor(selected));
         DrawTextW(dc, kindLabel.c_str(), static_cast<int>(kindLabel.size()), &badgeRect,
                   DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS);
         SetTextColor(dc, selected ? highlightText_ : text_);
