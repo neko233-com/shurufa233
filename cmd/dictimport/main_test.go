@@ -464,6 +464,61 @@ name: base
 	}
 }
 
+func TestCollectorInfersWeightOnlyDictionaryReadingsFromImportedCharacters(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "rime_ice.dict.yaml"), `---
+name: rime_ice
+import_tables:
+  - cn_dicts/8105
+  - cn_dicts/tencent
+...
+`)
+	writeFile(t, filepath.Join(root, "cn_dicts", "8105.dict.yaml"), `---
+name: 8105
+...
+你	ni	100
+好	hao	100
+长	chang	90
+长	zhang	10
+大	da	100
+〇	ling	100
+八	ba	100
+`)
+	writeFile(t, filepath.Join(root, "cn_dicts", "tencent.dict.yaml"), `---
+name: tencent
+columns:
+  - text
+  - weight
+...
+你好	800
+长大	700
+〇八	600
+缺字	500
+`)
+
+	entries, err := newRimeCollector("rime-test", true, "error", nil).collect(filepath.Join(root, "rime_ice.dict.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]engine.Entry{}
+	for _, entry := range entries {
+		got[entry.Text] = entry
+	}
+	for text, reading := range map[string]string{
+		"你好": "nihao",
+		"长大": "changda",
+		"〇八": "lingba",
+	} {
+		entry, ok := got[text]
+		if !ok || entry.Reading != reading {
+			t.Fatalf("entry for %s = %#v, want reading %s; all entries=%#v", text, entry, reading, entries)
+		}
+	}
+	if _, ok := got["缺字"]; ok {
+		t.Fatalf("uninferrable weight-only entry was imported: %#v", got["缺字"])
+	}
+}
+
 func TestCollectorMissingImportsCanWarn(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "main.dict.yaml"), `---

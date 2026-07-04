@@ -131,6 +131,13 @@ used to produce shurufa233 entries. Optional `comment`, `comments`, or
 candidate strips can show source-provided hints for symbols, emoji, phrases, and
 specialized dictionaries.
 
+Some large Rime dictionaries, including rime-ice style Tencent vector word
+lists, declare `columns: [text, weight]` and rely on previously imported
+character dictionaries for automatic annotation. When `import_tables` brings in
+annotated character rows first, `shurufa-dictimport` now infers a weight-only
+word's reading from those imported character readings. Rows with characters
+that cannot be inferred are skipped instead of producing broken candidates.
+
 Rime user phrases such as `custom_phrase.txt` are also supported. These files
 often have no YAML header and use the same table shape:
 

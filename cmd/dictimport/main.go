@@ -304,9 +304,9 @@ func parseRimeDocumentWithHints(reader io.Reader, source string, hints rimeParse
 			}
 			continue
 		}
-		entry, ok := parseRimeEntryWithColumns(line, source, columns)
+		nextEntries, ok := parseRimeEntriesWithColumns(line, source, columns, hints)
 		if ok {
-			entries = append(entries, entry)
+			entries = append(entries, nextEntries...)
 		}
 	}
 	return entries, imports, scanner.Err()
@@ -716,18 +716,29 @@ func parseRimeEntry(line string, source string) (engine.Entry, bool) {
 }
 
 func parseRimeEntryWithColumns(line string, source string, columns rimeColumns) (engine.Entry, bool) {
-	columns = columns.normalized()
-	fields, ok := splitRimeEntryFields(line)
+	entries, ok := parseRimeEntriesWithColumns(line, source, columns, rimeParseHints{})
 	if !ok {
 		return engine.Entry{}, false
 	}
-	if len(fields) <= columns.textIndex || len(fields) <= columns.codeIndex {
-		return engine.Entry{}, false
+	return entries[0], true
+}
+
+func parseRimeEntriesWithColumns(line string, source string, columns rimeColumns, hints rimeParseHints) ([]engine.Entry, bool) {
+	columns = columns.normalized()
+	fields, ok := splitRimeEntryFields(line)
+	if !ok {
+		return nil, false
+	}
+	if len(fields) <= columns.textIndex {
+		return nil, false
 	}
 	text := strings.TrimSpace(fields[columns.textIndex])
-	reading := normalizeRimeReading(stripRimeInlineComment(fields[columns.codeIndex]))
-	if text == "" || reading == "" {
-		return engine.Entry{}, false
+	if text == "" {
+		return nil, false
+	}
+	readings := rimeReadingsFromFields(text, fields, columns, hints)
+	if len(readings) == 0 {
+		return nil, false
 	}
 	weight := 1000
 	if columns.weightIndex >= 0 && len(fields) > columns.weightIndex {
@@ -739,13 +750,61 @@ func parseRimeEntryWithColumns(line string, source string, columns rimeColumns) 
 	if columns.commentIndex >= 0 && len(fields) > columns.commentIndex {
 		comment = strings.TrimSpace(stripRimeInlineComment(fields[columns.commentIndex]))
 	}
-	return engine.Entry{
-		Reading: reading,
-		Text:    text,
-		Source:  source,
-		Comment: comment,
-		Weight:  weight,
-	}, true
+	entries := make([]engine.Entry, 0, len(readings))
+	for _, reading := range readings {
+		entries = append(entries, engine.Entry{
+			Reading: reading,
+			Text:    text,
+			Source:  source,
+			Comment: comment,
+			Weight:  weight,
+		})
+	}
+	return entries, true
+}
+
+func rimeReadingsFromFields(text string, fields []string, columns rimeColumns, hints rimeParseHints) []string {
+	if columns.codeIndex >= 0 && len(fields) > columns.codeIndex {
+		reading := normalizeRimeReading(stripRimeInlineComment(fields[columns.codeIndex]))
+		if reading != "" {
+			return []string{reading}
+		}
+	}
+	return inferRimeReadings(text, hints)
+}
+
+func inferRimeReadings(text string, hints rimeParseHints) []string {
+	if len(hints.ReadingsByText) == 0 {
+		return nil
+	}
+	readings := uniqueNormalizedReadings(hints.ReadingsByText[text])
+	if derived := deriveRimeReadingFromRunes(text, hints); derived != "" && !containsString(readings, derived) {
+		readings = append(readings, derived)
+	}
+	return readings
+}
+
+func deriveRimeReadingFromRunes(text string, hints rimeParseHints) string {
+	var builder strings.Builder
+	for _, r := range text {
+		readings := uniqueNormalizedReadings(hints.ReadingsByText[string(r)])
+		if len(readings) == 0 {
+			return ""
+		}
+		builder.WriteString(readings[0])
+	}
+	return builder.String()
+}
+
+func uniqueNormalizedReadings(values []string) []string {
+	readings := make([]string, 0, len(values))
+	for _, value := range values {
+		reading := normalizeRimeReading(value)
+		if reading != "" && !containsString(readings, reading) {
+			readings = append(readings, reading)
+		}
+	}
+	return readings
 }
 
 type rimeColumns struct {
@@ -787,9 +846,6 @@ func blankRimeColumns() rimeColumns {
 func (columns rimeColumns) normalized() rimeColumns {
 	if columns.textIndex < 0 {
 		columns.textIndex = 0
-	}
-	if columns.codeIndex < 0 {
-		columns.codeIndex = 1
 	}
 	return columns
 }
