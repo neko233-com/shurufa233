@@ -35,6 +35,38 @@ version: "test"
 	}
 }
 
+func TestParseRimeDictionaryNormalizesToneMarksAndUmlaut(t *testing.T) {
+	input := `---
+name: tone
+...
+女	nǚ	1200
+绿	lǜ	1100
+略	lüe	1000
+旅	lu:	900
+测试	cè shì	800
+`
+	entries, err := parseRimeDictionary(strings.NewReader(input), "rime-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, entry := range entries {
+		got[entry.Text] = entry.Reading
+	}
+	want := map[string]string{
+		"女":  "nv",
+		"绿":  "lv",
+		"略":  "lve",
+		"旅":  "lv",
+		"测试": "ceshi",
+	}
+	for text, reading := range want {
+		if got[text] != reading {
+			t.Fatalf("reading for %s = %q, want %q; entries=%#v", text, got[text], reading, entries)
+		}
+	}
+}
+
 func TestParseRimeDocumentCollectsImportTables(t *testing.T) {
 	input := `---
 name: rime_ice

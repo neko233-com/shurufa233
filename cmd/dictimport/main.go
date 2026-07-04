@@ -324,7 +324,63 @@ func parseRimeEntry(line string, source string) (engine.Entry, bool) {
 	}, true
 }
 
+var rimeReadingReplacer = strings.NewReplacer(
+	"u:", "v",
+	"U:", "v",
+	"ü", "v",
+	"Ü", "v",
+	"ǖ", "v",
+	"Ǘ", "v",
+	"ǘ", "v",
+	"Ǚ", "v",
+	"ǚ", "v",
+	"Ǜ", "v",
+	"ǜ", "v",
+	"Ǖ", "v",
+	"ā", "a",
+	"á", "a",
+	"ǎ", "a",
+	"à", "a",
+	"Ā", "a",
+	"Á", "a",
+	"Ǎ", "a",
+	"À", "a",
+	"ē", "e",
+	"é", "e",
+	"ě", "e",
+	"è", "e",
+	"Ē", "e",
+	"É", "e",
+	"Ě", "e",
+	"È", "e",
+	"ī", "i",
+	"í", "i",
+	"ǐ", "i",
+	"ì", "i",
+	"Ī", "i",
+	"Í", "i",
+	"Ǐ", "i",
+	"Ì", "i",
+	"ō", "o",
+	"ó", "o",
+	"ǒ", "o",
+	"ò", "o",
+	"Ō", "o",
+	"Ó", "o",
+	"Ǒ", "o",
+	"Ò", "o",
+	"ū", "u",
+	"ú", "u",
+	"ǔ", "u",
+	"ù", "u",
+	"Ū", "u",
+	"Ú", "u",
+	"Ǔ", "u",
+	"Ù", "u",
+)
+
 func normalizeRimeReading(value string) string {
+	value = rimeReadingReplacer.Replace(value)
 	var builder strings.Builder
 	for _, r := range strings.ToLower(value) {
 		if r >= 'a' && r <= 'z' {
