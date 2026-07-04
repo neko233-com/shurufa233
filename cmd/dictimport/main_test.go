@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -30,6 +32,134 @@ version: "test"
 	}
 }
 
+func TestParseRimeDocumentCollectsImportTables(t *testing.T) {
+	input := `---
+name: rime_ice
+version: "test"
+import_tables:
+  - cn_dicts/8105
+  - "cn_dicts/base" # common words
+...
+入口	ru kou	900
+`
+	entries, imports, err := parseRimeDocument(strings.NewReader(input), "rime-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Text != "入口" {
+		t.Fatalf("entries = %#v", entries)
+	}
+	want := []string{filepath.Join("cn_dicts", "8105"), filepath.Join("cn_dicts", "base")}
+	if len(imports) != len(want) {
+		t.Fatalf("imports = %#v, want %#v", imports, want)
+	}
+	for index := range want {
+		if imports[index] != want[index] {
+			t.Fatalf("imports = %#v, want %#v", imports, want)
+		}
+	}
+}
+
+func TestParseRimeDocumentCollectsInlineImportTables(t *testing.T) {
+	input := `---
+import_tables: [luna_pinyin, cn_dicts/ext]
+...
+`
+	_, imports, err := parseRimeDocument(strings.NewReader(input), "rime-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"luna_pinyin", filepath.Join("cn_dicts", "ext")}
+	if len(imports) != len(want) {
+		t.Fatalf("imports = %#v, want %#v", imports, want)
+	}
+	for index := range want {
+		if imports[index] != want[index] {
+			t.Fatalf("imports = %#v, want %#v", imports, want)
+		}
+	}
+}
+
+func TestCollectorResolvesImportTables(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "rime_ice.dict.yaml"), `---
+name: rime_ice
+import_tables:
+  - cn_dicts/8105
+  - cn_dicts/base
+...
+入口	ru kou	900
+`)
+	writeFile(t, filepath.Join(root, "cn_dicts", "8105.dict.yaml"), `---
+name: 8105
+...
+一	yi	100
+`)
+	writeFile(t, filepath.Join(root, "cn_dicts", "base.dict.yaml"), `---
+name: base
+...
+你好	ni hao	1200
+`)
+
+	entries, err := newRimeCollector("rime-test", true, "error", nil).collect(filepath.Join(root, "rime_ice.dict.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, entry := range entries {
+		got[entry.Text] = entry.Reading
+	}
+	for text, reading := range map[string]string{"一": "yi", "你好": "nihao", "入口": "rukou"} {
+		if got[text] != reading {
+			t.Fatalf("entries = %#v, missing %s/%s", entries, text, reading)
+		}
+	}
+}
+
+func TestCollectorMissingImportsCanWarn(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "main.dict.yaml"), `---
+import_tables:
+  - missing
+...
+入口	ru kou	900
+`)
+
+	var warnings strings.Builder
+	entries, err := newRimeCollector("rime-test", true, "warn", &warnings).collect(filepath.Join(root, "main.dict.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Text != "入口" {
+		t.Fatalf("entries = %#v", entries)
+	}
+	if !strings.Contains(warnings.String(), "missing") {
+		t.Fatalf("warnings = %q", warnings.String())
+	}
+}
+
+func TestCollectorMissingImportsErrorByDefault(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "main.dict.yaml"), `---
+import_tables:
+  - missing
+...
+`)
+
+	_, err := newRimeCollector("rime-test", true, "error", nil).collect(filepath.Join(root, "main.dict.yaml"))
+	if err == nil {
+		t.Fatal("expected missing import error")
+	}
+}
+
+func TestResolveImportTableRejectsUnsafePaths(t *testing.T) {
+	for _, table := range []string{"../outside", "/absolute", `C:drive-relative`, `C:\absolute`} {
+		if _, _, err := resolveImportTable(t.TempDir(), table); err == nil {
+			t.Fatalf("expected unsafe import error for %q", table)
+		}
+	}
+}
+
 func TestMergeEntriesKeepsHighestWeight(t *testing.T) {
 	input := `---
 ...
@@ -46,5 +176,15 @@ func TestMergeEntriesKeepsHighestWeight(t *testing.T) {
 	}
 	if merged[0].Weight != 1500 {
 		t.Fatalf("weight = %d, want 1500", merged[0].Weight)
+	}
+}
+
+func writeFile(t *testing.T, path string, data string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

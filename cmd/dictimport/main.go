@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,8 @@ func main() {
 	version := flag.String("version", "rime-import", "dictionary version")
 	source := flag.String("source", "rime", "source label")
 	outPath := flag.String("out", "", "output JSON path, stdout when empty")
+	includeImports := flag.Bool("imports", true, "resolve Rime import_tables recursively")
+	missingImports := flag.String("missing-imports", "error", "missing import_tables policy: error, warn, or skip")
 	flag.Parse()
 	if flag.NArg() == 0 {
 		fmt.Fprintln(os.Stderr, "usage: shurufa-dictimport [flags] file.dict.yaml ...")
@@ -25,20 +28,11 @@ func main() {
 	}
 
 	var entries []engine.Entry
+	collector := newRimeCollector(*source, *includeImports, *missingImports, os.Stderr)
 	for _, path := range flag.Args() {
-		file, err := os.Open(path)
+		parsed, err := collector.collect(path)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		parsed, err := parseRimeDictionary(file, *source)
-		closeErr := file.Close()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		if closeErr != nil {
-			fmt.Fprintln(os.Stderr, closeErr)
 			os.Exit(1)
 		}
 		entries = append(entries, parsed...)
@@ -65,11 +59,106 @@ func main() {
 	}
 }
 
+type rimeCollector struct {
+	source         string
+	includeImports bool
+	missingPolicy  string
+	warnTo         io.Writer
+	visited        map[string]bool
+}
+
+func newRimeCollector(source string, includeImports bool, missingPolicy string, warnTo io.Writer) *rimeCollector {
+	return &rimeCollector{
+		source:         source,
+		includeImports: includeImports,
+		missingPolicy:  strings.ToLower(strings.TrimSpace(missingPolicy)),
+		warnTo:         warnTo,
+		visited:        make(map[string]bool),
+	}
+}
+
+func (collector *rimeCollector) collect(path string) ([]engine.Entry, error) {
+	resolved, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	return collector.collectResolved(resolved)
+}
+
+func (collector *rimeCollector) collectResolved(path string) ([]engine.Entry, error) {
+	cleanPath := filepath.Clean(path)
+	if collector.visited[cleanPath] {
+		return nil, nil
+	}
+	collector.visited[cleanPath] = true
+
+	file, err := os.Open(cleanPath)
+	if err != nil {
+		return nil, err
+	}
+	entries, imports, parseErr := parseRimeDocument(file, collector.source)
+	closeErr := file.Close()
+	if parseErr != nil {
+		return nil, fmt.Errorf("%s: %w", cleanPath, parseErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("%s: %w", cleanPath, closeErr)
+	}
+
+	if !collector.includeImports {
+		return entries, nil
+	}
+	var out []engine.Entry
+	for _, table := range imports {
+		importPath, ok, err := resolveImportTable(filepath.Dir(cleanPath), table)
+		if err != nil {
+			return nil, fmt.Errorf("%s import %q: %w", cleanPath, table, err)
+		}
+		if !ok {
+			if err := collector.handleMissingImport(cleanPath, table); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		imported, err := collector.collectResolved(importPath)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, imported...)
+	}
+	out = append(out, entries...)
+	return out, nil
+}
+
+func (collector *rimeCollector) handleMissingImport(path string, table string) error {
+	message := fmt.Sprintf("%s imports missing table %q", path, table)
+	switch collector.missingPolicy {
+	case "skip":
+		return nil
+	case "warn":
+		if collector.warnTo != nil {
+			fmt.Fprintf(collector.warnTo, "warning: %s\n", message)
+		}
+		return nil
+	case "", "error":
+		return fmt.Errorf("%s", message)
+	default:
+		return fmt.Errorf("unknown -missing-imports value %q", collector.missingPolicy)
+	}
+}
+
 func parseRimeDictionary(reader io.Reader, source string) ([]engine.Entry, error) {
+	entries, _, err := parseRimeDocument(reader, source)
+	return entries, err
+}
+
+func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []string, error) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	inBody := false
 	var entries []engine.Entry
+	var imports []string
+	importList := false
 	for scanner.Scan() {
 		line := strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "\ufeff"))
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -78,6 +167,21 @@ func parseRimeDictionary(reader io.Reader, source string) ([]engine.Entry, error
 		if !inBody {
 			if line == "..." {
 				inBody = true
+				importList = false
+				continue
+			}
+			nextImports, ok := parseImportTablesLine(line)
+			if ok {
+				imports = append(imports, nextImports...)
+				importList = len(nextImports) == 0
+				continue
+			}
+			if importList {
+				if table, ok := parseImportTableItem(line); ok {
+					imports = append(imports, table)
+					continue
+				}
+				importList = false
 			}
 			continue
 		}
@@ -86,7 +190,87 @@ func parseRimeDictionary(reader io.Reader, source string) ([]engine.Entry, error
 			entries = append(entries, entry)
 		}
 	}
-	return entries, scanner.Err()
+	return entries, imports, scanner.Err()
+}
+
+func parseImportTablesLine(line string) ([]string, bool) {
+	if line != "import_tables:" && !strings.HasPrefix(line, "import_tables:") {
+		return nil, false
+	}
+	value := strings.TrimSpace(strings.TrimPrefix(line, "import_tables:"))
+	if value == "" {
+		return nil, true
+	}
+	if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
+		value = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "["), "]"))
+		if value == "" {
+			return nil, true
+		}
+		parts := strings.Split(value, ",")
+		imports := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if table := normalizeImportTable(part); table != "" {
+				imports = append(imports, table)
+			}
+		}
+		return imports, true
+	}
+	if table := normalizeImportTable(value); table != "" {
+		return []string{table}, true
+	}
+	return nil, true
+}
+
+func parseImportTableItem(line string) (string, bool) {
+	if !strings.HasPrefix(line, "-") {
+		return "", false
+	}
+	table := normalizeImportTable(strings.TrimSpace(strings.TrimPrefix(line, "-")))
+	return table, table != ""
+}
+
+func normalizeImportTable(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, `"'`)
+	if index := strings.Index(value, "#"); index >= 0 {
+		value = strings.TrimSpace(value[:index])
+	}
+	value = strings.Trim(value, `"'`)
+	if value == "" {
+		return ""
+	}
+	return filepath.Clean(filepath.FromSlash(value))
+}
+
+func resolveImportTable(baseDir string, table string) (string, bool, error) {
+	if filepath.IsAbs(table) || filepath.VolumeName(table) != "" || strings.HasPrefix(table, "/") || strings.HasPrefix(table, `\`) {
+		return "", false, fmt.Errorf("absolute import path is not allowed")
+	}
+	cleanTable := filepath.Clean(table)
+	if cleanTable == "." || strings.HasPrefix(cleanTable, ".."+string(filepath.Separator)) || cleanTable == ".." {
+		return "", false, fmt.Errorf("import path escapes dictionary directory")
+	}
+	candidates := []string{filepath.Join(baseDir, cleanTable)}
+	if filepath.Ext(cleanTable) == "" {
+		candidates = append(candidates,
+			filepath.Join(baseDir, cleanTable+".dict.yaml"),
+			filepath.Join(baseDir, cleanTable+".yaml"),
+		)
+	}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			resolved, err := filepath.Abs(candidate)
+			if err != nil {
+				return "", false, err
+			}
+			return filepath.Clean(resolved), true, nil
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return "", false, err
+		}
+	}
+	return "", false, nil
 }
 
 func parseRimeEntry(line string, source string) (engine.Entry, bool) {

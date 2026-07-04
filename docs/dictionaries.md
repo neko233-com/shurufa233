@@ -34,9 +34,25 @@ go run ./cmd/dictimport `
   path\to\luna_pinyin.dict.yaml
 ```
 
-For Rime Ice, convert the concrete imported tables, such as files under
-`cn_dicts/`, rather than only the top-level `rime_ice.dict.yaml` that mainly
-declares `import_tables`.
+By default, `shurufa-dictimport` resolves Rime `import_tables` recursively, so
+an entry dictionary such as Rime Ice's `rime_ice.dict.yaml` can pull concrete
+tables from folders like `cn_dicts/` automatically:
+
+```powershell
+go run ./cmd/dictimport `
+  -language zh-CN `
+  -version rime-ice-2026-07-05 `
+  -source rime-ice `
+  -out data/dictionaries/zh-CN.rime-ice.json `
+  path\to\rime_ice.dict.yaml
+```
+
+Useful import flags:
+
+- `-imports=false`: convert only the files named on the command line.
+- `-missing-imports=error`: fail when an imported table cannot be found. This is the default and safest release behavior.
+- `-missing-imports=warn`: keep converting available tables and print warnings for missing optional imports.
+- `-missing-imports=skip`: silently ignore missing imports for quick local experiments.
 
 After conversion, point `data/dictionaries/dictionary-manifest.json` or a GitHub
 Release manifest at the generated JSON so the daemon can hot-update it.

@@ -161,6 +161,13 @@ Dictionary source conversion:
 shurufa-dictimport -language zh-CN -version rime-import -source rime-luna-pinyin -out .\data\dictionaries\zh-CN.rime.json path\to\luna_pinyin.dict.yaml
 ```
 
+Rime entry dictionaries that declare `import_tables`, such as Rime Ice, are
+resolved recursively by default:
+
+```powershell
+shurufa-dictimport -language zh-CN -version rime-ice -source rime-ice -missing-imports=warn -out .\data\dictionaries\zh-CN.rime-ice.json path\to\rime_ice.dict.yaml
+```
+
 ## Native Profile Tool
 
 ```powershell
