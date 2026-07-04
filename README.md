@@ -38,6 +38,7 @@ core/abi         C ABI export for native TSF/IMKit glue
 cmd/daemon       Local HTTP IPC service and config persistence
 cmd/imecli       Terminal smoke-test client for the engine
 cmd/dictimport   Rime .dict.yaml to shurufa233 JSON dictionary converter
+cmd/dictmanifest GitHub/mirror dictionary update manifest generator
 apps/settings    Vite 8 + React settings UI for Wails v3 hosting
 native/windows   Windows TSF C++ glue skeleton
 native/macos     macOS IMKit placeholder
@@ -46,4 +47,4 @@ scripts          Build and install helpers
 
 ## Windows Native Status
 
-`scripts/install-windows.ps1` installs the current-machine daemon, CLI, dictionary importer, and native TSF DLL, then registers and enables the TSF profile for the current user.
+`scripts/install-windows.ps1` installs the current-machine daemon, CLI, dictionary release tools, and native TSF DLL, then registers and enables the TSF profile for the current user.

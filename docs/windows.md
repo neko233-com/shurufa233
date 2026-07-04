@@ -8,12 +8,15 @@ Windows is the production target for the first line. The native input method lay
 build/windows/go-amd64/shurufa-daemon.exe
 build/windows/go-amd64/shurufa-imecli.exe
 build/windows/go-amd64/shurufa-dictimport.exe
+build/windows/go-amd64/shurufa-dictmanifest.exe
 build/windows/go-arm64/shurufa-daemon.exe
 build/windows/go-arm64/shurufa-imecli.exe
 build/windows/go-arm64/shurufa-dictimport.exe
+build/windows/go-arm64/shurufa-dictmanifest.exe
 build/windows/go-386/shurufa-daemon.exe
 build/windows/go-386/shurufa-imecli.exe
 build/windows/go-386/shurufa-dictimport.exe
+build/windows/go-386/shurufa-dictmanifest.exe
 build/windows/x64/Shurufa233Tsf.dll
 build/windows/x86/Shurufa233Tsf.dll
 build/windows/arm64/Shurufa233Tsf.dll
@@ -43,7 +46,7 @@ For the in-process Go core DLL, `build-windows.ps1` also needs a matching MinGW-
 - `x86` / `386`: `i686-w64-mingw32-gcc.exe`
 - `arm64`: `aarch64-w64-mingw32-gcc.exe`
 
-If the matching compiler is missing, daemon, CLI, and dictionary import artifacts still build, but `shurufa_core.dll` is skipped for that architecture. That package will run through daemon IPC fallback instead of the fastest in-process core path.
+If the matching compiler is missing, daemon, CLI, and dictionary release artifacts still build, but `shurufa_core.dll` is skipped for that architecture. That package will run through daemon IPC fallback instead of the fastest in-process core path.
 
 ## Build
 
@@ -78,7 +81,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 The installer:
 
 - verifies `manifest.json` when present, including platform, real OS architecture, `in-process-core` mode, required production artifact roles, required files, and SHA-256 hashes before changing system state
-- copies daemon, CLI, dictionary importer, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
+- copies daemon, CLI, dictionary release tools, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
 - detects the real Windows OS architecture, including 32-bit PowerShell running under WOW64, before choosing x64, arm64, or x86 artifacts
 - copies `Shurufa233ProfileCtl.exe` for current-session enable/activate/probe operations
 - copies `Shurufa233SmokeEdit.exe` for native TSF and typing performance validation
@@ -166,6 +169,12 @@ resolved recursively by default:
 
 ```powershell
 shurufa-dictimport -language zh-CN -version rime-ice -source rime-ice -missing-imports=warn -out .\data\dictionaries\zh-CN.rime-ice.json.gz path\to\rime_ice.dict.yaml
+```
+
+Dictionary manifest generation:
+
+```powershell
+shurufa-dictmanifest -version rime-ice -base-url https://github.com/neko233-com/shurufa233/releases/latest/download -out .\data\dictionaries\dictionary-manifest.json .\data\dictionaries\zh-CN.rime-ice.json.gz
 ```
 
 ## Native Profile Tool

@@ -60,3 +60,19 @@ Release manifest at the generated JSON or JSON gzip artifact so the daemon can
 hot-update it. For `.json.gz` releases, set manifest `compression` to `gzip`,
 `sha256` to the compressed artifact hash, and optionally `contentSha256` to the
 decompressed JSON hash.
+
+Generate that manifest instead of writing hashes by hand:
+
+```powershell
+go run ./cmd/dictmanifest `
+  -version rime-ice-2026-07-05 `
+  -channel stable `
+  -base-url https://github.com/neko233-com/shurufa233/releases/latest/download `
+  -out data/dictionaries/dictionary-manifest.json `
+  data/dictionaries/zh-CN.rime-ice.json.gz
+```
+
+`shurufa-dictmanifest` reads each dictionary artifact, validates that it is a
+real shurufa233 dictionary, detects gzip automatically, computes both artifact
+and decompressed-content SHA-256 hashes, and emits the manifest shape consumed
+by `GET /updates/check` and `POST /updates/apply`.
