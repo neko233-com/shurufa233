@@ -224,6 +224,15 @@ func TestCapabilitiesIncludeCandidateComments(t *testing.T) {
 	t.Fatalf("capabilities missing candidate-comments: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeCandidateActionJSON(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "candidate-action-json" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing candidate-action-json: %#v", abiFeatureList)
+}
+
 func TestCapabilitiesIncludeExtensionCommandJSON(t *testing.T) {
 	for _, feature := range abiFeatureList {
 		if feature == "extension-command-json" {
@@ -231,6 +240,63 @@ func TestCapabilitiesIncludeExtensionCommandJSON(t *testing.T) {
 		}
 	}
 	t.Fatalf("capabilities missing extension-command-json: %#v", abiFeatureList)
+}
+
+func TestExecuteExtensionCommandCandidateActionPagingAndSelect(t *testing.T) {
+	t.Setenv("SHURUFA233_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	t.Setenv("SHURUFA233_DICTIONARY_DIR", t.TempDir())
+	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(t.TempDir(), "user-scores.json"))
+
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{
+		{Reading: "ceshi", Text: "测试一", Weight: 10010},
+		{Reading: "ceshi", Text: "测试二", Weight: 10009},
+		{Reading: "ceshi", Text: "测试三", Weight: 10008},
+		{Reading: "ceshi", Text: "测试四", Weight: 10007},
+		{Reading: "ceshi", Text: "测试五", Weight: 10006},
+	})
+	session.Preview("ceshi")
+
+	view, handled := executeSessionExtensionCommand(session, "candidate-action", `{"action":"view","start":0,"limit":2}`)
+	if !handled {
+		t.Fatal("candidate-action command was not handled")
+	}
+	firstPage, ok := view.(candidateActionResult)
+	if !ok || !firstPage.OK || firstPage.Start != 0 || firstPage.Limit != 2 || len(firstPage.Candidates.Items) != 2 {
+		t.Fatalf("candidate-action view = %#v", view)
+	}
+
+	next, handled := executeSessionExtensionCommand(session, "candidate-action", `{"action":"next-page","start":0,"limit":2}`)
+	if !handled {
+		t.Fatal("candidate-action next-page was not handled")
+	}
+	nextPage, ok := next.(candidateActionResult)
+	if !ok || nextPage.Start != 2 || len(nextPage.Candidates.Items) != 2 {
+		t.Fatalf("candidate-action next-page = %#v", next)
+	}
+
+	selected, handled := executeSessionExtensionCommand(session, "candidate-action", `{"action":"select","start":2,"displayIndex":2,"limit":2}`)
+	if !handled {
+		t.Fatal("candidate-action select was not handled")
+	}
+	commit, ok := selected.(candidateActionResult)
+	if !ok || !commit.OK || commit.Committed != "测试四" || commit.State.Buffer != "" {
+		t.Fatalf("candidate-action select = %#v", selected)
+	}
+}
+
+func TestExecuteExtensionCommandCandidateActionCommitsCandidateChar(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	session.Preview("zhongwen")
+
+	got, handled := executeSessionExtensionCommand(session, "candidate-action", `{"action":"first-char","index":0}`)
+	if !handled {
+		t.Fatal("candidate-action first-char was not handled")
+	}
+	result, ok := got.(candidateActionResult)
+	if !ok || !result.OK || result.Committed != "中" {
+		t.Fatalf("candidate-action first-char = %#v", got)
+	}
 }
 
 func TestExecuteExtensionCommandPreviewAndCandidatePayload(t *testing.T) {

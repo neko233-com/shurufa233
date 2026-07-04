@@ -41,6 +41,15 @@ func ShurufaCandidatePayloadV2(id C.uint64_t, start C.int, limit C.int) *C.char 
 	return jsonCString(buildCandidatePayloadV2(getSession(uint64(id)), int(start), int(limit)))
 }
 
+//export ShurufaCandidateAction
+func ShurufaCandidateAction(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(executeCandidateAction(getSession(uint64(id)), req))
+}
+
 //export ShurufaConfigJSON
 func ShurufaConfigJSON() *C.char {
 	return jsonCString(configEnvelope())

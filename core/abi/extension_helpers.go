@@ -27,6 +27,7 @@ var abiFeatureList = []string{
 	"dynamic-datetime-candidates",
 	"candidate-char-commit",
 	"candidate-comments",
+	"candidate-action-json",
 	"extension-command-json",
 }
 
@@ -73,21 +74,37 @@ type agentCandidate struct {
 	Source string `json:"source"`
 }
 
+type candidateActionResult struct {
+	OK         bool               `json:"ok"`
+	Action     string             `json:"action"`
+	Start      int                `json:"start"`
+	Limit      int                `json:"limit"`
+	Total      int                `json:"total"`
+	Committed  string             `json:"committed,omitempty"`
+	State      engine.State       `json:"state"`
+	Candidates candidatePayloadV2 `json:"candidates"`
+	UpdatedAt  time.Time          `json:"updatedAt"`
+}
+
 type extensionCommandPayload struct {
-	Input      string           `json:"input,omitempty"`
-	Context    string           `json:"context,omitempty"`
-	Mode       string           `json:"mode,omitempty"`
-	Toggle     bool             `json:"toggle,omitempty"`
-	Index      int              `json:"index,omitempty"`
-	Start      int              `json:"start,omitempty"`
-	Limit      int              `json:"limit,omitempty"`
-	Side       string           `json:"side,omitempty"`
-	Reading    string           `json:"reading,omitempty"`
-	Text       string           `json:"text,omitempty"`
-	Config     *engine.Config   `json:"config,omitempty"`
-	UserScores map[string]int   `json:"userScores,omitempty"`
-	Scores     map[string]int   `json:"scores,omitempty"`
-	Raw        *json.RawMessage `json:"raw,omitempty"`
+	Input        string           `json:"input,omitempty"`
+	Context      string           `json:"context,omitempty"`
+	Action       string           `json:"action,omitempty"`
+	Mode         string           `json:"mode,omitempty"`
+	Toggle       bool             `json:"toggle,omitempty"`
+	Index        int              `json:"index,omitempty"`
+	DisplayIndex int              `json:"displayIndex,omitempty"`
+	Start        int              `json:"start,omitempty"`
+	Limit        int              `json:"limit,omitempty"`
+	PageSize     int              `json:"pageSize,omitempty"`
+	Delta        int              `json:"delta,omitempty"`
+	Side         string           `json:"side,omitempty"`
+	Reading      string           `json:"reading,omitempty"`
+	Text         string           `json:"text,omitempty"`
+	Config       *engine.Config   `json:"config,omitempty"`
+	UserScores   map[string]int   `json:"userScores,omitempty"`
+	Scores       map[string]int   `json:"scores,omitempty"`
+	Raw          *json.RawMessage `json:"raw,omitempty"`
 }
 
 func buildCandidatePayloadV2(session *engine.Engine, start int, limit int) candidatePayloadV2 {
@@ -198,6 +215,118 @@ func composeAgentABI(input string, context string) agentComposeResult {
 	return result
 }
 
+func executeCandidateAction(session *engine.Engine, req extensionCommandPayload) any {
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	if action == "" {
+		action = "view"
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = req.PageSize
+	}
+	if limit <= 0 {
+		limit = 7
+	}
+	if limit > 64 {
+		limit = 64
+	}
+	start := req.Start
+	if start < 0 {
+		start = 0
+	}
+	total := len(session.State().Candidates)
+	if start > total {
+		start = total
+	}
+
+	switch action {
+	case "view", "page", "candidates", "candidate-page":
+		return buildCandidateActionResult(session, action, start, limit, "")
+	case "next", "next-page", "page-next":
+		step := limit
+		if req.Delta > 0 {
+			step = req.Delta * limit
+		}
+		start += step
+		if start >= total {
+			start = maxCandidatePageStart(total, limit)
+		}
+		return buildCandidateActionResult(session, action, start, limit, "")
+	case "prev", "previous", "previous-page", "prev-page", "page-prev":
+		step := limit
+		if req.Delta > 0 {
+			step = req.Delta * limit
+		}
+		start -= step
+		if start < 0 {
+			start = 0
+		}
+		return buildCandidateActionResult(session, action, start, limit, "")
+	case "home", "first-page":
+		return buildCandidateActionResult(session, action, 0, limit, "")
+	case "end", "last-page":
+		return buildCandidateActionResult(session, action, maxCandidatePageStart(total, limit), limit, "")
+	case "select", "commit", "commit-candidate":
+		index := candidateActionIndex(req, start)
+		state, err := session.Select(index)
+		if err != nil {
+			return errorEnvelope(err.Error())
+		}
+		persistUserScores(session.UserScores())
+		return buildCandidateActionResultWithState(session, action, 0, limit, state.Committed, state)
+	case "first-char", "commit-first-char":
+		return executeCandidateCharAction(session, req, start, limit, action, "first")
+	case "last-char", "commit-last-char":
+		return executeCandidateCharAction(session, req, start, limit, action, "last")
+	case "select-char", "commit-char", "commit-candidate-char":
+		return executeCandidateCharAction(session, req, start, limit, action, req.Side)
+	default:
+		return errorEnvelope("unknown candidate action: " + action)
+	}
+}
+
+func executeCandidateCharAction(session *engine.Engine, req extensionCommandPayload, start int, limit int, action string, side string) any {
+	index := candidateActionIndex(req, start)
+	state, err := session.SelectChar(index, side)
+	if err != nil {
+		return errorEnvelope(err.Error())
+	}
+	return buildCandidateActionResultWithState(session, action, 0, limit, state.Committed, state)
+}
+
+func candidateActionIndex(req extensionCommandPayload, start int) int {
+	if req.DisplayIndex > 0 {
+		return start + req.DisplayIndex - 1
+	}
+	return req.Index
+}
+
+func buildCandidateActionResult(session *engine.Engine, action string, start int, limit int, committed string) candidateActionResult {
+	return buildCandidateActionResultWithState(session, action, start, limit, committed, session.State())
+}
+
+func buildCandidateActionResultWithState(session *engine.Engine, action string, start int, limit int, committed string, state engine.State) candidateActionResult {
+	candidates := buildCandidatePayloadV2(session, start, limit)
+	return candidateActionResult{
+		OK:         true,
+		Action:     action,
+		Start:      candidates.Start,
+		Limit:      candidates.Limit,
+		Total:      candidates.Total,
+		Committed:  committed,
+		State:      state,
+		Candidates: candidates,
+		UpdatedAt:  time.Now().UTC(),
+	}
+}
+
+func maxCandidatePageStart(total int, limit int) int {
+	if total <= 0 || limit <= 0 {
+		return 0
+	}
+	return ((total - 1) / limit) * limit
+}
+
 func decodeExtensionCommandPayload(payload string) (extensionCommandPayload, error) {
 	var out extensionCommandPayload
 	payload = strings.TrimSpace(payload)
@@ -248,6 +377,8 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return session.ToggleMode(), true
 	case "candidate-payload-v2":
 		return buildCandidatePayloadV2(session, req.Start, req.Limit), true
+	case "candidate-action", "candidate-action-json":
+		return executeCandidateAction(session, req), true
 	case "select", "commit-candidate":
 		state, err := session.Select(req.Index)
 		if err != nil {

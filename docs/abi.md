@@ -85,6 +85,7 @@ char* ShurufaAbiVersion(void);
 char* ShurufaCapabilities(void);
 char* ShurufaState(uint64_t session);
 char* ShurufaCandidatePayloadV2(uint64_t session, int start, int limit);
+char* ShurufaCandidateAction(uint64_t session, const char* json);
 char* ShurufaConfigJSON(void);
 char* ShurufaApplyConfigJSON(char* json);
 char* ShurufaReloadConfig(void);
@@ -112,7 +113,7 @@ comment text remains part of candidate payloads even when the UI hides it.
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `emoji-kaomoji-symbol-candidates`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
-`candidate-comments`, and `extension-command-json`.
+`candidate-comments`, `candidate-action-json`, and `extension-command-json`.
 
 `ShurufaExecuteCommand` is the reserved forward-compatible command bus for
 future native glue. The first argument is the session id, the second is a stable
@@ -133,6 +134,7 @@ mode
 set-mode                {"mode":"en"} or {"toggle":true}
 toggle-mode
 candidate-payload-v2    {"start":0,"limit":7}
+candidate-action        {"action":"next-page","start":0,"limit":7}
 select                  {"index":0}
 select-candidate-char   {"index":0,"side":"first"}
 config-json
@@ -145,6 +147,13 @@ import-user-scores-json {"userScores":{"nihao|你好":25}}
 commit-text             {"reading":"nihao","text":"你好"}
 agent-compose           {"input":"/rewrite","context":"optional text"}
 ```
+
+`candidate-action` and `ShurufaCandidateAction` reserve a richer Rime/WeChat-style
+candidate event surface without requiring new C++ callbacks. Supported actions
+currently include `view`, `next-page`, `prev-page`, `first-page`, `last-page`,
+`select`, `first-char`, `last-char`, and `select-char`. Selection accepts either
+an absolute `index` or a page-relative `displayIndex` plus `start`; paging
+returns the same rich candidate payload used by `candidate-payload-v2`.
 
 `ShurufaCandidatePayloadV2` is the future rich candidate contract for native
 renderers, React/Wails diagnostics, esports typing labs, and mouse/skin
