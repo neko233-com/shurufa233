@@ -195,6 +195,42 @@ func TestApplySwitchEndpointPersistsConfig(t *testing.T) {
 	}
 }
 
+func TestApplyRimeCustomEndpointPersistsConfig(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	body := `{"yaml":"patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n  menu/page_size: 8\n  switches:\n    - name: ascii_punct\n      reset: 1\n  style/horizontal: false\n"}`
+	req := httptest.NewRequest(http.MethodPost, "/rime/custom", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	state.applyRimeCustom(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got engine.RimeCustomResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || got.Config.Schema != "double-pinyin-xiaohe" || got.Config.CandidatePageSize != 8 || got.Config.Punctuation != "half" {
+		t.Fatalf("rime custom result = %#v", got)
+	}
+	if session.Config().Schema != "double-pinyin-xiaohe" || session.Config().CandidateLayout != "vertical" {
+		t.Fatalf("session config not updated: %#v", session.Config())
+	}
+	saved, err := os.ReadFile(state.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(saved), `"schema": "double-pinyin-xiaohe"`) {
+		t.Fatalf("saved config does not include rime schema: %s", saved)
+	}
+}
+
 func TestAppRulesEndpointListsDefaultRules(t *testing.T) {
 	config := engine.DefaultConfig()
 	state := &AppState{

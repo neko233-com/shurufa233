@@ -137,6 +137,10 @@ type configPayload struct {
 	Schema             string `json:"schema,omitempty"`
 	DoublePinyin       bool   `json:"doublePinyin"`
 	DoublePinyinScheme string `json:"doublePinyinScheme"`
+	CandidatePageSize  int    `json:"candidatePageSize,omitempty"`
+	CandidateLayout    string `json:"candidateLayout,omitempty"`
+	Punctuation        string `json:"punctuation,omitempty"`
+	KeyProfile         string `json:"keyProfile,omitempty"`
 }
 
 type switchOption struct {
@@ -155,6 +159,14 @@ type switchResponse struct {
 	Selected *switchOption  `json:"selected,omitempty"`
 	Switches []switchOption `json:"switches"`
 	Config   configPayload  `json:"config,omitempty"`
+}
+
+type rimeCustomResult struct {
+	OK       bool          `json:"ok"`
+	Config   configPayload `json:"config,omitempty"`
+	Schema   string        `json:"schema,omitempty"`
+	Applied  []string      `json:"applied,omitempty"`
+	Warnings []string      `json:"warnings,omitempty"`
 }
 
 type appRule struct {
@@ -312,6 +324,8 @@ func main() {
 		err = schemas(client)
 	case "schema":
 		err = schema(client, os.Args[2:])
+	case "rime":
+		err = rimeCustom(client, os.Args[2:])
 	case "mode":
 		err = mode(client, os.Args[2:])
 	case "switches":
@@ -394,6 +408,7 @@ Usage:
   shurufa-imecli update-source shurufa233-github
   shurufa-imecli schemas
   shurufa-imecli schema [current|apply <id>]
+  shurufa-imecli rime import default.custom.yaml
   shurufa-imecli update-check
   shurufa-imecli update-apply
   shurufa-imecli candidates nihao [view|next-page|prev-page|select|pin|forget|first-char|last-char] [--start N] [--limit N] [--display-index N] [--index N]
@@ -749,6 +764,46 @@ func printSchemas(response schemaResponse) {
 			fmt.Printf("  dictionary: %s\n", schema.DictionarySourcePreset)
 		}
 		fmt.Printf("  %s\n", schema.Description)
+	}
+}
+
+func rimeCustom(client *http.Client, args []string) error {
+	action := "import"
+	if len(args) > 0 {
+		action = strings.ToLower(strings.TrimSpace(args[0]))
+		args = args[1:]
+	}
+	switch action {
+	case "import", "apply", "custom":
+		if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+			return fmt.Errorf("missing Rime custom yaml file")
+		}
+		data, err := os.ReadFile(args[0])
+		if err != nil {
+			return err
+		}
+		var result rimeCustomResult
+		if err := postJSON(client, "/rime/custom", map[string]string{"yaml": string(data)}, &result); err != nil {
+			return err
+		}
+		fmt.Printf("schema=%s doublePinyin=%v scheme=%s pageSize=%d layout=%s punctuation=%s keyProfile=%s\n",
+			valueOr(result.Schema, result.Config.Schema),
+			result.Config.DoublePinyin,
+			result.Config.DoublePinyinScheme,
+			result.Config.CandidatePageSize,
+			result.Config.CandidateLayout,
+			result.Config.Punctuation,
+			result.Config.KeyProfile,
+		)
+		if len(result.Applied) > 0 {
+			fmt.Printf("applied=%s\n", strings.Join(result.Applied, ", "))
+		}
+		if len(result.Warnings) > 0 {
+			fmt.Printf("warnings=%s\n", strings.Join(result.Warnings, ", "))
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown rime action %q", action)
 	}
 }
 

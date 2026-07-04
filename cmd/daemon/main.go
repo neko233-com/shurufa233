@@ -54,6 +54,11 @@ type schemaRequest struct {
 	ID string `json:"id,omitempty"`
 }
 
+type rimeCustomRequest struct {
+	YAML string `json:"yaml,omitempty"`
+	Text string `json:"text,omitempty"`
+}
+
 type switchRequest struct {
 	ID     string `json:"id,omitempty"`
 	Switch string `json:"switch,omitempty"`
@@ -333,6 +338,7 @@ func main() {
 	mux.HandleFunc("POST /updates/source", state.withCORS(state.applyUpdateSource))
 	mux.HandleFunc("GET /schemas", state.withCORS(state.schemas))
 	mux.HandleFunc("POST /schemas/apply", state.withCORS(state.applySchema))
+	mux.HandleFunc("POST /rime/custom", state.withCORS(state.applyRimeCustom))
 	mux.HandleFunc("GET /switches", state.withCORS(state.switches))
 	mux.HandleFunc("POST /switches/apply", state.withCORS(state.applySwitch))
 	mux.HandleFunc("GET /app-rules", state.withCORS(state.appRules))
@@ -502,6 +508,43 @@ func (s *AppState) applySchema(w http.ResponseWriter, r *http.Request) {
 		Schemas:  engine.BuiltinSchemaPresets(),
 		Config:   s.config,
 	})
+}
+
+func (s *AppState) applyRimeCustom(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	yamlText := strings.TrimSpace(string(body))
+	var req rimeCustomRequest
+	if err := json.Unmarshal(body, &req); err == nil && (strings.TrimSpace(req.YAML) != "" || strings.TrimSpace(req.Text) != "") {
+		yamlText = firstNonEmpty(req.YAML, req.Text)
+	}
+	if strings.TrimSpace(yamlText) == "" {
+		http.Error(w, "missing rime custom yaml", http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result, err := engine.ApplyRimeCustomYAML(s.config, []byte(yamlText))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	next := normalizeConfig(result.Config)
+	s.config = next
+	s.engine.Configure(next)
+	for _, session := range s.sessions {
+		session.Configure(next)
+	}
+	if err := s.saveLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	result.Config = s.config
+	result.Schema = s.config.Schema
+	writeJSON(w, result)
 }
 
 func (s *AppState) switches(w http.ResponseWriter, _ *http.Request) {

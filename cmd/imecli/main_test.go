@@ -487,6 +487,47 @@ func TestSchemaApplyPostsSelectedID(t *testing.T) {
 	}
 }
 
+func TestRimeCustomImportPostsYAML(t *testing.T) {
+	var posted map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rime/custom" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(rimeCustomResult{
+			OK:     true,
+			Schema: "double-pinyin-xiaohe",
+			Config: configPayload{
+				Schema:             "double-pinyin-xiaohe",
+				DoublePinyin:       true,
+				DoublePinyinScheme: "xiaohe",
+				CandidatePageSize:  8,
+				CandidateLayout:    "vertical",
+				Punctuation:        "half",
+				KeyProfile:         "rime",
+			},
+			Applied: []string{"schema_list:double_pinyin_flypy"},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	path := filepath.Join(t.TempDir(), "default.custom.yaml")
+	if err := os.WriteFile(path, []byte("patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := rimeCustom(server.Client(), []string{"import", path}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(posted["yaml"], "double_pinyin_flypy") {
+		t.Fatalf("posted rime yaml = %#v", posted)
+	}
+}
+
 func TestCandidateActionAcceptsForgetAction(t *testing.T) {
 	input, req, err := parseCandidateActionArgs([]string{"ceshi", "forget", "--index", "0"})
 	if err != nil {

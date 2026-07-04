@@ -29,6 +29,7 @@ The background daemon listens on `127.0.0.1:23333`.
 - `POST /updates/apply`
 - `GET /updates/sources`
 - `POST /updates/source`
+- `POST /rime/custom`
 - `GET /switches`
 - `POST /switches/apply`
 - `GET /app-rules`
@@ -115,6 +116,22 @@ paging while enabling `,`/`.` Rime-style paging and disabling semicolon/quote
 quick select. `keyProfile=custom` honors each boolean switch directly. The
 Windows TSF layer reads these values from the shared config file, so shortcut
 changes do not require new C++ builds.
+
+`POST /rime/custom` imports a Rime `*.custom.yaml` patch and maps common Rime
+settings into the shared config. It accepts either raw YAML or JSON:
+
+```json
+{ "yaml": "patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n  menu/page_size: 8\n" }
+```
+
+Supported patch fields include `schema_list`, `schema/schema_id`,
+`menu/page_size`, `style/horizontal`, `style/vertical`, `switches`,
+`translator/enable_sentence`, `punctuator/import_preset`,
+`punctuator/half_shape`, `key_binder/import_preset`, `key_binder/bindings`, and
+`ascii_composer/switch_key/Shift_L|Shift_R`. The response contains the applied
+config plus `applied` and `warnings` arrays so GUI, CLI, Wails, and native
+debugging tools can show which Rime fields were accepted without adding
+platform-specific glue.
 
 `GET /wordbook` returns learned user word scores. `PUT /wordbook` accepts
 `{"userScores":{"reading|text":1000},"merge":true}` for JSON import or

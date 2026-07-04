@@ -20,6 +20,7 @@ var abiFeatureList = []string{
 	"dictionary-source-presets",
 	"schema-presets-json",
 	"apply-schema-json",
+	"rime-custom-yaml",
 	"reverse-lookup-json",
 	"user-scores-json",
 	"user-phrases-json",
@@ -135,6 +136,7 @@ type extensionCommandPayload struct {
 	Switch       string             `json:"switch,omitempty"`
 	Value        *bool              `json:"value,omitempty"`
 	Schema       string             `json:"schema,omitempty"`
+	YAML         string             `json:"yaml,omitempty"`
 	Reading      string             `json:"reading,omitempty"`
 	Text         string             `json:"text,omitempty"`
 	Kind         string             `json:"kind,omitempty"`
@@ -237,6 +239,50 @@ func importProfileBundle(session *engine.Engine, bundle profileBundle) map[strin
 		"counts":    result.Counts,
 		"updatedAt": time.Now().UTC(),
 	}
+}
+
+func applyRimeCustomPayload(session *engine.Engine, payload string) any {
+	yamlText, err := decodeRimeCustomText(payload)
+	if err != nil {
+		return errorEnvelope(err.Error())
+	}
+	result, err := engine.ApplyRimeCustomYAML(session.Config(), []byte(yamlText))
+	if err != nil {
+		return errorEnvelope(err.Error())
+	}
+	config := normalizeConfig(result.Config)
+	session.Configure(config)
+	_ = persistConfig(config)
+	result.Config = config
+	result.Schema = config.Schema
+	return result
+}
+
+func decodeRimeCustomText(payload string) (string, error) {
+	req, err := decodeExtensionCommandPayload(payload)
+	if err != nil {
+		if strings.TrimSpace(payload) == "" {
+			return "", err
+		}
+		return payload, nil
+	}
+	yamlText := firstNonEmpty(req.YAML, req.Text, req.Input)
+	if strings.TrimSpace(yamlText) == "" {
+		return "", errMissingRimeCustomYAML()
+	}
+	return yamlText, nil
+}
+
+func errMissingRimeCustomYAML() error {
+	return &rimeCustomError{message: "missing rime custom yaml"}
+}
+
+type rimeCustomError struct {
+	message string
+}
+
+func (e *rimeCustomError) Error() string {
+	return e.message
 }
 
 func buildCandidatePayloadV2(session *engine.Engine, start int, limit int) candidatePayloadV2 {
@@ -578,6 +624,8 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"schemas":   engine.BuiltinSchemaPresets(),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
+	case "rime-custom-json", "rime-custom-yaml", "apply-rime-custom-json", "apply-rime-custom-yaml":
+		return applyRimeCustomPayload(session, payload), true
 	case "switches-json", "rime-switches-json", "switches":
 		return map[string]any{
 			"ok":        true,

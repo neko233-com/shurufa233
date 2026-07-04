@@ -218,6 +218,14 @@ type SchemaResponse = {
   config?: Config;
 };
 
+type RimeCustomResult = {
+  ok: boolean;
+  config?: Config;
+  schema?: string;
+  applied?: string[];
+  warnings?: string[];
+};
+
 type WordbookResponse = {
   userScores: Record<string, number>;
   count: number;
@@ -706,6 +714,18 @@ function App() {
   const [schemaText, setSchemaText] = useState("未读取");
   const [switches, setSwitches] = useState<SwitchOption[]>([]);
   const [switchText, setSwitchText] = useState("未读取");
+  const [rimeCustomDraft, setRimeCustomDraft] = useState(`patch:
+  schema_list:
+    - schema: double_pinyin_flypy
+  menu/page_size: 8
+  key_binder/import_preset: alternative
+  punctuator/import_preset: symbols
+  switches:
+    - name: ascii_punct
+      reset: 0
+    - name: candidate_comments
+      reset: 1`);
+  const [rimeCustomText, setRimeCustomText] = useState("未导入");
   const [appRules, setAppRules] = useState<AppRule[]>(defaultConfig.appRules);
   const [appRuleText, setAppRuleText] = useState("未读取");
   const [appContextProbe, setAppContextProbe] = useState<AppContext>({
@@ -1120,6 +1140,35 @@ function App() {
     } catch (err) {
       setSwitchText("应用失败");
       setError(err instanceof Error ? err.message : "switch apply failed");
+    }
+  }
+
+  async function importRimeCustom() {
+    try {
+      const res = await fetch(`${apiBase}/rime/custom`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ yaml: rimeCustomDraft }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as RimeCustomResult;
+      if (data.config) {
+        setConfig(hydrateConfig(data.config));
+      }
+      setRimeCustomText(
+        `${data.schema ?? data.config?.schema ?? "已应用"} · ${data.applied?.length ?? 0} 项${
+          data.warnings?.length ? ` · ${data.warnings.length} 个警告` : ""
+        }`,
+      );
+      void loadSchemas();
+      void loadSwitches();
+      void runPreview(preview);
+      setStatus("saved");
+      window.setTimeout(() => setStatus("ready"), 900);
+      setError(data.warnings?.join("; ") ?? "");
+    } catch (err) {
+      setRimeCustomText("导入失败");
+      setError(err instanceof Error ? err.message : "rime custom import failed");
     }
   }
 
@@ -1831,6 +1880,25 @@ function App() {
                   <span>{item.name} · {item.value ? item.on : item.off}</span>
                 </label>
               ))}
+            </div>
+            <div className="subHeader">
+              <span>Rime 配方</span>
+              <small>{rimeCustomText}</small>
+            </div>
+            <label className="field">
+              <span>custom.yaml patch</span>
+              <textarea
+                className="wordbookDraft phraseDraft"
+                spellCheck={false}
+                value={rimeCustomDraft}
+                onChange={(event) => setRimeCustomDraft(event.target.value)}
+              />
+            </label>
+            <div className="rowControls">
+              <button className="secondary" onClick={() => void importRimeCustom()}>
+                <FileUp size={18} />
+                导入配方
+              </button>
             </div>
             <div className="subHeader">
               <span>应用规则</span>

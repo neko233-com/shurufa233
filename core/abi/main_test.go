@@ -583,6 +583,22 @@ func TestExecuteExtensionCommandSchemaPresets(t *testing.T) {
 	}
 }
 
+func TestExecuteExtensionCommandRimeCustomYAML(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "rime-custom-json", `{"yaml":"patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n  menu/page_size: 8\n  style/horizontal: false\n"}`)
+	if !handled {
+		t.Fatal("rime-custom-json command was not handled")
+	}
+	result, ok := got.(engine.RimeCustomResult)
+	if !ok || !result.OK {
+		t.Fatalf("rime-custom-json = %#v", got)
+	}
+	if session.Config().Schema != "double-pinyin-xiaohe" || session.Config().CandidatePageSize != 8 || session.Config().CandidateLayout != "vertical" {
+		t.Fatalf("rime custom did not update session config: %#v", session.Config())
+	}
+}
+
 func TestExecuteExtensionCommandRimeSwitches(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 

@@ -113,6 +113,7 @@ char* ShurufaConfigJSON(void);
 char* ShurufaApplyConfigJSON(char* json);
 char* ShurufaSchemaPresetsJSON(void);
 char* ShurufaApplySchemaJSON(char* json);
+char* ShurufaApplyRimeCustomJSON(uint64_t session, char* json);
 char* ShurufaSwitchesJSON(uint64_t session);
 char* ShurufaApplySwitchJSON(uint64_t session, char* json);
 char* ShurufaAppRulesJSON(uint64_t session);
@@ -155,7 +156,7 @@ C++ export on developer machines that only consume packaged builds.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `commit-text`, `agent-compose`,
+`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -202,6 +203,7 @@ config-json
 apply-config-json       { ...engine.Config } or {"config":{...}}
 schema-presets-json
 apply-schema-json       {"id":"double-pinyin-microsoft"}
+rime-custom-json        {"yaml":"patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n"}
 switches-json
 apply-switch-json       {"id":"ascii_mode","value":true}
 toggle-switch           {"id":"ascii_punct"}
@@ -249,6 +251,16 @@ Current switches map directly onto shared config fields: `ascii_mode` (`mode`),
 `vertical_candidates` (`candidateLayout`). This lets native glue send one JSON
 switch event for Weasel/Squirrel-style UI behavior while Go owns the actual
 field mapping and future switch expansion.
+
+`rime-custom-json`, `rime-custom-yaml`, `apply-rime-custom-json`, and
+`ShurufaApplyRimeCustomJSON` reserve the Rime `*.custom.yaml` patch import
+surface. Payloads may contain `{"yaml":"patch: ..."}` or raw YAML text. The Go
+core maps common Rime patch fields such as `schema_list`, `menu/page_size`,
+`switches`, `style/horizontal`, `punctuator/import_preset`,
+`key_binder/import_preset`, `key_binder/bindings`, and
+`ascii_composer/switch_key` into the shared config, persists it, and returns
+`applied` plus `warnings`. Native glue should prefer this JSON command instead
+of learning individual Rime YAML concepts in C++.
 
 `app-rules-json`, `resolve-app-context-json`, `ShurufaAppRulesJSON`, and
 `ShurufaResolveAppContextJSON` reserve the app-aware behavior surface that

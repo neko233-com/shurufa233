@@ -667,6 +667,69 @@ func TestApplySwitchTogglesConfigFields(t *testing.T) {
 	}
 }
 
+func TestApplyRimeCustomYAMLMapsCommonPatchFields(t *testing.T) {
+	result, err := ApplyRimeCustomYAML(DefaultConfig(), []byte(`
+patch:
+  schema_list:
+    - schema: double_pinyin_flypy
+  menu/page_size: 8
+  style/horizontal: false
+  switches:
+    - name: ascii_mode
+      reset: 1
+    - name: ascii_punct
+      reset: 1
+    - name: simplification
+      reset: 0
+    - name: candidate_comments
+      reset: 0
+  punctuator/import_preset: symbols
+  key_binder/import_preset: alternative
+  ascii_composer:
+    switch_key:
+      Shift_L: noop
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OK {
+		t.Fatalf("result not ok: %#v", result)
+	}
+	config := result.Config
+	if config.Schema != "double-pinyin-xiaohe" || !config.DoublePinyin || config.DoublePinyinScheme != "xiaohe" {
+		t.Fatalf("schema not mapped from Rime: %#v", config)
+	}
+	if config.CandidatePageSize != 8 || config.CandidateLayout != "vertical" {
+		t.Fatalf("candidate UI patch not applied: %#v", config)
+	}
+	if config.Mode != "en" || config.Punctuation != "half" || config.Script != "traditional" || config.ShowCandidateComments {
+		t.Fatalf("switch patch not applied: %#v", config)
+	}
+	if config.KeyProfile != "custom" || config.ShiftToggleMode {
+		t.Fatalf("shift key patch not applied: %#v", config)
+	}
+	if len(result.Applied) == 0 {
+		t.Fatalf("expected applied fields, got %#v", result)
+	}
+}
+
+func TestApplyRimeCustomYAMLWarnsForUnsupportedSchema(t *testing.T) {
+	result, err := ApplyRimeCustomYAML(DefaultConfig(), []byte(`
+patch:
+  schema_list:
+    - schema: terra_pinyin
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Warnings) == 0 {
+		t.Fatalf("expected unsupported schema warning, got %#v", result)
+	}
+	if result.Config.Schema != "wechat-pinyin" {
+		t.Fatalf("unsupported schema should keep current config, got %q", result.Config.Schema)
+	}
+}
+
 func TestResolveAppContextUsesPasswordRule(t *testing.T) {
 	decision := ResolveAppContext(DefaultConfig(), AppContext{PasswordField: true, ProcessName: "chrome.exe"})
 	if !decision.OK || !decision.Matched || decision.Rule == nil {

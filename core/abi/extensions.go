@@ -126,6 +126,11 @@ func ShurufaApplySchemaJSON(payload *C.char) *C.char {
 	return jsonCString(applyConfigEnvelope(next))
 }
 
+//export ShurufaApplyRimeCustomJSON
+func ShurufaApplyRimeCustomJSON(id C.uint64_t, payload *C.char) *C.char {
+	return jsonCString(applyRimeCustomPayload(getSession(uint64(id)), C.GoString(payload)))
+}
+
 //export ShurufaSwitchesJSON
 func ShurufaSwitchesJSON(id C.uint64_t) *C.char {
 	session := getSession(uint64(id))
