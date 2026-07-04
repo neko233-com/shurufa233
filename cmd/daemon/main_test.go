@@ -183,6 +183,38 @@ func TestImeCandidatesReturnsMetadataAndPagedRows(t *testing.T) {
 	}
 }
 
+func TestAgentComposeReturnsStructuredCandidates(t *testing.T) {
+	got := composeAgentResponse("/rewrite", "这段话有点啰嗦")
+	if got.Context != "这段话有点啰嗦" {
+		t.Fatalf("context = %q", got.Context)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("items = %#v, want 2 structured candidates", got.Items)
+	}
+	if len(got.Candidates) != len(got.Items) {
+		t.Fatalf("legacy candidates should mirror items: %#v vs %#v", got.Candidates, got.Items)
+	}
+	if got.Items[0].Intent != "rewrite" || got.Items[0].Action != "agent.rewrite.polish" {
+		t.Fatalf("unexpected first item metadata: %#v", got.Items[0])
+	}
+	if got.Items[0].Source != "builtin-agent" || !strings.Contains(got.Items[0].Text, "这段话有点啰嗦") {
+		t.Fatalf("unexpected first item payload: %#v", got.Items[0])
+	}
+}
+
+func TestAgentComposeDefaultUsesContextSignal(t *testing.T) {
+	got := composeAgentResponse("总结一下", "上文：性能测试失败")
+	if len(got.Items) != 1 {
+		t.Fatalf("items = %#v, want 1", got.Items)
+	}
+	if !strings.Contains(got.Items[0].Text, "结合当前上下文") {
+		t.Fatalf("default candidate should mention context use: %#v", got.Items[0])
+	}
+	if got.Items[0].Context != "上文：性能测试失败" {
+		t.Fatalf("item context = %q", got.Items[0].Context)
+	}
+}
+
 func TestNewSessionLoadsLocalDictionaries(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "shurufa233", "config.json")

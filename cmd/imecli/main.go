@@ -34,9 +34,19 @@ type updateCheck struct {
 }
 
 type agentResponse struct {
-	Input      string   `json:"input"`
-	Candidates []string `json:"candidates"`
-	Actions    []string `json:"actions"`
+	Input      string           `json:"input"`
+	Context    string           `json:"context,omitempty"`
+	Candidates []string         `json:"candidates"`
+	Items      []agentCandidate `json:"items"`
+	Actions    []string         `json:"actions"`
+}
+
+type agentCandidate struct {
+	Text    string `json:"text"`
+	Intent  string `json:"intent"`
+	Action  string `json:"action"`
+	Source  string `json:"source"`
+	Context string `json:"context,omitempty"`
 }
 
 func main() {
@@ -57,7 +67,7 @@ func main() {
 	case "update-apply":
 		err = updateApply(client)
 	case "agent":
-		err = agent(client, strings.Join(os.Args[2:], " "))
+		err = agent(client, os.Args[2:])
 	case "repl":
 		err = repl(client)
 	default:
@@ -79,6 +89,7 @@ Usage:
   shurufa-imecli update-check
   shurufa-imecli update-apply
   shurufa-imecli agent "/rewrite hello"
+  shurufa-imecli agent --context "selected text" "/rewrite"
   shurufa-imecli repl`)
 }
 
@@ -125,18 +136,46 @@ func updateApply(client *http.Client) error {
 	return nil
 }
 
-func agent(client *http.Client, input string) error {
+func agent(client *http.Client, args []string) error {
+	input, context := parseAgentArgs(args)
 	if input == "" {
 		return fmt.Errorf("missing agent input")
 	}
 	var response agentResponse
-	if err := postJSON(client, "/agent/compose", map[string]string{"input": input}, &response); err != nil {
+	payload := map[string]string{"input": input}
+	if context != "" {
+		payload["context"] = context
+	}
+	if err := postJSON(client, "/agent/compose", payload, &response); err != nil {
 		return err
+	}
+	if len(response.Items) > 0 {
+		for i, item := range response.Items {
+			fmt.Printf("%d. %s [%s/%s]\n", i+1, item.Text, item.Intent, item.Action)
+		}
+		return nil
 	}
 	for i, item := range response.Candidates {
 		fmt.Printf("%d. %s\n", i+1, item)
 	}
 	return nil
+}
+
+func parseAgentArgs(args []string) (string, string) {
+	var context string
+	var input []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--context", "-c":
+			if i+1 < len(args) {
+				context = args[i+1]
+				i++
+			}
+		default:
+			input = append(input, args[i])
+		}
+	}
+	return strings.TrimSpace(strings.Join(input, " ")), strings.TrimSpace(context)
 }
 
 func repl(client *http.Client) error {
@@ -151,7 +190,8 @@ func repl(client *http.Client) error {
 			return nil
 		}
 		if strings.HasPrefix(line, "/agent") {
-			if err := agent(client, strings.TrimSpace(strings.TrimPrefix(line, "/agent"))); err != nil {
+			args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "/agent")))
+			if err := agent(client, args); err != nil {
 				fmt.Println(err)
 			}
 			continue

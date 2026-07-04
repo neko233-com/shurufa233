@@ -11,6 +11,7 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /wordbook`
 - `GET /updates/check`
 - `POST /updates/apply`
+- `POST /agent/compose`
 
 `POST /engine/preview` body:
 
@@ -19,6 +20,37 @@ The background daemon listens on `127.0.0.1:23333`.
 ```
 
 The settings UI uses this IPC directly in development. A Wails v3 shell can host the same React bundle and call the same daemon API or proxy these methods through its Go backend.
+
+`POST /agent/compose` body:
+
+```json
+{ "input": "/rewrite", "context": "optional selected or nearby text" }
+```
+
+Response:
+
+```json
+{
+  "input": "/rewrite",
+  "context": "optional selected or nearby text",
+  "candidates": ["请润色这段文字：optional selected or nearby text"],
+  "items": [
+    {
+      "text": "请润色这段文字：optional selected or nearby text",
+      "intent": "rewrite",
+      "action": "agent.rewrite.polish",
+      "source": "builtin-agent",
+      "context": "optional selected or nearby text"
+    }
+  ],
+  "actions": ["commit", "copy", "open-settings"]
+}
+```
+
+`candidates` is kept as a legacy string list for simple clients. New clients should
+prefer `items`, because the explicit `intent`, `action`, and `source` fields let a
+future TSF candidate row, Wails settings panel, or external agent runner decide
+whether to commit text, copy a prompt, or open a richer agent workflow.
 
 ## Dictionary Hot Updates
 

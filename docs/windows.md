@@ -209,6 +209,12 @@ Request:
 { "input": "/rewrite hello", "context": "optional active text context" }
 ```
 
+Response items include `text`, `intent`, `action`, `source`, and optional
+`context` fields, while the legacy `candidates` string array is still emitted for
+simple CLI clients. The bundled intents currently cover rewrite, translate, ask,
+and generic compose prompts; these structured rows are the handoff point for a
+future TSF candidate-row integration or an external local/cloud agent provider.
+
 This is intentionally provider-neutral. The same protocol can later call local models, cloud models, or a user-configured agent endpoint without changing the TSF glue.
 
 ## Candidate Window

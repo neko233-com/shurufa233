@@ -42,10 +42,20 @@ type agentRequest struct {
 	Context string `json:"context,omitempty"`
 }
 
+type agentCandidate struct {
+	Text    string `json:"text"`
+	Intent  string `json:"intent"`
+	Action  string `json:"action"`
+	Source  string `json:"source"`
+	Context string `json:"context,omitempty"`
+}
+
 type agentResponse struct {
-	Input      string   `json:"input"`
-	Candidates []string `json:"candidates"`
-	Actions    []string `json:"actions"`
+	Input      string           `json:"input"`
+	Context    string           `json:"context,omitempty"`
+	Candidates []string         `json:"candidates"`
+	Items      []agentCandidate `json:"items"`
+	Actions    []string         `json:"actions"`
 }
 
 type dictionaryManifest struct {
@@ -418,35 +428,59 @@ func composeAgentResponse(input string, context string) agentResponse {
 	lower := strings.ToLower(input)
 	response := agentResponse{
 		Input:   input,
+		Context: strings.TrimSpace(context),
 		Actions: []string{"commit", "copy", "open-settings"},
 	}
+	add := func(intent string, action string, text string) {
+		item := agentCandidate{
+			Text:   text,
+			Intent: intent,
+			Action: action,
+			Source: "builtin-agent",
+		}
+		if response.Context != "" {
+			item.Context = response.Context
+		}
+		response.Items = append(response.Items, item)
+		response.Candidates = append(response.Candidates, text)
+	}
 	switch {
-	case strings.HasPrefix(lower, "/rewrite "):
-		text := strings.TrimSpace(input[len("/rewrite "):])
-		response.Candidates = []string{
-			"请润色这段文字：" + text,
-			"把下面内容改得更自然、更简洁：" + text,
+	case lower == "/rewrite" || strings.HasPrefix(lower, "/rewrite "):
+		text := commandText(input, "/rewrite")
+		if text == "" {
+			text = response.Context
 		}
-	case strings.HasPrefix(lower, "/translate "):
-		text := strings.TrimSpace(input[len("/translate "):])
-		response.Candidates = []string{
-			"请把这段内容翻译成中文：" + text,
-			"请把这段内容翻译成英文：" + text,
+		add("rewrite", "agent.rewrite.polish", "请润色这段文字："+text)
+		add("rewrite", "agent.rewrite.concise", "把下面内容改得更自然、更简洁："+text)
+	case lower == "/translate" || strings.HasPrefix(lower, "/translate "):
+		text := commandText(input, "/translate")
+		if text == "" {
+			text = response.Context
 		}
-	case strings.HasPrefix(lower, "/ask "):
-		text := strings.TrimSpace(input[len("/ask "):])
-		response.Candidates = []string{
-			"请回答：" + text,
-			"请分步骤分析：" + text,
+		add("translate", "agent.translate.zh", "请把这段内容翻译成中文："+text)
+		add("translate", "agent.translate.en", "请把这段内容翻译成英文："+text)
+	case lower == "/ask" || strings.HasPrefix(lower, "/ask "):
+		text := commandText(input, "/ask")
+		if text == "" {
+			text = response.Context
 		}
+		add("ask", "agent.ask.answer", "请回答："+text)
+		add("ask", "agent.ask.steps", "请分步骤分析："+text)
 	default:
 		prefix := "作为输入法 agent，请处理："
-		if strings.TrimSpace(context) != "" {
+		if response.Context != "" {
 			prefix = "结合当前上下文，作为输入法 agent，请处理："
 		}
-		response.Candidates = []string{prefix + input}
+		add("compose", "agent.compose", prefix+input)
 	}
 	return response
+}
+
+func commandText(input string, command string) string {
+	if len(input) <= len(command) {
+		return ""
+	}
+	return strings.TrimSpace(input[len(command):])
 }
 
 func (s *AppState) applyUpdates(w http.ResponseWriter, _ *http.Request) {
