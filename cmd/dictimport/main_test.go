@@ -271,6 +271,39 @@ patch:
 	}
 }
 
+func TestParseRimeSymbolsBlockListYAML(t *testing.T) {
+	input := `patch:
+  punctuator/symbols/+:
+    '/dw':
+      - ℃
+      - "℉"
+      - '°' # degree
+    '/bq':
+      - 🙂
+      - '(T_T)'
+`
+	entries, imports, err := parseRimeDocument(strings.NewReader(input), "rime-symbols")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(imports) != 0 {
+		t.Fatalf("imports = %#v, want none", imports)
+	}
+	got := map[string][]engine.Entry{}
+	for _, entry := range entries {
+		got[entry.Reading] = append(got[entry.Reading], entry)
+	}
+	if len(got["dw"]) != 3 || got["dw"][0].Text != "℃" || got["dw"][1].Text != "℉" || got["dw"][2].Text != "°" {
+		t.Fatalf("dw block symbols = %#v", got["dw"])
+	}
+	if got["dw"][0].Weight != rimeSymbolWeightBase || got["dw"][2].Weight != rimeSymbolWeightBase-2 {
+		t.Fatalf("dw block weights = %#v", got["dw"])
+	}
+	if len(got["bq"]) != 2 || got["bq"][0].Kind != "emoji" || got["bq"][1].Kind != "kaomoji" {
+		t.Fatalf("bq block kinds = %#v", got["bq"])
+	}
+}
+
 func TestRimeSymbolsImportIntoEngine(t *testing.T) {
 	input := `patch:
   punctuator/symbols/+:

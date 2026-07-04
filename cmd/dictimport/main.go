@@ -193,6 +193,7 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 	var imports []string
 	importList := false
 	columnList := false
+	symbolList := rimeSymbolListState{}
 	for scanner.Scan() {
 		line := strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "\ufeff"))
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -202,6 +203,7 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 			sawYAMLHeader = true
 			importList = false
 			columnList = false
+			symbolList = rimeSymbolListState{}
 			continue
 		}
 		if !inBody {
@@ -209,7 +211,16 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 				inBody = true
 				importList = false
 				columnList = false
+				symbolList = rimeSymbolListState{}
 				continue
+			}
+			if symbolList.active {
+				if entry, ok := parseRimeSymbolListItem(line, source, symbolList.reading, symbolList.index); ok {
+					entries = append(entries, entry)
+					symbolList.index++
+					continue
+				}
+				symbolList = rimeSymbolListState{}
 			}
 			nextImports, ok := parseImportTablesLine(line)
 			if ok {
@@ -242,6 +253,10 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 				}
 				columnList = false
 			}
+			if nextSymbolList, ok := parseRimeSymbolListStart(line); ok {
+				symbolList = nextSymbolList
+				continue
+			}
 			if symbolEntries, ok := parseRimeSymbolLine(line, source); ok {
 				entries = append(entries, symbolEntries...)
 				continue
@@ -262,6 +277,45 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 		}
 	}
 	return entries, imports, scanner.Err()
+}
+
+type rimeSymbolListState struct {
+	active  bool
+	reading string
+	index   int
+}
+
+func parseRimeSymbolListStart(line string) (rimeSymbolListState, bool) {
+	key, value, ok := splitYAMLKeyValue(line)
+	if !ok || strings.TrimSpace(value) != "" {
+		return rimeSymbolListState{}, false
+	}
+	key = strings.TrimSpace(strings.Trim(key, `"'`))
+	if !strings.HasPrefix(key, "/") {
+		return rimeSymbolListState{}, false
+	}
+	reading := normalizeRimeReading(strings.TrimPrefix(key, "/"))
+	if reading == "" {
+		return rimeSymbolListState{}, false
+	}
+	return rimeSymbolListState{active: true, reading: reading}, true
+}
+
+func parseRimeSymbolListItem(line string, source string, reading string, index int) (engine.Entry, bool) {
+	if !strings.HasPrefix(line, "-") {
+		return engine.Entry{}, false
+	}
+	text := cleanYAMLScalar(stripYAMLInlineComment(strings.TrimSpace(strings.TrimPrefix(line, "-"))))
+	if text == "" {
+		return engine.Entry{}, false
+	}
+	return engine.Entry{
+		Reading: reading,
+		Text:    text,
+		Kind:    symbolKind(text),
+		Source:  source,
+		Weight:  rimeSymbolWeightBase - index,
+	}, true
 }
 
 func parseRimeSymbolLine(line string, source string) ([]engine.Entry, bool) {

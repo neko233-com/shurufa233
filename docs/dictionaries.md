@@ -99,6 +99,17 @@ patch:
     '/xh': ['※', '★', '☆']
 ```
 
+Block-list rows are accepted too:
+
+```yaml
+patch:
+  punctuator/symbols/+:
+    '/dw':
+      - ℃
+      - ℉
+      - °
+```
+
 Rime's leading slash is dropped for the shurufa233 reading, so `/fs` becomes
 the `fs` candidate code. Imported rows are tagged as `symbol`, `emoji`, or
 `kaomoji` where possible so native and React candidate strips can keep showing
