@@ -696,7 +696,7 @@ class CandidateWindow {
   COLORREF border_ = RGB(209, 213, 219);
   COLORREF highlightText_ = RGB(255, 255, 255);
   std::string theme_ = "system";
-  DWORD lastSkinRefreshTick_ = 0;
+  DWORD lastHttpSkinRefreshTick_ = 0;
   FILETIME lastSkinConfigWriteTime_{};
   bool hasSkinConfigWriteTime_ = false;
   HFONT font_ = nullptr;
@@ -790,9 +790,17 @@ class CandidateWindow {
     return size.cx;
   }
 
+  int CandidateBadgeWidth(HDC dc, const std::wstring &kindLabel) const {
+    if (kindLabel.empty()) {
+      return 0;
+    }
+    return max(Scale(30), TextWidth(dc, kindLabel) + Scale(12));
+  }
+
   int CandidateItemWidth(HDC dc, const CandidateView &candidate, bool selected) const {
     const int textWidth = TextWidth(dc, candidate.text);
-    const int kindWidth = candidate.kind.empty() ? 0 : TextWidth(dc, CandidateKindLabel(candidate.kind)) + Scale(18);
+    const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
+    const int kindWidth = kindLabel.empty() ? 0 : CandidateBadgeWidth(dc, kindLabel) + Scale(10);
     return max(Scale(66), min(Scale(280), Scale(48) + textWidth + kindWidth));
   }
 
@@ -1251,7 +1259,7 @@ class CandidateWindow {
       RECT textRect{itemRect.left + Scale(30), itemRect.top, itemRect.right - Scale(10), itemRect.bottom};
       const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
       if (!kindLabel.empty()) {
-        const int badgeWidth = max(Scale(30), TextWidth(dc, kindLabel) + Scale(12));
+        const int badgeWidth = CandidateBadgeWidth(dc, kindLabel);
         textRect.right = max(textRect.left + Scale(24), itemRect.right - badgeWidth - Scale(8));
         RECT badgeRect{itemRect.right - badgeWidth - Scale(7), itemRect.top + Scale(7),
                        itemRect.right - Scale(7), itemRect.bottom - Scale(7)};
@@ -1369,14 +1377,14 @@ class CandidateWindow {
   }
 
   void RefreshSkin() {
-    const DWORD now = GetTickCount();
-    if (lastSkinRefreshTick_ != 0 && now - lastSkinRefreshTick_ < 2000) {
-      return;
-    }
-    lastSkinRefreshTick_ = now;
     if (RefreshSkinFromConfigFile()) {
       return;
     }
+    const DWORD now = GetTickCount();
+    if (lastHttpSkinRefreshTick_ != 0 && now - lastHttpSkinRefreshTick_ < 2000) {
+      return;
+    }
+    lastHttpSkinRefreshTick_ = now;
     const std::string skin = HttpRequest(L"GET", L"/ime/skin");
     if (skin.empty()) {
       return;
