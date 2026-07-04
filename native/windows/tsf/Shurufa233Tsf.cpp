@@ -1331,7 +1331,18 @@ int CandidateIndexFromKey(WPARAM key) {
 }
 
 bool IsPageKey(WPARAM key) {
-  return key == VK_NEXT || key == VK_PRIOR;
+  return key == VK_NEXT || key == VK_PRIOR || key == VK_OEM_MINUS || key == VK_OEM_PLUS ||
+         key == L'-' || key == L'=';
+}
+
+int CandidatePageDeltaForKey(WPARAM key) {
+  if (key == VK_PRIOR || key == VK_OEM_MINUS || key == L'-') {
+    return -1;
+  }
+  if (key == VK_NEXT || key == VK_OEM_PLUS || key == L'=') {
+    return 1;
+  }
+  return 0;
 }
 
 class EditSession final : public ITfEditSession {
@@ -1589,7 +1600,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
 
     if (IsPageKey(key)) {
-      MovePage(key == VK_NEXT ? 1 : -1);
+      MovePage(CandidatePageDeltaForKey(key));
       *eaten = TRUE;
       return S_OK;
     }
@@ -1750,6 +1761,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
     if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB || key == VK_LEFT || key == VK_UP ||
         IsPageKey(key)) {
+      if (IsPageKey(key)) {
+        return cachedCandidateCount_ > kCandidatesPerPage;
+      }
       return cachedCandidateCount_ > 0;
     }
     if (key == VK_SPACE || key == VK_RETURN) {
