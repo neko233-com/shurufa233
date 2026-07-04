@@ -1,6 +1,7 @@
 {
   "maxCandidates": 42,
   "candidatePageSize": 7,
+  "candidateLayout": "horizontal",
   "fuzzyInitials": ["zh=z", "ch=c", "sh=s"],
   "doublePinyin": false,
   "doublePinyinScheme": "xiaohe",

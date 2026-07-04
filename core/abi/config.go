@@ -53,6 +53,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	if config.CandidatePageSize > 9 {
 		config.CandidatePageSize = 9
 	}
+	config.CandidateLayout = normalizeCandidateLayout(config.CandidateLayout)
 	if config.Language == "" {
 		config.Language = engine.DefaultConfig().Language
 	}
@@ -67,6 +68,19 @@ func normalizeConfig(config engine.Config) engine.Config {
 		config.Punctuation = engine.DefaultConfig().Punctuation
 	}
 	return config
+}
+
+func normalizeCandidateLayout(layout string) string {
+	switch strings.ToLower(strings.TrimSpace(layout)) {
+	case "", "horizontal", "wechat", "microsoft":
+		return "horizontal"
+	case "vertical", "rime":
+		return "vertical"
+	case "auto":
+		return "auto"
+	default:
+		return "horizontal"
+	}
 }
 
 func normalizeDoublePinyinScheme(scheme string) string {

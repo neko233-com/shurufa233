@@ -552,6 +552,14 @@ h2 {
   padding: 8px 14px;
 }
 
+.candidateBand.vertical {
+  align-items: stretch;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-width: 260px;
+}
+
 .candidatePill {
   display: inline-flex;
   align-items: center;
@@ -565,6 +573,15 @@ h2 {
   color: var(--candidate-text, #111827);
   cursor: pointer;
   padding: 0 11px;
+}
+
+.candidateBand.vertical .candidatePill {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.candidateBand.vertical .candidatePill .candidateText {
+  flex: 1 1 auto;
 }
 
 .candidatePill.selected {
@@ -765,6 +782,13 @@ h2 {
   overflow-x: auto;
 }
 
+.probeCandidates.vertical {
+  align-items: stretch;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .probeCandidate {
   display: inline-flex;
   align-items: center;
@@ -777,6 +801,15 @@ h2 {
   background: color-mix(in srgb, var(--candidate-surface, #ffffff), var(--candidate-accent, #2563eb) 4%);
   color: var(--candidate-text, #111827);
   padding: 0 10px;
+}
+
+.probeCandidates.vertical .probeCandidate {
+  max-width: none;
+  width: 100%;
+}
+
+.probeCandidates.vertical .probeCandidate span {
+  flex: 1 1 auto;
 }
 
 .probeCandidate.selected {

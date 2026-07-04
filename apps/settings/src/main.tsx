@@ -35,6 +35,7 @@ type Skin = {
 type Config = {
   maxCandidates: number;
   candidatePageSize: number;
+  candidateLayout: "horizontal" | "vertical" | "auto";
   fuzzyInitials: string[];
   doublePinyin: boolean;
   doublePinyinScheme: "xiaohe" | "microsoft";
@@ -138,6 +139,7 @@ const apiBase = "http://127.0.0.1:23333";
 const defaultConfig: Config = {
   maxCandidates: 42,
   candidatePageSize: 7,
+  candidateLayout: "horizontal",
   fuzzyInitials: ["zh=z", "ch=c", "sh=s"],
   doublePinyin: false,
   doublePinyinScheme: "xiaohe",
@@ -327,6 +329,7 @@ function hydrateConfig(config: Config): Config {
     ...defaultConfig,
     ...config,
     candidatePageSize: Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize)),
+    candidateLayout: normalizeCandidateLayout(config.candidateLayout),
     skin: {
       ...defaultConfig.skin,
       ...config.skin,
@@ -338,6 +341,11 @@ function hydrateConfig(config: Config): Config {
       mirrorBaseUrls: config.update?.mirrorBaseUrls ?? defaultConfig.update.mirrorBaseUrls,
     },
   };
+}
+
+function normalizeCandidateLayout(layout?: string): Config["candidateLayout"] {
+  if (layout === "vertical" || layout === "auto") return layout;
+  return "horizontal";
 }
 
 function App() {
@@ -374,6 +382,7 @@ function App() {
 
   const candidateCount = state?.candidates?.length ?? 0;
   const candidatePageSize = Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize));
+  const candidateLayout = normalizeCandidateLayout(config.candidateLayout);
   const typingPrompt = useMemo(
     () => typingPrompts.find((prompt) => prompt.id === typingPromptId) ?? typingPrompts[0],
     [typingPromptId],
@@ -829,6 +838,20 @@ function App() {
                 onChange={(event) => setConfig({ ...config, candidatePageSize: Number(event.target.value) })}
               />
             </label>
+            <div className="segmented">
+              <button
+                className={candidateLayout === "horizontal" ? "selected" : ""}
+                onClick={() => setConfig({ ...config, candidateLayout: "horizontal" })}
+              >
+                横排候选
+              </button>
+              <button
+                className={candidateLayout === "vertical" ? "selected" : ""}
+                onClick={() => setConfig({ ...config, candidateLayout: "vertical" })}
+              >
+                竖排候选
+              </button>
+            </div>
             <label className="toggle">
               <input
                 type="checkbox"
@@ -1116,7 +1139,7 @@ function App() {
                 <div className="compositionRow">
                   <span>{state?.buffer || preview || "nihao"}</span>
                 </div>
-                <div className="candidateBand">
+                <div className={candidateLayout === "vertical" ? "candidateBand vertical" : "candidateBand"}>
                   {previewCandidates.length > 0 ? (
                     previewCandidates.map((candidate, index) => (
                       <button
@@ -1197,7 +1220,7 @@ function App() {
                   <span>实时候选</span>
                   <strong>{typingProbe.input || "idle"}</strong>
                 </div>
-                <div className="probeCandidates" style={candidateBarStyle}>
+                <div className={candidateLayout === "vertical" ? "probeCandidates vertical" : "probeCandidates"} style={candidateBarStyle}>
                   {typingProbeCandidates.length > 0 ? (
                     typingProbeCandidates.map((candidate, index) => (
                       <span className={index === 0 ? "probeCandidate selected" : "probeCandidate"} key={`${candidate.reading}-${candidate.text}-${index}`}>

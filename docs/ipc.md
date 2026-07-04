@@ -34,7 +34,10 @@ composition.
 
 They also include `candidatePageSize`, which controls the visible candidates per
 page in the native strip and React previews. The default is `7`; values are
-clamped to `3..9` so number-key selection remains predictable.
+clamped to `3..9` so number-key selection remains predictable. `candidateLayout`
+controls the candidate strip direction: `horizontal` is the default Microsoft
+IME/WeChat-style strip, while `vertical` matches common Rime-style candidate
+lists.
 
 They also include `doublePinyin` and `doublePinyinScheme`. The scheme is
 normalized to `xiaohe` or `microsoft`; old configs with only
@@ -83,8 +86,9 @@ The final three fields are optional metadata; older six-column rows remain valid
 for clients that have not adopted candidate comments yet.
 
 `GET /ime/skin` returns a compact pipe-separated native-renderer payload:
-`fontFamily|fontSize|accent|surface|text|mutedText|border|highlightText|theme|candidatePageSize`.
-Older nine-field payloads are still treated as the default seven-candidate page.
+`fontFamily|fontSize|accent|surface|text|mutedText|border|highlightText|theme|candidatePageSize|candidateLayout`.
+Older nine-field or ten-field payloads are still treated as the default
+seven-candidate horizontal strip.
 
 `POST /agent/compose` body:
 

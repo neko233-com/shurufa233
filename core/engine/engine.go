@@ -40,6 +40,7 @@ func DefaultConfig() Config {
 	return Config{
 		MaxCandidates:     42,
 		CandidatePageSize: 7,
+		CandidateLayout:   "horizontal",
 		FuzzyInitials: []string{
 			"zh=z",
 			"ch=c",
@@ -79,6 +80,7 @@ func New(config Config) *Engine {
 		config = DefaultConfig()
 	}
 	config.CandidatePageSize = normalizeCandidatePageSize(config.CandidatePageSize)
+	config.CandidateLayout = normalizeCandidateLayout(config.CandidateLayout)
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
 	e := &Engine{
@@ -99,9 +101,23 @@ func (e *Engine) Configure(config Config) {
 		config.MaxCandidates = DefaultConfig().MaxCandidates
 	}
 	config.CandidatePageSize = normalizeCandidatePageSize(config.CandidatePageSize)
+	config.CandidateLayout = normalizeCandidateLayout(config.CandidateLayout)
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
 	e.config = config
+}
+
+func normalizeCandidateLayout(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "horizontal", "wechat", "microsoft":
+		return "horizontal"
+	case "vertical", "rime":
+		return "vertical"
+	case "auto":
+		return "auto"
+	default:
+		return "horizontal"
+	}
 }
 
 func normalizeCandidatePageSize(value int) int {

@@ -173,9 +173,9 @@ experiments:
 `ShurufaApplyConfigJSON` applies an `engine.Config` JSON object to all active
 in-process sessions. `ShurufaReloadConfig` reloads `%APPDATA%\shurufa233\config.json`
 or `SHURUFA233_CONFIG` and applies it to active sessions. Use these for skin,
-candidate count, visible candidate page size, fuzzy initials, double pinyin
-scheme, punctuation, update-channel, and mode changes that should be visible
-without reinstalling the TSF DLL.
+candidate count, visible candidate page size, candidate layout, fuzzy initials,
+double pinyin scheme, punctuation, update-channel, and mode changes that should
+be visible without reinstalling the TSF DLL.
 
 `ShurufaReloadDictionaries` reloads local `.json` and `.json.gz` dictionary
 files from `%APPDATA%\shurufa233\dictionaries` or

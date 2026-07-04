@@ -96,6 +96,7 @@ func TestPutConfigNormalizesCandidatePool(t *testing.T) {
 func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.CandidatePageSize = 5
+	config.CandidateLayout = "vertical"
 	state := &AppState{config: config}
 	req := httptest.NewRequest(http.MethodGet, "/ime/skin", nil)
 	rec := httptest.NewRecorder()
@@ -106,11 +107,25 @@ func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	parts := strings.Split(rec.Body.String(), "|")
-	if len(parts) != 10 {
+	if len(parts) != 11 {
 		t.Fatalf("skin payload parts = %#v", parts)
 	}
 	if parts[9] != "5" {
 		t.Fatalf("candidate page size payload = %q, want 5", parts[9])
+	}
+	if parts[10] != "vertical" {
+		t.Fatalf("candidate layout payload = %q, want vertical", parts[10])
+	}
+}
+
+func TestNormalizeConfigKeepsCandidateLayout(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.CandidateLayout = "rime"
+
+	got := normalizeConfig(next)
+
+	if got.CandidateLayout != "vertical" {
+		t.Fatalf("candidateLayout = %q, want vertical", got.CandidateLayout)
 	}
 }
 

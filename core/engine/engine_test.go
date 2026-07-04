@@ -69,15 +69,23 @@ func TestSelectCandidateCharRejectsInvalidSide(t *testing.T) {
 func TestCandidatePageSizeConfigIsClamped(t *testing.T) {
 	config := DefaultConfig()
 	config.CandidatePageSize = 99
+	config.CandidateLayout = "rime"
 	e := New(config)
 	if e.config.CandidatePageSize != 9 {
 		t.Fatalf("candidate page size = %d, want 9", e.config.CandidatePageSize)
 	}
+	if e.config.CandidateLayout != "vertical" {
+		t.Fatalf("candidate layout = %q, want vertical", e.config.CandidateLayout)
+	}
 
 	config.CandidatePageSize = 1
+	config.CandidateLayout = "sideways"
 	e.Configure(config)
 	if e.config.CandidatePageSize != 3 {
 		t.Fatalf("candidate page size = %d, want 3", e.config.CandidatePageSize)
+	}
+	if e.config.CandidateLayout != "horizontal" {
+		t.Fatalf("candidate layout = %q, want horizontal", e.config.CandidateLayout)
 	}
 }
 

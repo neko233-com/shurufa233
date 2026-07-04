@@ -5,6 +5,7 @@ import "time"
 type Config struct {
 	MaxCandidates      int      `json:"maxCandidates"`
 	CandidatePageSize  int      `json:"candidatePageSize"`
+	CandidateLayout    string   `json:"candidateLayout"`
 	FuzzyInitials      []string `json:"fuzzyInitials"`
 	DoublePinyin       bool     `json:"doublePinyin"`
 	DoublePinyinScheme string   `json:"doublePinyinScheme"`

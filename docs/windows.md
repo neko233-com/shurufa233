@@ -209,6 +209,7 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 - Rime-style first/last-character candidate actions are exposed by the Go core, daemon IPC, and C ABI as `side=first`/`side=last`; the Windows TSF layer keeps bracket paging as the default until a non-conflicting shortcut is chosen
 - the optional `ShurufaExecuteCommand(session, command, json)` C ABI is loaded by the Windows TSF DLL as a forward-compatible JSON command bus, so future features such as richer candidate actions, agent hooks, wordbook tools, and config reloads can be added in Go before requiring any new C++ glue
 - visible candidates per page come from `candidatePageSize` in the shared config, defaulting to 7 and clamped to 3..9 so the native strip, HTTP fallback, and React previews stay aligned
+- candidate layout comes from `candidateLayout`, defaulting to Microsoft IME/WeChat-style horizontal rows while allowing a Rime-style vertical list without changing the input engine
 - full-sentence input can fall back to a scored segmenter that chooses the best dictionary path, including user-learned word scores, instead of the first greedy split, while strong exact phrases still stay ahead
 - space, enter, main-row or numpad number keys, semicolon outside Microsoft double pinyin, apostrophe, brackets, page up/down, home/end, `-`, and `=` operate the visible candidate page
 - Chinese punctuation commits the selected candidate first, then inserts the punctuation; default `punctuation=full` maps common shifted punctuation such as `!`, `^`, `(`, `)`, and `-` to `！`, `……`, `（`, `）`, and `——`, while quote keys alternate paired Chinese quotes `“”` and `‘’`
@@ -288,6 +289,7 @@ Current skin fields come from the settings UI:
 - font family
 - font size
 - visible candidates per page
+- horizontal or vertical candidate layout
 - accent color
 - surface color
 - text color

@@ -804,6 +804,7 @@ class CandidateWindow {
   COLORREF border_ = RGB(209, 213, 219);
   COLORREF highlightText_ = RGB(255, 255, 255);
   std::string theme_ = "system";
+  std::string layout_ = "horizontal";
   std::wstring skinConfigPath_;
   bool skinConfigPathResolved_ = false;
   DWORD lastLocalSkinCheckTick_ = 0;
@@ -823,11 +824,35 @@ class CandidateWindow {
   CandidatePageHandler pageHandler_ = nullptr;
 
   int CandidateWindowHeight() const {
+    if (IsVerticalLayout()) {
+      const int rows = max(1, min(static_cast<int>(candidates_.size()), pageSize_));
+      const int itemHeight = max(Scale(34), ScaledFontSize() + Scale(20));
+      return max(Scale(112), CandidateBandTop() + Scale(8) + rows * (itemHeight + Scale(7)) + Scale(10));
+    }
     return max(Scale(82), ScaledFontSize() * 2 + Scale(56));
   }
 
   int CandidateBandTop() const {
     return ScaledFontSize() + Scale(24);
+  }
+
+  bool IsVerticalLayout() const {
+    return layout_ == "vertical";
+  }
+
+  static std::string NormalizeCandidateLayout(const std::string &layout) {
+    std::string value;
+    value.reserve(layout.size());
+    for (char ch : layout) {
+      value.push_back(static_cast<char>(tolower(static_cast<unsigned char>(ch))));
+    }
+    if (value == "vertical" || value == "rime") {
+      return "vertical";
+    }
+    if (value == "auto") {
+      return "auto";
+    }
+    return "horizontal";
   }
 
   UINT ReadCurrentDpi() const {
@@ -928,13 +953,19 @@ class CandidateWindow {
     HDC dc = GetDC(hwnd_);
     HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
     int width = max(Scale(260), TextWidth(dc, composing_) + Scale(44));
-    for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
-      width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(6);
+    if (IsVerticalLayout()) {
+      for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
+        width = max(width, CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(38) + PageControlsWidth());
+      }
+    } else {
+      for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
+        width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(6);
+      }
+      width += PageControlsWidth();
     }
-    width += PageControlsWidth();
     SelectObject(dc, oldFont);
     ReleaseDC(hwnd_, dc);
-    return max(Scale(180), min(Scale(780), width));
+    return max(Scale(180), min(IsVerticalLayout() ? Scale(460) : Scale(780), width));
   }
 
   int MeasureStatusWidth() {
@@ -1107,6 +1138,7 @@ class CandidateWindow {
     size_t seventh = sixth == std::string::npos ? std::string::npos : skin.find('|', sixth + 1);
     size_t eighth = seventh == std::string::npos ? std::string::npos : skin.find('|', seventh + 1);
     size_t ninth = eighth == std::string::npos ? std::string::npos : skin.find('|', eighth + 1);
+    size_t tenth = ninth == std::string::npos ? std::string::npos : skin.find('|', ninth + 1);
     if (first == std::string::npos || second == std::string::npos || third == std::string::npos ||
         fourth == std::string::npos || fifth == std::string::npos || sixth == std::string::npos ||
         seventh == std::string::npos || eighth == std::string::npos) {
@@ -1131,7 +1163,10 @@ class CandidateWindow {
     theme_ = skin.substr(eighth + 1, ninth == std::string::npos ? std::string::npos : ninth - eighth - 1);
     if (ninth != std::string::npos) {
       pageSize_ = max(kMinCandidatesPerPage,
-                      min(kMaxCandidatesPerPage, atoi(skin.substr(ninth + 1).c_str())));
+                      min(kMaxCandidatesPerPage, atoi(skin.substr(ninth + 1, tenth == std::string::npos ? std::string::npos : tenth - ninth - 1).c_str())));
+    }
+    if (tenth != std::string::npos) {
+      layout_ = NormalizeCandidateLayout(skin.substr(tenth + 1));
     }
     return true;
   }
@@ -1171,13 +1206,15 @@ class CandidateWindow {
     if (pageSize <= 0) {
       pageSize = kDefaultCandidatesPerPage;
     }
+    const std::string layout = JsonStringField(json, "candidateLayout");
     if (fontFamily.empty() || fontSize <= 0 || accent.empty() || surface.empty() ||
         text.empty() || mutedText.empty() || border.empty() || highlightText.empty()) {
       return false;
     }
     std::string payload = fontFamily + "|" + std::to_string(fontSize) + "|" + accent + "|" +
                           surface + "|" + text + "|" + mutedText + "|" + border + "|" +
-                          highlightText + "|" + theme + "|" + std::to_string(pageSize);
+                          highlightText + "|" + theme + "|" + std::to_string(pageSize) + "|" +
+                          NormalizeCandidateLayout(layout);
     if (!ApplySkinPayload(payload)) {
       return false;
     }
@@ -1357,6 +1394,55 @@ class CandidateWindow {
     DrawChevron(dc, rect, delta, mutedText_);
   }
 
+  void DrawCandidateItem(HDC dc, const CandidateView &candidate, bool selected,
+                         const RECT &itemRect) {
+    if (selected) {
+      RECT shadowRect{itemRect.left + Scale(1), itemRect.top + Scale(2),
+                      itemRect.right + Scale(1), itemRect.bottom + Scale(2)};
+      DrawRoundedRect(dc, shadowRect, MixColor(CandidateBandColor(), accent_, 18),
+                      MixColor(CandidateBandColor(), accent_, 18), 12);
+      DrawRoundedRect(dc, itemRect, accent_, CandidateAccentEdgeColor(), 12);
+    } else {
+      DrawRoundedRect(dc, itemRect, CandidateIdleColor(), CandidateIdleBorderColor(), 12);
+    }
+
+    wchar_t number[8]{};
+    StringCchPrintfW(number, ARRAYSIZE(number), L"%d", candidate.index);
+    SetTextColor(dc, selected ? highlightText_ : mutedText_);
+    RECT numberRect{itemRect.left + Scale(10), itemRect.top, itemRect.left + Scale(30), itemRect.bottom};
+    DrawTextW(dc, number, -1, &numberRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
+
+    SetTextColor(dc, selected ? highlightText_ : text_);
+    RECT textRect{itemRect.left + Scale(30), itemRect.top, itemRect.right - Scale(10), itemRect.bottom};
+    const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
+    int rightEdge = itemRect.right - Scale(8);
+    if (!kindLabel.empty()) {
+      const int badgeWidth = CandidateBadgeWidth(dc, kindLabel);
+      rightEdge = itemRect.right - badgeWidth - Scale(8);
+      textRect.right = max(textRect.left + Scale(24), rightEdge);
+      RECT badgeRect{rightEdge, itemRect.top + Scale(7),
+                     itemRect.right - Scale(7), itemRect.bottom - Scale(7)};
+      DrawRoundedRect(dc, badgeRect, CandidateBadgeFillColor(selected),
+                      CandidateBadgeBorderColor(selected), 9);
+      SetTextColor(dc, CandidateBadgeTextColor(selected));
+      DrawTextW(dc, kindLabel.c_str(), static_cast<int>(kindLabel.size()), &badgeRect,
+                DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS);
+      SetTextColor(dc, selected ? highlightText_ : text_);
+    }
+    if (!candidate.comment.empty()) {
+      const int commentWidth = min(Scale(88), max(Scale(30), TextWidth(dc, candidate.comment) + Scale(8)));
+      RECT commentRect{max(textRect.left + Scale(30), rightEdge - commentWidth), itemRect.top,
+                       rightEdge - Scale(4), itemRect.bottom};
+      textRect.right = max(textRect.left + Scale(24), commentRect.left - Scale(6));
+      SetTextColor(dc, selected ? MixColor(highlightText_, accent_, 14) : mutedText_);
+      DrawTextW(dc, candidate.comment.c_str(), static_cast<int>(candidate.comment.size()),
+                &commentRect, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_END_ELLIPSIS);
+      SetTextColor(dc, selected ? highlightText_ : text_);
+    }
+    DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
+              DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
+  }
+
   void DrawCandidates(HDC dc, const RECT &rect) {
     statusText_.clear();
     candidateHits_.clear();
@@ -1370,8 +1456,14 @@ class CandidateWindow {
     for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
       const CandidateView &candidate = candidates_[i];
       const bool selected = static_cast<int>(i) == selectedIndex_;
-      const int itemWidth = CandidateItemWidth(dc, candidate, selected);
+      const int itemWidth = IsVerticalLayout()
+                                ? candidateRight - x
+                                : CandidateItemWidth(dc, candidate, selected);
       RECT itemRect{x, y, x + itemWidth, y + itemHeight};
+      if (IsVerticalLayout()) {
+        itemRect.top = y + static_cast<int>(i) * (itemHeight + Scale(7));
+        itemRect.bottom = itemRect.top + itemHeight;
+      }
       if (itemRect.left >= candidateRight - Scale(56)) {
         break;
       }
@@ -1379,52 +1471,10 @@ class CandidateWindow {
         itemRect.right = candidateRight;
       }
       candidateHits_.push_back(CandidateHit{itemRect, pageStart_ + static_cast<int>(i)});
-
-      if (selected) {
-        RECT shadowRect{itemRect.left + Scale(1), itemRect.top + Scale(2),
-                        itemRect.right + Scale(1), itemRect.bottom + Scale(2)};
-        DrawRoundedRect(dc, shadowRect, MixColor(CandidateBandColor(), accent_, 18),
-                        MixColor(CandidateBandColor(), accent_, 18), 12);
-        DrawRoundedRect(dc, itemRect, accent_, CandidateAccentEdgeColor(), 12);
-      } else {
-        DrawRoundedRect(dc, itemRect, CandidateIdleColor(), CandidateIdleBorderColor(), 12);
+      DrawCandidateItem(dc, candidate, selected, itemRect);
+      if (IsVerticalLayout()) {
+        continue;
       }
-
-      wchar_t number[8]{};
-      StringCchPrintfW(number, ARRAYSIZE(number), L"%d", candidate.index);
-      SetTextColor(dc, selected ? highlightText_ : mutedText_);
-      RECT numberRect{itemRect.left + Scale(10), itemRect.top, itemRect.left + Scale(30), itemRect.bottom};
-      DrawTextW(dc, number, -1, &numberRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
-
-      SetTextColor(dc, selected ? highlightText_ : text_);
-      RECT textRect{itemRect.left + Scale(30), itemRect.top, itemRect.right - Scale(10), itemRect.bottom};
-      const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
-      int rightEdge = itemRect.right - Scale(8);
-      if (!kindLabel.empty()) {
-        const int badgeWidth = CandidateBadgeWidth(dc, kindLabel);
-        rightEdge = itemRect.right - badgeWidth - Scale(8);
-        textRect.right = max(textRect.left + Scale(24), rightEdge);
-        RECT badgeRect{rightEdge, itemRect.top + Scale(7),
-                       itemRect.right - Scale(7), itemRect.bottom - Scale(7)};
-        DrawRoundedRect(dc, badgeRect, CandidateBadgeFillColor(selected),
-                        CandidateBadgeBorderColor(selected), 9);
-        SetTextColor(dc, CandidateBadgeTextColor(selected));
-        DrawTextW(dc, kindLabel.c_str(), static_cast<int>(kindLabel.size()), &badgeRect,
-                  DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS);
-        SetTextColor(dc, selected ? highlightText_ : text_);
-      }
-      if (!candidate.comment.empty()) {
-        const int commentWidth = min(Scale(88), max(Scale(30), TextWidth(dc, candidate.comment) + Scale(8)));
-        RECT commentRect{max(textRect.left + Scale(30), rightEdge - commentWidth), itemRect.top,
-                         rightEdge - Scale(4), itemRect.bottom};
-        textRect.right = max(textRect.left + Scale(24), commentRect.left - Scale(6));
-        SetTextColor(dc, selected ? MixColor(highlightText_, accent_, 14) : mutedText_);
-        DrawTextW(dc, candidate.comment.c_str(), static_cast<int>(candidate.comment.size()),
-                  &commentRect, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_END_ELLIPSIS);
-        SetTextColor(dc, selected ? highlightText_ : text_);
-      }
-      DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
-                DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
       x += itemWidth + Scale(7);
       if (x > candidateRight - Scale(56)) {
         break;
@@ -1494,8 +1544,10 @@ class CandidateWindow {
     const int last = min(pageStart_ + static_cast<int>(candidates_.size()), totalCount_);
     wchar_t label[32]{};
     StringCchPrintfW(label, ARRAYSIZE(label), L"%d-%d/%d", first, last, totalCount_);
-    const int centerY = CandidateBandTop() + Scale(8) +
-                        max(Scale(34), ScaledFontSize() + Scale(20)) / 2;
+    const int centerY = IsVerticalLayout()
+                            ? CandidateBandTop() + max(Scale(34), (rect.bottom - CandidateBandTop()) / 2)
+                            : CandidateBandTop() + Scale(8) +
+                                  max(Scale(34), ScaledFontSize() + Scale(20)) / 2;
     RECT prevRect{rect.right - Scale(156), centerY - Scale(15),
                   rect.right - Scale(128), centerY + Scale(15)};
     RECT nextRect{rect.right - Scale(42), centerY - Scale(15),

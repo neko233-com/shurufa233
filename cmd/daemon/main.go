@@ -456,7 +456,7 @@ func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s|%s|%s|%s|%s|%s|%d",
+	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%s",
 		s.config.Skin.FontFamily,
 		s.config.Skin.FontSize,
 		s.config.Skin.Accent,
@@ -467,6 +467,7 @@ func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 		s.config.Skin.HighlightText,
 		s.config.Skin.Theme,
 		s.config.CandidatePageSize,
+		sanitizePayloadField(s.config.CandidateLayout),
 	)
 }
 
@@ -1170,6 +1171,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	if config.CandidatePageSize > 9 {
 		config.CandidatePageSize = 9
 	}
+	config.CandidateLayout = normalizeCandidateLayoutValue(config.CandidateLayout, defaults.CandidateLayout)
 	if config.Language == "" {
 		config.Language = defaults.Language
 	}
@@ -1231,6 +1233,22 @@ func normalizeConfig(config engine.Config) engine.Config {
 		config.Update.InstalledVersion = defaults.Update.InstalledVersion
 	}
 	return config
+}
+
+func normalizeCandidateLayoutValue(layout string, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(layout)) {
+	case "", "horizontal", "wechat", "microsoft":
+		if strings.TrimSpace(layout) == "" {
+			return fallback
+		}
+		return "horizontal"
+	case "vertical", "rime":
+		return "vertical"
+	case "auto":
+		return "auto"
+	default:
+		return fallback
+	}
 }
 
 func normalizeModeValue(mode string, fallback string) string {
