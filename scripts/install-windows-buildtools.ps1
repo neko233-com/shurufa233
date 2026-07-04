@@ -58,10 +58,46 @@ function Test-MsvcRuntimeLibrary {
   return [bool]$found
 }
 
+function Find-MingwCompiler {
+  param([string]$Name)
+
+  $found = Get-Command $Name -ErrorAction SilentlyContinue
+  if ($found) {
+    return $found.Source
+  }
+
+  $searchRoots = @()
+  $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+  if (Test-Path $wingetRoot) {
+    $searchRoots += $wingetRoot
+  }
+  foreach ($parent in @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+    if (-not $parent -or -not (Test-Path $parent)) { continue }
+    Get-ChildItem $parent -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match "mingw|llvm|winlibs|ucrt" } |
+      ForEach-Object { $searchRoots += $_.FullName }
+  }
+
+  foreach ($root in $searchRoots) {
+    $candidate = Get-ChildItem $root -Recurse -Filter $Name -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -match "\\bin\\[^\\]+$" } |
+      Select-Object -First 1
+    if ($candidate) {
+      return $candidate.FullName
+    }
+  }
+
+  return $null
+}
+
 winget install --id Microsoft.VisualStudio.2022.BuildTools -e `
   --accept-source-agreements `
   --accept-package-agreements `
   --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.VC.14.44.17.14.ARM64 --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 --add Microsoft.VisualStudio.Component.VC.Tools.ARM64EC --add Microsoft.VisualStudio.Component.Windows11SDK.26100 --includeRecommended"
+
+winget install --id MartinStorsjo.LLVM-MinGW.UCRT -e `
+  --accept-source-agreements `
+  --accept-package-agreements
 
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 if (Test-Path $vswhere) {
@@ -83,4 +119,14 @@ if (Test-Path $vswhere) {
   }
 }
 
-Write-Host "Build Tools install/modify finished and MSVC x64/x86/arm64 runtime libraries were found. Re-open PowerShell if cl.exe is not on PATH."
+$missingMingw = @()
+foreach ($compiler in @("x86_64-w64-mingw32-gcc.exe", "i686-w64-mingw32-gcc.exe", "aarch64-w64-mingw32-gcc.exe")) {
+  if (-not (Find-MingwCompiler -Name $compiler)) {
+    $missingMingw += $compiler
+  }
+}
+if ($missingMingw.Count -gt 0) {
+  throw "LLVM-MinGW install finished, but these MinGW-w64 compilers were not found: $($missingMingw -join ', '). Re-open PowerShell or reinstall MartinStorsjo.LLVM-MinGW.UCRT."
+}
+
+Write-Host "Build Tools install/modify finished. MSVC x64/x86/arm64 runtime checks and LLVM-MinGW compiler checks passed. Re-open PowerShell if new tools are not on PATH."

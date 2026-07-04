@@ -21,6 +21,8 @@ Install the full Windows native toolchain:
 powershell -ExecutionPolicy Bypass -File .\scripts\install-windows-buildtools.ps1
 ```
 
+The script installs or modifies Visual Studio Build Tools and installs `MartinStorsjo.LLVM-MinGW.UCRT` for cross-architecture Go `c-shared` builds.
+
 Required Visual Studio components:
 
 - `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`
