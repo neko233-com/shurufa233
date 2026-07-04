@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/neko233-com/shurufa233/core/engine"
 )
 
 var (
@@ -19,6 +21,12 @@ type userScoreStore struct {
 	Version   int            `json:"version"`
 	UpdatedAt time.Time      `json:"updatedAt"`
 	Scores    map[string]int `json:"scores"`
+}
+
+type userPhraseStore struct {
+	Version   int            `json:"version"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	Entries   []engine.Entry `json:"entries"`
 }
 
 func userScoresPath() (string, error) {
@@ -34,6 +42,21 @@ func userScoresPath() (string, error) {
 		}
 	}
 	return filepath.Join(base, "shurufa233", "user-scores.json"), nil
+}
+
+func userPhrasesPath() (string, error) {
+	if override := os.Getenv("SHURUFA233_USER_PHRASES"); override != "" {
+		return override, nil
+	}
+	base := os.Getenv("APPDATA")
+	if base == "" {
+		var err error
+		base, err = os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
+	}
+	return filepath.Join(base, "shurufa233", "user-phrases.json"), nil
 }
 
 func loadUserScores() map[string]int {
@@ -54,6 +77,24 @@ func loadUserScores() map[string]int {
 	return store.Scores
 }
 
+func loadUserPhrases() []engine.Entry {
+	scoresMu.Lock()
+	defer scoresMu.Unlock()
+	path, err := userPhrasesPath()
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var store userPhraseStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		return nil
+	}
+	return store.Entries
+}
+
 func persistUserScores(scores map[string]int) {
 	if len(scores) == 0 {
 		return
@@ -64,6 +105,39 @@ func persistUserScores(scores map[string]int) {
 	case persistQueue <- copied:
 	default:
 		go persistUserScoresSync(copied)
+	}
+}
+
+func persistUserPhrases(entries []engine.Entry) {
+	scoresMu.Lock()
+	defer scoresMu.Unlock()
+	path, err := userPhrasesPath()
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	store := userPhraseStore{
+		Version:   1,
+		UpdatedAt: time.Now().UTC(),
+		Entries:   entries,
+	}
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			_ = os.Remove(path)
+			_ = os.Rename(tmp, path)
+		} else {
+			_ = os.Remove(tmp)
+		}
 	}
 }
 

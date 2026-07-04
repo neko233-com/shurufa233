@@ -110,6 +110,38 @@ func TestCandidateActionCallsPreviewThenActionEndpoint(t *testing.T) {
 	}
 }
 
+func TestPhrasesAddCallsEndpoint(t *testing.T) {
+	var phraseCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/phrases" || r.Method != http.MethodPut {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		phraseCalled = true
+		var req struct {
+			Entries []phraseEntry `json:"entries"`
+			Merge   bool          `json:"merge"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode phrase request: %v", err)
+		}
+		if !req.Merge || len(req.Entries) != 1 || req.Entries[0].Reading != "msd" || req.Entries[0].Text != "马上到！" {
+			t.Fatalf("phrase request = %#v", req)
+		}
+		_ = json.NewEncoder(w).Encode(phraseResponse{Count: 1})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := phrases(server.Client(), []string{"add", "msd", "马上到！", "60000"}); err != nil {
+		t.Fatal(err)
+	}
+	if !phraseCalled {
+		t.Fatal("phrase endpoint was not called")
+	}
+}
+
 func TestReadWordbookFileAcceptsWrappedScores(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wordbook.json")
 	if err := os.WriteFile(path, []byte(`{"userScores":{"nihao|你好":25}}`), 0o644); err != nil {
@@ -122,6 +154,36 @@ func TestReadWordbookFileAcceptsWrappedScores(t *testing.T) {
 	}
 	if got["nihao|你好"] != 25 {
 		t.Fatalf("scores = %#v", got)
+	}
+}
+
+func TestReadPhraseFileAcceptsWrappedEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "phrases.json")
+	if err := os.WriteFile(path, []byte(`{"entries":[{"reading":"msd","text":"马上到！","weight":60000}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := readPhraseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Reading != "msd" || got[0].Text != "马上到！" || got[0].Weight != 60000 {
+		t.Fatalf("phrases = %#v", got)
+	}
+}
+
+func TestReadPhraseFileAcceptsRawEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "phrases.json")
+	if err := os.WriteFile(path, []byte(`[{"reading":"yx","text":"邮箱"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := readPhraseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Reading != "yx" || got[0].Text != "邮箱" {
+		t.Fatalf("phrases = %#v", got)
 	}
 }
 

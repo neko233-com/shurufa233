@@ -100,6 +100,8 @@ char* ShurufaReloadDictionaries(void);
 char* ShurufaDictionaryManifestJSON(void);
 char* ShurufaUserScoresJSON(uint64_t session);
 char* ShurufaImportUserScoresJSON(uint64_t session, char* json);
+char* ShurufaUserPhrasesJSON(uint64_t session);
+char* ShurufaImportUserPhrasesJSON(uint64_t session, char* json);
 char* ShurufaCommitText(uint64_t session, char* reading, char* text);
 char* ShurufaAgentCompose(char* input, char* context);
 char* ShurufaSelectCandidateChar(uint64_t session, int index, const char* side);
@@ -116,7 +118,7 @@ comment text remains part of candidate payloads even when the UI hides it.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`user-scores-json`, `commit-text`, `agent-compose`,
+`user-scores-json`, `user-phrases-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`,
 `emoji-kaomoji-symbol-candidates`, and
@@ -152,6 +154,9 @@ reload-dictionaries
 dictionary-manifest-json
 user-scores-json
 import-user-scores-json {"userScores":{"nihao|你好":25}}
+user-phrases-json
+import-user-phrases-json {"entries":[{"reading":"msd","text":"马上到！"}],"merge":true}
+delete-user-phrase      {"reading":"msd","text":"马上到！"}
 commit-text             {"reading":"nihao","text":"你好"}
 agent-compose           {"input":"/rewrite","context":"optional text"}
 ```
@@ -205,7 +210,7 @@ files from `%APPDATA%\shurufa233\dictionaries` or
 `manifest.json` or `dictionary-manifest.json` exists.
 
 `ShurufaUserScoresJSON`, `ShurufaImportUserScoresJSON`, and `ShurufaCommitText`
-reserve the user-wordbook surface. Import accepts either:
+reserve the learned user-wordbook surface. Import accepts either:
 
 ```json
 { "userScores": { "nihao|你好": 25 } }
@@ -215,6 +220,15 @@ or a raw score map:
 
 ```json
 { "nihao|你好": 25 }
+```
+
+`ShurufaUserPhrasesJSON` and `ShurufaImportUserPhrasesJSON` reserve fixed
+Rime-style user phrases. These are persisted separately from learned scores in
+`user-phrases.json` or `SHURUFA233_USER_PHRASES`, loaded as `kind=phrase` and
+`source=user-phrase`, and can be replaced or merged without changing C++ glue:
+
+```json
+{ "entries": [{ "reading": "msd", "text": "马上到！", "weight": 60000 }], "merge": true }
 ```
 
 `ShurufaAgentCompose` is the native bridge for agent-style input actions. It

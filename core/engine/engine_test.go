@@ -177,6 +177,47 @@ func TestInputKeyAcceptsApostropheSeparator(t *testing.T) {
 	}
 }
 
+func TestUserPhrasesCanBeAddedListedAndDeleted(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{{Reading: "msd", Text: "默认短语", Weight: 20000}})
+
+	added := e.AddUserPhrases([]Entry{{Reading: "msd", Text: "马上到！"}})
+	if len(added) != 1 || added[0].Kind != UserPhraseKind || added[0].Source != UserPhraseSource {
+		t.Fatalf("added user phrase metadata = %#v", added)
+	}
+	state := e.Preview("msd")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "马上到！" {
+		t.Fatalf("expected user phrase to rank first, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Kind != UserPhraseKind || state.Candidates[0].Source != UserPhraseSource {
+		t.Fatalf("expected user phrase candidate metadata, got %#v", state.Candidates[0])
+	}
+
+	phrases := e.UserPhrases()
+	if len(phrases) != 1 || phrases[0].Text != "马上到！" {
+		t.Fatalf("user phrases = %#v", phrases)
+	}
+	e.DeleteUserPhrase("msd", "马上到！")
+	state = e.Preview("msd")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "默认短语" {
+		t.Fatalf("expected deleting user phrase to restore default phrase, got %#v", state.Candidates)
+	}
+}
+
+func TestReplaceUserPhrasesClearsOldPhrases(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddUserPhrases([]Entry{{Reading: "aaa", Text: "旧短语"}})
+	e.ReplaceUserPhrases([]Entry{{Reading: "bbb", Text: "新短语", Weight: 60000}})
+
+	if got := e.Preview("aaa"); len(got.Candidates) != 0 {
+		t.Fatalf("old user phrase should be removed, got %#v", got.Candidates)
+	}
+	got := e.Preview("bbb")
+	if len(got.Candidates) == 0 || got.Candidates[0].Text != "新短语" {
+		t.Fatalf("expected replacement user phrase, got %#v", got.Candidates)
+	}
+}
+
 func TestAbbreviationCandidates(t *testing.T) {
 	e := New(DefaultConfig())
 

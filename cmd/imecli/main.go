@@ -89,6 +89,22 @@ type wordbookResponse struct {
 	UpdatedAt  string         `json:"updatedAt"`
 }
 
+type phraseEntry struct {
+	Reading string `json:"reading"`
+	Text    string `json:"text"`
+	Kind    string `json:"kind,omitempty"`
+	Source  string `json:"source,omitempty"`
+	Comment string `json:"comment,omitempty"`
+	Weight  int    `json:"weight,omitempty"`
+}
+
+type phraseResponse struct {
+	Phrases   []phraseEntry `json:"phrases"`
+	Entries   []phraseEntry `json:"entries"`
+	Count     int           `json:"count"`
+	UpdatedAt string        `json:"updatedAt"`
+}
+
 type agentResponse struct {
 	Input      string           `json:"input"`
 	Context    string           `json:"context,omitempty"`
@@ -126,6 +142,8 @@ func main() {
 		err = mode(client, os.Args[2:])
 	case "wordbook":
 		err = wordbook(client, os.Args[2:])
+	case "phrases", "phrase":
+		err = phrases(client, os.Args[2:])
 	case "agent":
 		err = agent(client, os.Args[2:])
 	case "candidates", "candidate-action":
@@ -154,6 +172,12 @@ Usage:
   shurufa-imecli wordbook import user-wordbook.json [--replace]
   shurufa-imecli wordbook delete "nihao|你好"
   shurufa-imecli wordbook clear
+  shurufa-imecli phrases list
+  shurufa-imecli phrases add msd "马上到！" [weight]
+  shurufa-imecli phrases import user-phrases.json [--replace]
+  shurufa-imecli phrases export
+  shurufa-imecli phrases delete "msd|马上到！"
+  shurufa-imecli phrases clear
   shurufa-imecli update-check
   shurufa-imecli update-apply
   shurufa-imecli candidates nihao [view|next-page|prev-page|select|first-char|last-char] [--start N] [--limit N] [--display-index N] [--index N]
@@ -465,6 +489,123 @@ func readWordbookFile(path string) (map[string]int, error) {
 		return nil, err
 	}
 	return scores, nil
+}
+
+func phrases(client *http.Client, args []string) error {
+	action := "list"
+	if len(args) > 0 {
+		action = strings.ToLower(strings.TrimSpace(args[0]))
+		args = args[1:]
+	}
+	switch action {
+	case "list":
+		var response phraseResponse
+		if err := getJSON(client, "/phrases", &response); err != nil {
+			return err
+		}
+		printPhrases(response.Phrases)
+		return nil
+	case "export":
+		var response phraseResponse
+		if err := getJSON(client, "/phrases", &response); err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(map[string]any{"entries": response.Phrases}, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	case "add":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: phrases add <reading> <text> [weight]")
+		}
+		entry := phraseEntry{Reading: args[0], Text: args[1]}
+		if len(args) > 2 {
+			weight, err := strconv.Atoi(args[2])
+			if err != nil {
+				return err
+			}
+			entry.Weight = weight
+		}
+		var response phraseResponse
+		if err := putJSON(client, "/phrases", map[string]any{"entries": []phraseEntry{entry}, "merge": true}, &response); err != nil {
+			return err
+		}
+		fmt.Printf("phrases=%d\n", response.Count)
+		return nil
+	case "import":
+		if len(args) == 0 {
+			return fmt.Errorf("missing import file")
+		}
+		entries, err := readPhraseFile(args[0])
+		if err != nil {
+			return err
+		}
+		payload := map[string]any{"entries": entries, "merge": true}
+		if len(args) > 1 && args[1] == "--replace" {
+			payload["merge"] = false
+		}
+		var response phraseResponse
+		if err := putJSON(client, "/phrases", payload, &response); err != nil {
+			return err
+		}
+		fmt.Printf("phrases=%d\n", response.Count)
+		return nil
+	case "delete":
+		if len(args) == 0 {
+			return fmt.Errorf("missing phrase key")
+		}
+		var response phraseResponse
+		if err := deleteJSON(client, "/phrases?key="+urlQueryEscape(args[0]), &response); err != nil {
+			return err
+		}
+		fmt.Printf("phrases=%d\n", response.Count)
+		return nil
+	case "clear":
+		var response phraseResponse
+		if err := deleteJSON(client, "/phrases", &response); err != nil {
+			return err
+		}
+		fmt.Printf("phrases=%d\n", response.Count)
+		return nil
+	default:
+		return fmt.Errorf("unknown phrases action %q", action)
+	}
+}
+
+func printPhrases(entries []phraseEntry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].Reading == entries[j].Reading {
+			return entries[i].Text < entries[j].Text
+		}
+		return entries[i].Reading < entries[j].Reading
+	})
+	for _, entry := range entries {
+		fmt.Printf("%s|%s\t%d\t%s\n", entry.Reading, entry.Text, entry.Weight, entry.Comment)
+	}
+}
+
+func readPhraseFile(path string) ([]phraseEntry, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var wrapped struct {
+		Entries []phraseEntry `json:"entries"`
+		Phrases []phraseEntry `json:"phrases"`
+	}
+	if err := json.Unmarshal(data, &wrapped); err == nil && (wrapped.Entries != nil || wrapped.Phrases != nil) {
+		if wrapped.Entries != nil {
+			return wrapped.Entries, nil
+		}
+		return wrapped.Phrases, nil
+	}
+	var entries []phraseEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
 }
 
 func agent(client *http.Client, args []string) error {

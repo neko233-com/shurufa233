@@ -305,6 +305,7 @@ func newEngine() *engine.Engine {
 	for _, entry := range loadLocalDictionaryEntries() {
 		session.AddEntries(entry)
 	}
+	session.AddUserPhrases(loadUserPhrases())
 	session.ImportUserScores(loadUserScores())
 	return session
 }

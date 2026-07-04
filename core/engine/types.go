@@ -56,6 +56,11 @@ type Entry struct {
 	Weight  int    `json:"weight"`
 }
 
+const (
+	UserPhraseKind   = "phrase"
+	UserPhraseSource = "user-phrase"
+)
+
 type Update struct {
 	Channel          string   `json:"channel"`
 	ManifestURLs     []string `json:"manifestUrls"`

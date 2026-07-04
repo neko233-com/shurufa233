@@ -18,6 +18,7 @@ var abiFeatureList = []string{
 	"reload-dictionaries",
 	"dictionary-manifest-json",
 	"user-scores-json",
+	"user-phrases-json",
 	"commit-text",
 	"agent-compose",
 	"rime-compatible-dictionaries",
@@ -105,6 +106,9 @@ type extensionCommandPayload struct {
 	Config       *engine.Config   `json:"config,omitempty"`
 	UserScores   map[string]int   `json:"userScores,omitempty"`
 	Scores       map[string]int   `json:"scores,omitempty"`
+	Entries      []engine.Entry   `json:"entries,omitempty"`
+	Phrases      []engine.Entry   `json:"phrases,omitempty"`
+	Merge        bool             `json:"merge,omitempty"`
 	Raw          *json.RawMessage `json:"raw,omitempty"`
 }
 
@@ -411,6 +415,15 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"count":      len(scores),
 			"updatedAt":  session.State().UpdatedAt,
 		}, true
+	case "user-phrases-json", "user-phrases":
+		phrases := session.UserPhrases()
+		return map[string]any{
+			"ok":        true,
+			"phrases":   phrases,
+			"entries":   phrases,
+			"count":     len(phrases),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
 	case "import-user-scores-json", "import-user-scores":
 		scores := req.UserScores
 		if scores == nil {
@@ -429,6 +442,38 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"ok":        true,
 			"imported":  len(scores),
 			"total":     len(session.UserScores()),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "import-user-phrases-json", "import-user-phrases":
+		entries := req.Entries
+		if len(entries) == 0 {
+			entries = req.Phrases
+		}
+		if req.Merge {
+			merged := session.UserPhrases()
+			merged = append(merged, entries...)
+			entries = merged
+		}
+		session.ReplaceUserPhrases(entries)
+		phrases := session.UserPhrases()
+		persistUserPhrases(phrases)
+		return map[string]any{
+			"ok":        true,
+			"imported":  len(entries),
+			"total":     len(phrases),
+			"phrases":   phrases,
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "delete-user-phrase":
+		reading := normalizeABIReading(req.Reading)
+		text := strings.TrimSpace(req.Text)
+		session.DeleteUserPhrase(reading, text)
+		phrases := session.UserPhrases()
+		persistUserPhrases(phrases)
+		return map[string]any{
+			"ok":        true,
+			"total":     len(phrases),
+			"phrases":   phrases,
 			"updatedAt": session.State().UpdatedAt,
 		}, true
 	case "commit-text":

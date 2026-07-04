@@ -65,6 +65,7 @@ using SessionStringFn = char *(*)(uint64_t);
 using CandidatePayloadV2Fn = char *(*)(uint64_t, int, int);
 using ApplyConfigJsonFn = char *(*)(char *);
 using ImportUserScoresJsonFn = char *(*)(uint64_t, char *);
+using ImportUserPhrasesJsonFn = char *(*)(uint64_t, char *);
 using CommitTextFn = char *(*)(uint64_t, char *, char *);
 using AgentComposeFn = char *(*)(char *, char *);
 using ExecuteCommandFn = char *(*)(uint64_t, const char *, const char *);
@@ -100,6 +101,8 @@ struct CoreApi {
   CoreStringFn dictionaryManifestJson = nullptr;
   SessionStringFn userScoresJson = nullptr;
   ImportUserScoresJsonFn importUserScoresJson = nullptr;
+  SessionStringFn userPhrasesJson = nullptr;
+  ImportUserPhrasesJsonFn importUserPhrasesJson = nullptr;
   CommitTextFn commitText = nullptr;
   AgentComposeFn agentCompose = nullptr;
   ExecuteCommandFn executeCommand = nullptr;
@@ -416,6 +419,9 @@ bool TryLoadInProcessCore() {
   api.userScoresJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserScoresJSON");
   api.importUserScoresJson =
       LoadCoreProc<ImportUserScoresJsonFn>(module, "ShurufaImportUserScoresJSON");
+  api.userPhrasesJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserPhrasesJSON");
+  api.importUserPhrasesJson =
+      LoadCoreProc<ImportUserPhrasesJsonFn>(module, "ShurufaImportUserPhrasesJSON");
   api.commitText = LoadCoreProc<CommitTextFn>(module, "ShurufaCommitText");
   api.agentCompose = LoadCoreProc<AgentComposeFn>(module, "ShurufaAgentCompose");
   api.executeCommand = LoadCoreProc<ExecuteCommandFn>(module, "ShurufaExecuteCommand");

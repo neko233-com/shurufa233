@@ -7,7 +7,7 @@ Cross-platform Chinese input method prototype using a three-layer isolation mode
 - Go daemon for configuration, dictionaries, IPC, and background tasks
 - Vite 8 + React settings UI, ready to be hosted by Wails v3
 - GitHub Releases based dictionary hot updates with configurable mirror/CDN URLs
-- CLI candidate actions for preview paging, selection, first/last-character commit, pinyin separator previews, and agent workflows
+- CLI candidate actions for preview paging, selection, first/last-character commit, pinyin separator previews, Rime-style user phrases, and agent workflows
 
 The current local MVP runs the Go engine, daemon IPC, and settings UI on Windows. Native Windows TSF glue is scaffolded under `native/windows/tsf`; building and registering it requires Visual Studio Build Tools with the Windows SDK.
 
@@ -29,7 +29,7 @@ npm run dev
 
 Open the Vite URL and keep `go run ./cmd/daemon` running. The UI talks to `http://127.0.0.1:23333`.
 
-Default mode is Chinese pinyin (`zh-CN`, `zh`). The Go core preserves apostrophe pinyin separators in the preedit buffer and uses them to force ambiguous syllable boundaries, so `xi'an` can rank `西安` ahead of plain `xian` candidates. The settings UI supports Chinese/English mode switching, full-width/half-width punctuation mode, Xiaohe and Microsoft/Sogou double-pinyin scheme selection, skin colors, candidate size, user wordbook import/export/delete, dictionary update source configuration, update checks, and one-click dictionary update apply.
+Default mode is Chinese pinyin (`zh-CN`, `zh`). The Go core preserves apostrophe pinyin separators in the preedit buffer and uses them to force ambiguous syllable boundaries, so `xi'an` can rank `西安` ahead of plain `xian` candidates. It also supports runtime Rime-style fixed user phrases stored separately from learned user scores, so personal `custom_phrase.txt`-style rows can be managed without rebuilding dictionaries. The settings UI supports Chinese/English mode switching, full-width/half-width punctuation mode, Xiaohe and Microsoft/Sogou double-pinyin scheme selection, skin colors, candidate size, user wordbook import/export/delete, dictionary update source configuration, update checks, and one-click dictionary update apply.
 
 ## Architecture
 

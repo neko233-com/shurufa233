@@ -233,6 +233,15 @@ func TestCapabilitiesIncludePinyinSeparators(t *testing.T) {
 	t.Fatalf("capabilities missing pinyin-separators: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeUserPhrasesJSON(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "user-phrases-json" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing user-phrases-json: %#v", abiFeatureList)
+}
+
 func TestCapabilitiesIncludeCandidateActionJSON(t *testing.T) {
 	for _, feature := range abiFeatureList {
 		if feature == "candidate-action-json" {
@@ -259,6 +268,34 @@ func TestPreviewPreservesPinyinSeparatorCandidate(t *testing.T) {
 	}
 	if len(state.Candidates) == 0 || state.Candidates[0].Text != "西安" {
 		t.Fatalf("expected separator candidate 西安, got %#v", state.Candidates)
+	}
+}
+
+func TestExecuteExtensionCommandImportsUserPhrases(t *testing.T) {
+	t.Setenv("SHURUFA233_USER_PHRASES", filepath.Join(t.TempDir(), "user-phrases.json"))
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{{Reading: "msd", Text: "默认短语", Weight: 20000}})
+
+	got, handled := executeSessionExtensionCommand(session, "import-user-phrases", `{"entries":[{"reading":"msd","text":"马上到！"}]}`)
+	if !handled {
+		t.Fatal("import-user-phrases command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("import-user-phrases = %#v", got)
+	}
+	state := session.Preview("msd")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "马上到！" {
+		t.Fatalf("expected user phrase to rank first, got %#v", state.Candidates)
+	}
+
+	list, handled := executeSessionExtensionCommand(session, "user-phrases", `{}`)
+	if !handled {
+		t.Fatal("user-phrases command was not handled")
+	}
+	listResult, ok := list.(map[string]any)
+	if !ok || listResult["count"] != 1 {
+		t.Fatalf("user-phrases = %#v", list)
 	}
 }
 

@@ -11,6 +11,9 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /wordbook`
 - `PUT /wordbook`
 - `DELETE /wordbook`
+- `GET /phrases`
+- `PUT /phrases`
+- `DELETE /phrases`
 - `GET /updates/check`
 - `POST /updates/apply`
 - `GET /ime/mode`
@@ -60,6 +63,15 @@ input code instead of the second-candidate shortcut while that scheme is active.
 replacement when `merge` is false. `DELETE /wordbook?key=reading%7Ctext` removes
 one learned row; `DELETE /wordbook` clears all learned user words and persists
 the empty wordbook.
+
+`GET /phrases` returns fixed user phrases stored in `user-phrases.json`. These
+entries are separate from learned word scores and are loaded as
+`kind=phrase`, `source=user-phrase` candidates with high default weight, matching
+Rime `custom_phrase.txt` expectations. `PUT /phrases` accepts
+`{"entries":[{"reading":"msd","text":"马上到！","weight":60000}],"merge":true}`
+or a single `reading`/`text` pair. `DELETE /phrases?key=msd%7C马上到！` deletes
+one phrase; `DELETE /phrases` clears all fixed user phrases. The CLI mirrors
+this through `shurufa-imecli phrases list|add|import|export|delete|clear`.
 
 `GET /updates/check` returns the current and latest dictionary manifest version.
 `POST /updates/apply` downloads the matching language dictionary from configured

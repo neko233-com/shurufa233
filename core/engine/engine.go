@@ -148,9 +148,14 @@ func (e *Engine) addEntriesLocked(entries []Entry) {
 		}
 		merged := false
 		for i := range e.dict[entry.Reading] {
-			if e.dict[entry.Reading][i].Text == entry.Text {
+			if e.dict[entry.Reading][i].Text == entry.Text &&
+				e.dict[entry.Reading][i].Kind == entry.Kind &&
+				e.dict[entry.Reading][i].Source == entry.Source {
 				if entry.Weight > e.dict[entry.Reading][i].Weight {
 					e.dict[entry.Reading][i].Weight = entry.Weight
+				}
+				if e.dict[entry.Reading][i].Comment == "" && entry.Comment != "" {
+					e.dict[entry.Reading][i].Comment = entry.Comment
 				}
 				merged = true
 				break
@@ -162,6 +167,126 @@ func (e *Engine) addEntriesLocked(entries []Entry) {
 	}
 	e.rebuildPrefixLocked()
 	e.sortIndexLocked()
+}
+
+func (e *Engine) AddUserPhrases(entries []Entry) []Entry {
+	normalized := normalizeUserPhraseEntries(entries)
+	if len(normalized) == 0 {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.addEntriesLocked(normalized)
+	return normalized
+}
+
+func (e *Engine) ReplaceUserPhrases(entries []Entry) []Entry {
+	normalized := normalizeUserPhraseEntries(entries)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for reading, entries := range e.dict {
+		filtered := entries[:0]
+		for _, entry := range entries {
+			if entry.Source != UserPhraseSource {
+				filtered = append(filtered, entry)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(e.dict, reading)
+		} else {
+			e.dict[reading] = filtered
+		}
+	}
+	e.addEntriesLocked(normalized)
+	return normalized
+}
+
+func (e *Engine) DeleteUserPhrase(reading string, text string) {
+	reading = normalizeReading(reading)
+	text = strings.TrimSpace(text)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if reading == "" && text == "" {
+		for key, entries := range e.dict {
+			filtered := entries[:0]
+			for _, entry := range entries {
+				if entry.Source != UserPhraseSource {
+					filtered = append(filtered, entry)
+				}
+			}
+			if len(filtered) == 0 {
+				delete(e.dict, key)
+			} else {
+				e.dict[key] = filtered
+			}
+		}
+		e.rebuildPrefixLocked()
+		e.sortIndexLocked()
+		return
+	}
+	entries := e.dict[reading]
+	if len(entries) == 0 {
+		return
+	}
+	filtered := entries[:0]
+	for _, entry := range entries {
+		if entry.Source == UserPhraseSource && entry.Text == text {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	if len(filtered) == 0 {
+		delete(e.dict, reading)
+	} else {
+		e.dict[reading] = filtered
+	}
+	e.rebuildPrefixLocked()
+	e.sortIndexLocked()
+}
+
+func (e *Engine) UserPhrases() []Entry {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	out := make([]Entry, 0)
+	for _, entries := range e.dict {
+		for _, entry := range entries {
+			if entry.Source == UserPhraseSource {
+				out = append(out, entry)
+			}
+		}
+	}
+	sortEntries(out)
+	return out
+}
+
+func normalizeUserPhraseEntries(entries []Entry) []Entry {
+	out := make([]Entry, 0, len(entries))
+	seen := map[string]int{}
+	for _, entry := range entries {
+		entry.Reading = normalizeReading(entry.Reading)
+		entry.Text = strings.TrimSpace(entry.Text)
+		if entry.Reading == "" || entry.Text == "" {
+			continue
+		}
+		entry.Kind = UserPhraseKind
+		entry.Source = UserPhraseSource
+		if entry.Comment == "" {
+			entry.Comment = "自定义"
+		}
+		if entry.Weight <= 0 {
+			entry.Weight = 50000
+		}
+		key := entry.Reading + "\x00" + entry.Text
+		if index, ok := seen[key]; ok {
+			if entry.Weight > out[index].Weight {
+				out[index] = entry
+			}
+			continue
+		}
+		seen[key] = len(out)
+		out = append(out, entry)
+	}
+	return out
 }
 
 func (e *Engine) rebuildPrefixLocked() {

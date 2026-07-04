@@ -82,6 +82,17 @@ go run ./cmd/dictimport `
   path\to\custom_phrase.txt
 ```
 
+For runtime editing without rebuilding a dictionary release, fixed phrases can
+also be managed through the daemon and CLI. They are persisted in
+`user-phrases.json`, loaded as `kind=phrase`, `source=user-phrase`, and kept
+separate from learned user scores:
+
+```powershell
+shurufa-imecli phrases add msd "马上到！" 60000
+shurufa-imecli phrases import .\user-phrases.json --replace
+shurufa-imecli phrases export
+```
+
 Convert Rime symbol tables such as `symbols.yaml` or `symbols.custom.yaml`:
 
 ```powershell

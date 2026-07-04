@@ -147,10 +147,26 @@ type userScoreStore struct {
 	Scores    map[string]int `json:"scores"`
 }
 
+type userPhraseStore struct {
+	Version   int            `json:"version"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	Entries   []engine.Entry `json:"entries"`
+}
+
 type wordbookRequest struct {
 	UserScores map[string]int `json:"userScores,omitempty"`
 	Scores     map[string]int `json:"scores,omitempty"`
 	Merge      bool           `json:"merge,omitempty"`
+}
+
+type phraseRequest struct {
+	Entries []engine.Entry `json:"entries,omitempty"`
+	Phrases []engine.Entry `json:"phrases,omitempty"`
+	Reading string         `json:"reading,omitempty"`
+	Text    string         `json:"text,omitempty"`
+	Comment string         `json:"comment,omitempty"`
+	Weight  int            `json:"weight,omitempty"`
+	Merge   bool           `json:"merge,omitempty"`
 }
 
 func main() {
@@ -189,6 +205,9 @@ func main() {
 	mux.HandleFunc("GET /wordbook", state.withCORS(state.wordbook))
 	mux.HandleFunc("PUT /wordbook", state.withCORS(state.wordbook))
 	mux.HandleFunc("DELETE /wordbook", state.withCORS(state.wordbook))
+	mux.HandleFunc("GET /phrases", state.withCORS(state.phrases))
+	mux.HandleFunc("PUT /phrases", state.withCORS(state.phrases))
+	mux.HandleFunc("DELETE /phrases", state.withCORS(state.phrases))
 	mux.HandleFunc("GET /updates/check", state.withCORS(state.checkUpdates))
 	mux.HandleFunc("POST /updates/apply", state.withCORS(state.applyUpdates))
 	mux.HandleFunc("POST /ime/key", state.withCORS(state.imeKey))
@@ -274,6 +293,7 @@ func (s *AppState) load() error {
 	if err := s.loadLocalDictionariesLocked(); err != nil {
 		return err
 	}
+	s.engine.AddUserPhrases(s.loadUserPhrases())
 	return s.saveLocked()
 }
 
@@ -377,6 +397,72 @@ func (s *AppState) wordbook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, wordbookResponse(scores))
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *AppState) phrases(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		writeJSON(w, phraseResponse(s.engine.UserPhrases()))
+	case http.MethodPut:
+		var req phraseRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		entries := req.Entries
+		if len(entries) == 0 {
+			entries = req.Phrases
+		}
+		if len(entries) == 0 && strings.TrimSpace(req.Reading) != "" && strings.TrimSpace(req.Text) != "" {
+			entries = []engine.Entry{{
+				Reading: req.Reading,
+				Text:    req.Text,
+				Comment: req.Comment,
+				Weight:  req.Weight,
+			}}
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if req.Merge {
+			merged := s.engine.UserPhrases()
+			merged = append(merged, entries...)
+			entries = merged
+		}
+		s.replaceUserPhrasesLocked(entries)
+		phrases := s.engine.UserPhrases()
+		if err := s.writeUserPhrases(phrases); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, phraseResponse(phrases))
+	case http.MethodDelete:
+		reading := strings.TrimSpace(r.URL.Query().Get("reading"))
+		text := strings.TrimSpace(r.URL.Query().Get("text"))
+		if key := strings.TrimSpace(r.URL.Query().Get("key")); key != "" {
+			parts := strings.SplitN(key, "|", 2)
+			reading = parts[0]
+			if len(parts) > 1 {
+				text = parts[1]
+			}
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, session := range s.sessions {
+			if session != nil {
+				session.DeleteUserPhrase(reading, text)
+			}
+		}
+		phrases := s.engine.UserPhrases()
+		if err := s.writeUserPhrases(phrases); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, phraseResponse(phrases))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -772,6 +858,7 @@ func (s *AppState) sessionForRequest(r *http.Request) *engine.Engine {
 		if err := s.loadLocalDictionariesIntoLocked(session); err != nil {
 			log.Printf("warning: could not load dictionaries into session %s: %v", id, err)
 		}
+		session.AddUserPhrases(s.loadUserPhrases())
 		s.sessions[id] = session
 	}
 	return session
@@ -1222,6 +1309,10 @@ func (s *AppState) userScoresPath() string {
 	return filepath.Join(filepath.Dir(s.path), "user-scores.json")
 }
 
+func (s *AppState) userPhrasesPath() string {
+	return filepath.Join(filepath.Dir(s.path), "user-phrases.json")
+}
+
 func (s *AppState) loadUserScores() map[string]int {
 	data, err := os.ReadFile(s.userScoresPath())
 	if err != nil {
@@ -1232,6 +1323,18 @@ func (s *AppState) loadUserScores() map[string]int {
 		return nil
 	}
 	return store.Scores
+}
+
+func (s *AppState) loadUserPhrases() []engine.Entry {
+	data, err := os.ReadFile(s.userPhrasesPath())
+	if err != nil {
+		return nil
+	}
+	var store userPhraseStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		return nil
+	}
+	return store.Entries
 }
 
 func wordbookResponse(scores map[string]int) map[string]any {
@@ -1245,10 +1348,30 @@ func wordbookResponse(scores map[string]int) map[string]any {
 	}
 }
 
+func phraseResponse(entries []engine.Entry) map[string]any {
+	if entries == nil {
+		entries = []engine.Entry{}
+	}
+	return map[string]any{
+		"phrases":   entries,
+		"entries":   entries,
+		"count":     len(entries),
+		"updatedAt": time.Now().UTC(),
+	}
+}
+
 func (s *AppState) replaceUserScoresLocked(scores map[string]int) {
 	for _, session := range s.sessions {
 		if session != nil {
 			session.ReplaceUserScores(scores)
+		}
+	}
+}
+
+func (s *AppState) replaceUserPhrasesLocked(entries []engine.Entry) {
+	for _, session := range s.sessions {
+		if session != nil {
+			session.ReplaceUserPhrases(entries)
 		}
 	}
 }
@@ -1273,6 +1396,34 @@ func (s *AppState) saveUserScores(scores map[string]int) error {
 		}
 	}
 	return s.writeUserScores(merged)
+}
+
+func (s *AppState) writeUserPhrases(entries []engine.Entry) error {
+	path := s.userPhrasesPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	store := userPhraseStore{
+		Version:   1,
+		UpdatedAt: time.Now().UTC(),
+		Entries:   entries,
+	}
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(path)
+		if retryErr := os.Rename(tmp, path); retryErr != nil {
+			_ = os.Remove(tmp)
+			return retryErr
+		}
+	}
+	return nil
 }
 
 func (s *AppState) writeUserScores(scores map[string]int) error {

@@ -506,6 +506,51 @@ func TestWordbookPutAndDeleteManageUserScores(t *testing.T) {
 	}
 }
 
+func TestPhrasesPutAndDeleteManageUserPhrases(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{{Reading: "msd", Text: "默认短语", Weight: 20000}})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	body := strings.NewReader(`{"entries":[{"reading":"msd","text":"马上到！"}],"merge":true}`)
+	req := httptest.NewRequest(http.MethodPut, "/phrases", body)
+	rec := httptest.NewRecorder()
+	state.phrases(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := session.Preview("msd"); len(got.Candidates) == 0 || got.Candidates[0].Text != "马上到！" {
+		t.Fatalf("expected user phrase to rank first, got %#v", got.Candidates)
+	}
+
+	var stored userPhraseStore
+	data, err := os.ReadFile(state.userPhrasesPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Entries) != 1 || stored.Entries[0].Source != engine.UserPhraseSource {
+		t.Fatalf("stored phrases = %#v", stored.Entries)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/phrases?key=msd%7C%E9%A9%AC%E4%B8%8A%E5%88%B0%EF%BC%81", nil)
+	rec = httptest.NewRecorder()
+	state.phrases(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := session.Preview("msd"); len(got.Candidates) == 0 || got.Candidates[0].Text != "默认短语" {
+		t.Fatalf("expected deleted phrase to restore default candidate, got %#v", got.Candidates)
+	}
+}
+
 func TestAgentComposeReturnsStructuredCandidates(t *testing.T) {
 	got := composeAgentResponse("/rewrite", "这段话有点啰嗦")
 	if got.Context != "这段话有点啰嗦" {
