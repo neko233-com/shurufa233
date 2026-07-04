@@ -6,7 +6,7 @@ Cross-platform Chinese input method prototype using a three-layer isolation mode
 - Thin native platform glue for Windows TSF and macOS IMKit
 - Go daemon for configuration, dictionaries, IPC, and background tasks
 - Vite 8 + React settings UI, ready to be hosted by Wails v3
-- GitHub Releases based dictionary hot updates with curated Rime/OpenCC source presets and configurable mirror/CDN URLs
+- GitHub Releases based dictionary hot updates with curated Rime/OpenCC source presets, one-command upstream sync, and configurable mirror/CDN URLs
 - CLI candidate actions for preview paging, selection, candidate pinning/hiding, first/last-character commit, schema switching, pinyin separator previews, post-commit association candidates, Rime-style reverse lookup, user phrases, emoji/symbol catalog lookup, and agent workflows
 
 The current local MVP runs the Go engine, daemon IPC, and settings UI on Windows. Native Windows TSF glue is scaffolded under `native/windows/tsf`; building and registering it requires Visual Studio Build Tools with the Windows SDK.
@@ -40,6 +40,7 @@ cmd/daemon       Local HTTP IPC service and config persistence
 cmd/imecli       Terminal smoke-test client for the engine
 cmd/dictimport   Rime .dict.yaml to shurufa233 JSON dictionary converter
 cmd/dictmanifest GitHub/mirror dictionary update manifest generator
+cmd/dictsync     Git/Rime source sync tool that clones upstream dictionaries, converts them, and writes a hot-update manifest
 apps/settings    Vite 8 + React settings UI for Wails v3 hosting
 native/windows   Windows TSF C++ glue skeleton
 native/macos     macOS IMKit placeholder

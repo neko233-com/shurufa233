@@ -119,6 +119,7 @@ type DictionarySource = {
   mirrorBaseUrls?: string[];
   rawSources?: DictionaryRawSource[];
   convertCommand?: string;
+  syncCommand?: string;
 };
 
 type DictionarySourceResponse = {
@@ -1893,6 +1894,7 @@ function App() {
                     <i>{source.rawSources.slice(0, 2).map((item) => item.label).join(", ")}</i>
                   )}
                   {source.convertCommand && <code>{source.convertCommand}</code>}
+                  {source.syncCommand && <code>{source.syncCommand}</code>}
                 </button>
               ))}
             </div>

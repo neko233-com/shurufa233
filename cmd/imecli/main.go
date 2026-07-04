@@ -105,6 +105,7 @@ type dictionarySource struct {
 	MirrorBaseURLs []string        `json:"mirrorBaseUrls"`
 	RawSources     []dictionaryRaw `json:"rawSources"`
 	ConvertCommand string          `json:"convertCommand"`
+	SyncCommand    string          `json:"syncCommand"`
 }
 
 type dictionaryRaw struct {
@@ -573,6 +574,9 @@ func updateSources(client *http.Client) error {
 		}
 		if source.ConvertCommand != "" {
 			fmt.Printf("  convert: %s\n", source.ConvertCommand)
+		}
+		if source.SyncCommand != "" {
+			fmt.Printf("  sync: %s\n", source.SyncCommand)
 		}
 	}
 	return nil

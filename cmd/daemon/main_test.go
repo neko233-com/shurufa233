@@ -957,12 +957,14 @@ func TestUpdateSourcesEndpointListsRimeSources(t *testing.T) {
 	}
 	foundIce := false
 	for _, source := range got.Sources {
-		if source.ID == "rime-ice-source" && strings.Contains(source.ConvertCommand, "shurufa-dictimport") {
+		if source.ID == "rime-ice-source" &&
+			strings.Contains(source.ConvertCommand, "shurufa-dictimport") &&
+			strings.Contains(source.SyncCommand, "shurufa-dictsync") {
 			foundIce = true
 		}
 	}
 	if !foundIce {
-		t.Fatalf("expected rime-ice source with convert command, got %#v", got.Sources)
+		t.Fatalf("expected rime-ice source with convert and sync commands, got %#v", got.Sources)
 	}
 }
 

@@ -9,14 +9,17 @@ build/windows/go-amd64/shurufa-daemon.exe
 build/windows/go-amd64/shurufa-imecli.exe
 build/windows/go-amd64/shurufa-dictimport.exe
 build/windows/go-amd64/shurufa-dictmanifest.exe
+build/windows/go-amd64/shurufa-dictsync.exe
 build/windows/go-arm64/shurufa-daemon.exe
 build/windows/go-arm64/shurufa-imecli.exe
 build/windows/go-arm64/shurufa-dictimport.exe
 build/windows/go-arm64/shurufa-dictmanifest.exe
+build/windows/go-arm64/shurufa-dictsync.exe
 build/windows/go-386/shurufa-daemon.exe
 build/windows/go-386/shurufa-imecli.exe
 build/windows/go-386/shurufa-dictimport.exe
 build/windows/go-386/shurufa-dictmanifest.exe
+build/windows/go-386/shurufa-dictsync.exe
 build/windows/x64/Shurufa233Tsf.dll
 build/windows/x86/Shurufa233Tsf.dll
 build/windows/arm64/Shurufa233Tsf.dll
@@ -190,6 +193,19 @@ Dictionary manifest generation:
 
 ```powershell
 shurufa-dictmanifest -version rime-ice -base-url https://github.com/neko233-com/shurufa233/releases/latest/download -out .\data\dictionaries\dictionary-manifest.json .\data\dictionaries\zh-CN.rime-ice.json.gz
+```
+
+One-command upstream sync for release dictionaries:
+
+```powershell
+shurufa-dictsync -preset rime-ice-source -version rime-ice-2026.07.05 -base-url https://github.com/neko233-com/shurufa233/releases/latest/download
+```
+
+For China-region GitHub access, pass one or more clone mirrors before the
+canonical GitHub URL fallback:
+
+```powershell
+shurufa-dictsync -preset rime-ice-source -mirror-url "https://ghproxy.example/{url}" -mirror-url "https://git.example/{repo}.git"
 ```
 
 ## Native Profile Tool

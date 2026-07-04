@@ -90,6 +90,7 @@ function Get-ArtifactRole {
     "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa-imecli\.exe$" { return "cli" }
     "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa-dictimport\.exe$" { return "dictimport" }
     "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa-dictmanifest\.exe$" { return "dictmanifest" }
+    "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa-dictsync\.exe$" { return "dictsync" }
     "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa_core\.dll$" { return "go-core" }
     "^apps\\settings\\dist\\index\.html$" { return "settings-ui" }
     "^scripts\\install-windows\.ps1$" { return "installer" }
@@ -119,7 +120,8 @@ foreach ($NativeArch in $Arch) {
     (Join-Path $GoOut "shurufa-daemon.exe"),
     (Join-Path $GoOut "shurufa-imecli.exe"),
     (Join-Path $GoOut "shurufa-dictimport.exe"),
-    (Join-Path $GoOut "shurufa-dictmanifest.exe")
+    (Join-Path $GoOut "shurufa-dictmanifest.exe"),
+    (Join-Path $GoOut "shurufa-dictsync.exe")
   )
   $missing = @($required | Where-Object { -not (Test-Path $_) })
   if ($missing.Count -gt 0) {
@@ -144,6 +146,7 @@ foreach ($NativeArch in $Arch) {
   Copy-RequiredFile -Source (Join-Path $GoOut "shurufa-imecli.exe") -Destination (Join-Path $Stage "build\windows\go-$GoArch\shurufa-imecli.exe")
   Copy-RequiredFile -Source (Join-Path $GoOut "shurufa-dictimport.exe") -Destination (Join-Path $Stage "build\windows\go-$GoArch\shurufa-dictimport.exe")
   Copy-RequiredFile -Source (Join-Path $GoOut "shurufa-dictmanifest.exe") -Destination (Join-Path $Stage "build\windows\go-$GoArch\shurufa-dictmanifest.exe")
+  Copy-RequiredFile -Source (Join-Path $GoOut "shurufa-dictsync.exe") -Destination (Join-Path $Stage "build\windows\go-$GoArch\shurufa-dictsync.exe")
 
   $CoreSource = Join-Path $GoOut "shurufa_core.dll"
   if (Test-Path $CoreSource) {
@@ -162,10 +165,12 @@ foreach ($NativeArch in $Arch) {
   Copy-RequiredFile -Source (Join-Path $Root "docs\windows.md") -Destination (Join-Path $Stage "docs\windows.md")
   Copy-RequiredFile -Source (Join-Path $Root "docs\abi.md") -Destination (Join-Path $Stage "docs\abi.md")
   Copy-RequiredFile -Source (Join-Path $Root "docs\ipc.md") -Destination (Join-Path $Stage "docs\ipc.md")
+  Copy-RequiredFile -Source (Join-Path $Root "docs\dictionaries.md") -Destination (Join-Path $Stage "docs\dictionaries.md")
   $DictionarySource = Join-Path $Root "data\dictionaries"
   if (Test-Path $DictionarySource) {
     New-Item -ItemType Directory -Force (Join-Path $Stage "data\dictionaries") | Out-Null
     Copy-Item -Force (Join-Path $DictionarySource "*.json") (Join-Path $Stage "data\dictionaries")
+    Copy-Item -Force (Join-Path $DictionarySource "*.json.gz") (Join-Path $Stage "data\dictionaries") -ErrorAction SilentlyContinue
   }
 
   $artifacts = [System.Collections.Generic.List[object]]::new()

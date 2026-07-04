@@ -12,6 +12,7 @@ type DictionarySourcePreset struct {
 	MirrorBaseURLs []string              `json:"mirrorBaseUrls,omitempty"`
 	RawSources     []DictionaryRawSource `json:"rawSources,omitempty"`
 	ConvertCommand string                `json:"convertCommand,omitempty"`
+	SyncCommand    string                `json:"syncCommand,omitempty"`
 }
 
 type DictionaryRawSource struct {
@@ -44,6 +45,7 @@ var builtinDictionarySources = []DictionarySourcePreset{
 			{Label: "luna_pinyin.dict.yaml", URL: "https://raw.githubusercontent.com/rime/rime-luna-pinyin/master/luna_pinyin.dict.yaml", Role: "dictionary"},
 		},
 		ConvertCommand: `shurufa-dictimport -language zh-CN -version luna-pinyin -source rime-luna-pinyin -out data\dictionaries\zh-CN.luna-pinyin.json path\to\luna_pinyin.dict.yaml`,
+		SyncCommand:    `shurufa-dictsync -preset rime-luna-source -version luna-pinyin-YYYY.MM.DD`,
 	},
 	{
 		ID:          "rime-ice-source",
@@ -58,6 +60,7 @@ var builtinDictionarySources = []DictionarySourcePreset{
 			{Label: "opencc/emoji.txt", URL: "https://raw.githubusercontent.com/iDvel/rime-ice/main/opencc/emoji.txt", Role: "opencc-emoji"},
 		},
 		ConvertCommand: `shurufa-dictimport -language zh-CN -version rime-ice -source rime-ice -missing-imports=warn -out data\dictionaries\zh-CN.rime-ice.json.gz path\to\rime-ice\rime_ice.dict.yaml`,
+		SyncCommand:    `shurufa-dictsync -preset rime-ice-source -version rime-ice-YYYY.MM.DD`,
 	},
 	{
 		ID:          "rime-emoji-source",
@@ -71,6 +74,7 @@ var builtinDictionarySources = []DictionarySourcePreset{
 			{Label: "opencc/emoji_category.txt", URL: "https://raw.githubusercontent.com/rime/rime-emoji/master/opencc/emoji_category.txt", Role: "opencc-emoji"},
 		},
 		ConvertCommand: `shurufa-dictimport -language zh-CN -version rime-emoji -source rime-emoji -out data\dictionaries\zh-CN.rime-emoji.json path\to\rime-emoji\opencc\emoji_word.txt`,
+		SyncCommand:    `shurufa-dictsync -preset rime-emoji-source -version rime-emoji-YYYY.MM.DD`,
 	},
 }
 

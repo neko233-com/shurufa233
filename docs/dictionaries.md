@@ -39,6 +39,62 @@ the generated shurufa233 manifest/artifacts to a user-controlled mirror or CDN.
 Put that mirror in `mirrorBaseUrls`; the daemon tries mirror dictionary URLs
 before falling back to the canonical artifact URL.
 
+## One-Command Upstream Sync
+
+`shurufa-dictsync` wraps the normal Rime release workflow so dictionary updates
+do not depend on manually cloning repositories and stitching commands together.
+It is a pure Go tool, ships in the Windows package, and does not require Visual
+Studio on machines that only refresh dictionaries.
+
+Default Rime Ice sync:
+
+```powershell
+shurufa-dictsync `
+  -preset rime-ice-source `
+  -version rime-ice-2026.07.05 `
+  -base-url https://github.com/neko233-com/shurufa233/releases/latest/download
+```
+
+The command clones or updates the upstream repository under
+`.cache/dictionaries`, converts the preset's known source files with
+`shurufa-dictimport`, records the exact upstream commit, and writes
+`data/dictionaries/dictionary-manifest.json` with `shurufa-dictmanifest`.
+For Rime Ice, the preset converts `rime_ice.dict.yaml`, `symbols_v.yaml`, and
+`opencc/emoji.txt` together, so imported OpenCC emoji rows can reuse readings
+from the main dictionary in the same conversion pass.
+
+Useful sync flags:
+
+- `-preset`: `rime-ice-source`, `rime-luna-source`, or `rime-emoji-source`.
+- `-ref`: pin a branch, tag, or commit before conversion.
+- `-workdir`: choose where upstream Git checkouts are cached.
+- `-out-dir`: choose where generated `.json.gz` dictionaries are written.
+- `-manifest`: choose the generated manifest path.
+- `-mirror-url`: add a clone mirror before canonical GitHub fallback. Repeat it
+  for multiple mirrors.
+- `-skip-pull`: reuse an existing checkout for offline or audited builds.
+
+Mirror templates can use `{url}` for the canonical clone URL and `{repo}` for
+the `owner/repo` slug:
+
+```powershell
+shurufa-dictsync `
+  -preset rime-ice-source `
+  -mirror-url "https://ghproxy.example/{url}" `
+  -mirror-url "https://git.example/{repo}.git"
+```
+
+The generated manifest still keeps the canonical upstream homepage and commit
+as provenance; mirrors are transport accelerators, not source-of-truth metadata.
+After checking licenses and publishing the generated `.json.gz` plus
+`dictionary-manifest.json` to a GitHub Release or CDN, end users can install the
+hot update from the settings UI, daemon endpoints, or:
+
+```powershell
+shurufa-imecli update-check
+shurufa-imecli update-apply
+```
+
 ## Rime Import
 
 Rime dictionaries usually use `.dict.yaml` files with a YAML header ending in
