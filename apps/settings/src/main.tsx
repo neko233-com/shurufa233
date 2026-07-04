@@ -11,6 +11,7 @@ import {
   FileUp,
   Keyboard,
   Palette,
+  Plus,
   RotateCcw,
   Save,
   SlidersHorizontal,
@@ -19,6 +20,7 @@ import {
   RefreshCw,
   Gauge,
   Target,
+  Trash2,
 } from "lucide-react";
 import "./styles.css";
 
@@ -83,6 +85,22 @@ type WordbookEntry = {
   reading: string;
   text: string;
   score: number;
+};
+
+type PhraseEntry = {
+  reading: string;
+  text: string;
+  kind?: string;
+  source?: string;
+  comment?: string;
+  weight?: number;
+};
+
+type PhraseResponse = {
+  phrases: PhraseEntry[];
+  entries?: PhraseEntry[];
+  count: number;
+  updatedAt: string;
 };
 
 type Candidate = {
@@ -324,7 +342,7 @@ function percentile(values: number[], ratio: number) {
 }
 
 function extractTypingProbe(input: string) {
-  const match = input.match(/[a-zA-Z]{1,32}$/);
+  const match = input.match(/\/?[a-zA-Z]{1,32}$/);
   return match ? match[0].toLowerCase() : "";
 }
 
@@ -351,6 +369,12 @@ function wordbookEntries(scores: Record<string, number>): WordbookEntry[] {
       };
     })
     .sort((left, right) => right.score - left.score || left.key.localeCompare(right.key));
+}
+
+function phraseEntries(response: PhraseResponse): PhraseEntry[] {
+  return [...(response.phrases ?? response.entries ?? [])].sort(
+    (left, right) => left.reading.localeCompare(right.reading) || left.text.localeCompare(right.text),
+  );
 }
 
 function hydrateConfig(config: Config): Config {
@@ -390,6 +414,16 @@ function App() {
   const [wordbook, setWordbook] = useState<WordbookEntry[]>([]);
   const [wordbookDraft, setWordbookDraft] = useState("{}");
   const [wordbookText, setWordbookText] = useState("未读取");
+  const [phrases, setPhrases] = useState<PhraseEntry[]>([]);
+  const [phraseDraft, setPhraseDraft] = useState(`{
+  "entries": [
+    { "reading": "msd", "text": "马上到！", "weight": 60000 }
+  ]
+}`);
+  const [phraseText, setPhraseText] = useState("未读取");
+  const [phraseReading, setPhraseReading] = useState("msd");
+  const [phraseValue, setPhraseValue] = useState("马上到！");
+  const [phraseWeight, setPhraseWeight] = useState(60000);
   const [error, setError] = useState("");
   const [typingPromptId, setTypingPromptId] = useState(typingPrompts[0].id);
   const [typingText, setTypingText] = useState("");
@@ -405,6 +439,7 @@ function App() {
   useEffect(() => {
     void loadConfig();
     void loadWordbook();
+    void loadPhrases();
   }, []);
 
   useEffect(() => {
@@ -779,6 +814,114 @@ function App() {
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = "shurufa233-user-wordbook.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadPhrases() {
+    try {
+      const res = await fetch(`${apiBase}/phrases`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as PhraseResponse;
+      const entries = phraseEntries(data);
+      setPhrases(entries);
+      setPhraseDraft(JSON.stringify({ entries }, null, 2));
+      setPhraseText(`${data.count ?? entries.length} 条固定短语`);
+      setError("");
+    } catch (err) {
+      setPhraseText("读取失败");
+      setError(err instanceof Error ? err.message : "phrases load failed");
+    }
+  }
+
+  async function savePhraseEntries(entries: PhraseEntry[], merge: boolean, statusText: string) {
+    const res = await fetch(`${apiBase}/phrases`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entries, merge }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = (await res.json()) as PhraseResponse;
+    const nextEntries = phraseEntries(data);
+    setPhrases(nextEntries);
+    setPhraseDraft(JSON.stringify({ entries: nextEntries }, null, 2));
+    setPhraseText(`${statusText} ${data.count ?? nextEntries.length} 条`);
+    setError("");
+    return nextEntries;
+  }
+
+  async function addPhrase() {
+    const reading = phraseReading.trim().toLowerCase();
+    const text = phraseValue.trim();
+    if (!reading || !text) {
+      setPhraseText("需要编码和短语");
+      return;
+    }
+    try {
+      await savePhraseEntries([{ reading, text, weight: phraseWeight }], true, "已保存");
+      setPreview(reading);
+      void runPreview(reading);
+    } catch (err) {
+      setPhraseText("保存失败");
+      setError(err instanceof Error ? err.message : "phrase add failed");
+    }
+  }
+
+  async function importPhrases(merge: boolean) {
+    try {
+      const parsed = JSON.parse(phraseDraft) as PhraseEntry[] | { entries?: PhraseEntry[]; phrases?: PhraseEntry[] };
+      const entries = Array.isArray(parsed) ? parsed : parsed.entries ?? parsed.phrases ?? [];
+      const nextEntries = await savePhraseEntries(entries, merge, merge ? "已合并" : "已替换");
+      if (nextEntries.length > 0) {
+        setPreview(nextEntries[0].reading);
+        void runPreview(nextEntries[0].reading);
+      }
+    } catch (err) {
+      setPhraseText("导入失败");
+      setError(err instanceof Error ? err.message : "phrase import failed");
+    }
+  }
+
+  async function deletePhrase(entry: PhraseEntry) {
+    try {
+      const key = `${entry.reading}|${entry.text}`;
+      const res = await fetch(`${apiBase}/phrases?key=${encodeURIComponent(key)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as PhraseResponse;
+      const nextEntries = phraseEntries(data);
+      setPhrases(nextEntries);
+      setPhraseDraft(JSON.stringify({ entries: nextEntries }, null, 2));
+      setPhraseText(`剩余 ${data.count ?? nextEntries.length} 条`);
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setPhraseText("删除失败");
+      setError(err instanceof Error ? err.message : "phrase delete failed");
+    }
+  }
+
+  async function clearPhrases() {
+    if (!window.confirm("清空所有固定短语？")) return;
+    try {
+      const res = await fetch(`${apiBase}/phrases`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      setPhrases([]);
+      setPhraseDraft("{\n  \"entries\": []\n}");
+      setPhraseText("已清空");
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setPhraseText("清空失败");
+      setError(err instanceof Error ? err.message : "phrase clear failed");
+    }
+  }
+
+  function exportPhrases() {
+    const blob = new Blob([JSON.stringify({ entries: phrases }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "shurufa233-user-phrases.json";
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -1192,6 +1335,88 @@ function App() {
                 合并导入
               </button>
               <button className="secondary danger" onClick={clearWordbook}>
+                清空
+              </button>
+            </div>
+          </section>
+
+          <section className="panel phrasePanel">
+            <div className="panelHeader">
+              <h2>固定短语</h2>
+              <span>{phraseText}</span>
+            </div>
+            <div className="phraseComposer">
+              <label className="field">
+                <span>编码</span>
+                <input value={phraseReading} onChange={(event) => setPhraseReading(event.target.value)} />
+              </label>
+              <label className="field phraseTextField">
+                <span>短语</span>
+                <input value={phraseValue} onChange={(event) => setPhraseValue(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>权重</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={99999}
+                  value={phraseWeight}
+                  onChange={(event) => setPhraseWeight(Number(event.target.value))}
+                />
+              </label>
+              <button className="primary phraseAddButton" onClick={() => void addPhrase()}>
+                <Plus size={18} />
+                添加
+              </button>
+            </div>
+            <div className="phraseList">
+              {phrases.slice(0, 8).map((entry) => (
+                <div className="phraseRow" key={`${entry.reading}|${entry.text}`}>
+                  <button
+                    className="phrasePreviewButton"
+                    onClick={() => {
+                      setPreview(entry.reading);
+                      void runPreview(entry.reading);
+                    }}
+                  >
+                    <strong>{entry.text}</strong>
+                    <span>
+                      {entry.reading} · {entry.weight ?? 50000}
+                    </span>
+                  </button>
+                  <button className="smallButton" title="删除短语" onClick={() => void deletePhrase(entry)}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              {phrases.length === 0 && <div className="emptyWordbook">暂无固定短语</div>}
+            </div>
+            <label className="field">
+              <span>批量 JSON</span>
+              <textarea
+                className="wordbookDraft phraseDraft"
+                spellCheck={false}
+                value={phraseDraft}
+                onChange={(event) => setPhraseDraft(event.target.value)}
+              />
+            </label>
+            <div className="rowControls">
+              <button className="secondary" onClick={() => void loadPhrases()}>
+                <RotateCcw size={18} />
+                刷新
+              </button>
+              <button className="secondary" onClick={exportPhrases}>
+                <FileDown size={18} />
+                导出
+              </button>
+              <button className="secondary" onClick={() => void importPhrases(true)}>
+                <FileUp size={18} />
+                合并导入
+              </button>
+              <button className="secondary" onClick={() => void importPhrases(false)}>
+                替换
+              </button>
+              <button className="secondary danger" onClick={() => void clearPhrases()}>
                 清空
               </button>
             </div>

@@ -498,6 +498,83 @@ h2 {
   border-color: var(--accent);
 }
 
+.phrasePanel {
+  background:
+    linear-gradient(180deg, #ffffff, #fbfdff 74%),
+    #ffffff;
+}
+
+.phraseComposer {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.7fr) minmax(160px, 1.6fr) minmax(92px, 0.7fr) auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.phraseComposer .field {
+  margin-bottom: 0;
+}
+
+.phraseTextField {
+  min-width: 0;
+}
+
+.phraseAddButton {
+  min-width: 88px;
+}
+
+.phraseList {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.phraseRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  border: 1px solid #e1e7f0;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 7px 8px 7px 10px;
+}
+
+.phrasePreviewButton {
+  display: grid;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #111827;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.phrasePreviewButton strong,
+.phrasePreviewButton span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phrasePreviewButton strong {
+  font-size: 14px;
+}
+
+.phrasePreviewButton span {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.phraseDraft {
+  min-height: 118px;
+}
+
 .candidatePreviewShell {
   display: grid;
   place-items: start;
@@ -1033,6 +1110,14 @@ h2 {
 
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .phraseComposer {
+    grid-template-columns: 1fr;
+  }
+
+  .phraseAddButton {
+    width: 100%;
   }
 
   .metricsGrid {
