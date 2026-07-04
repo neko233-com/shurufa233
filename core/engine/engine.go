@@ -40,6 +40,7 @@ func DefaultConfig() Config {
 		DoublePinyin: false,
 		Language:     "zh-CN",
 		Mode:         "zh",
+		Punctuation:  "full",
 		Skin: Skin{
 			FontFamily:    "Microsoft YaHei UI",
 			FontSize:      15,

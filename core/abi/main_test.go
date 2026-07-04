@@ -59,6 +59,25 @@ func TestNewEngineLoadsConfigForFuzzyInitials(t *testing.T) {
 	}
 }
 
+func TestLoadConfigKeepsHalfWidthPunctuation(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("SHURUFA233_CONFIG", configPath)
+	config := engine.DefaultConfig()
+	config.Punctuation = " HALF "
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := loadConfig()
+	if got.Punctuation != "half" {
+		t.Fatalf("punctuation = %q, want half", got.Punctuation)
+	}
+}
+
 func TestPersistUserScoresAsync(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "user-scores.json")
 	t.Setenv("SHURUFA233_USER_SCORES", path)

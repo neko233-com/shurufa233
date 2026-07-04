@@ -981,6 +981,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 		config.Mode = defaults.Mode
 	}
 	config.Mode = normalizeModeValue(config.Mode, defaults.Mode)
+	config.Punctuation = normalizePunctuationValue(config.Punctuation, defaults.Punctuation)
 	if config.Skin.FontFamily == "" {
 		config.Skin = defaults.Skin
 	}
@@ -1040,6 +1041,18 @@ func normalizeModeValue(mode string, fallback string) string {
 	case "zh", "en":
 		return strings.ToLower(strings.TrimSpace(mode))
 	default:
+		return fallback
+	}
+}
+
+func normalizePunctuationValue(mode string, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "full", "half":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		if fallback == "" {
+			return "full"
+		}
 		return fallback
 	}
 }

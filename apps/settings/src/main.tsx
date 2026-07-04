@@ -35,6 +35,7 @@ type Config = {
   doublePinyin: boolean;
   language: string;
   mode: "zh" | "en";
+  punctuation: "full" | "half";
   skin: Skin;
   update: UpdateConfig;
 };
@@ -98,6 +99,7 @@ const defaultConfig: Config = {
   doublePinyin: false,
   language: "zh-CN",
   mode: "zh",
+  punctuation: "full",
   skin: {
     fontFamily: "Microsoft YaHei UI",
     fontSize: 15,
@@ -486,6 +488,20 @@ function App() {
               </button>
               <button className={config.mode === "en" ? "selected" : ""} onClick={() => setConfig({ ...config, mode: "en" })}>
                 English
+              </button>
+            </div>
+            <div className="segmented">
+              <button
+                className={(config.punctuation ?? "full") === "full" ? "selected" : ""}
+                onClick={() => setConfig({ ...config, punctuation: "full" })}
+              >
+                中文标点
+              </button>
+              <button
+                className={config.punctuation === "half" ? "selected" : ""}
+                onClick={() => setConfig({ ...config, punctuation: "half" })}
+              >
+                半角标点
               </button>
             </div>
             <label className="field">

@@ -8,6 +8,7 @@ type Config struct {
 	DoublePinyin  bool     `json:"doublePinyin"`
 	Language      string   `json:"language"`
 	Mode          string   `json:"mode"`
+	Punctuation   string   `json:"punctuation"`
 	Skin          Skin     `json:"skin"`
 	Update        Update   `json:"update"`
 }

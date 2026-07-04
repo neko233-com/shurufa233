@@ -4,6 +4,7 @@
   "doublePinyin": false,
   "language": "zh-CN",
   "mode": "zh",
+  "punctuation": "full",
   "skin": {
     "fontFamily": "Microsoft YaHei UI",
     "fontSize": 15,

@@ -134,6 +134,28 @@ func TestNormalizeConfigRejectsInvalidSkinColors(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigKeepsHalfWidthPunctuation(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.Punctuation = " HALF "
+
+	got := normalizeConfig(next)
+
+	if got.Punctuation != "half" {
+		t.Fatalf("punctuation = %q, want half", got.Punctuation)
+	}
+}
+
+func TestNormalizeConfigDefaultsInvalidPunctuation(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.Punctuation = "broken"
+
+	got := normalizeConfig(next)
+
+	if got.Punctuation != engine.DefaultConfig().Punctuation {
+		t.Fatalf("punctuation = %q, want %q", got.Punctuation, engine.DefaultConfig().Punctuation)
+	}
+}
+
 func TestImeCandidatesReturnsMetadataAndPagedRows(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.MaxCandidates = 42

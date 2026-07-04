@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/neko233-com/shurufa233/core/engine"
 )
@@ -44,6 +45,12 @@ func loadConfig() engine.Config {
 	}
 	if config.Mode == "" {
 		config.Mode = engine.DefaultConfig().Mode
+	}
+	switch strings.ToLower(strings.TrimSpace(config.Punctuation)) {
+	case "half":
+		config.Punctuation = "half"
+	default:
+		config.Punctuation = engine.DefaultConfig().Punctuation
 	}
 	return config
 }

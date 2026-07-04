@@ -1698,6 +1698,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     clientId_ = clientId;
     session_ = g_core.createSession();
     RefreshAsciiModeFromCore();
+    RefreshPunctuationModeFromConfig();
 
     HRESULT hr = threadMgr_->QueryInterface(IID_ITfKeystrokeMgr, reinterpret_cast<void **>(&keyMgr_));
     if (SUCCEEDED(hr) && keyMgr_) {
@@ -1749,6 +1750,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (shiftDown_ && !IsShiftKey(key)) {
       shiftToggleCandidate_ = false;
     }
+    RefreshPunctuationModeFromConfig();
     *eaten = ShouldEatKey(key);
     return S_OK;
   }
@@ -1761,6 +1763,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (HasSystemModifier()) {
       return S_OK;
     }
+    RefreshPunctuationModeFromConfig();
     if (!session_ || !ShouldEatKey(key)) {
       return S_OK;
     }
@@ -2033,7 +2036,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return cachedCandidateCount_ > pageOffset_ + quickIndex;
     }
     if (!asciiMode_ && IsChinesePunctuationKey(key)) {
-      return true;
+      return punctuationFullWidth_ || cachedCandidateCount_ > 0 || !rawBuffer_.empty();
     }
     if (IsCandidateNumberKey(key)) {
       const int relativeIndex = CandidateIndexFromKey(key);
@@ -2250,6 +2253,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
   std::wstring ChinesePunctuationForKey(WPARAM key) {
+    if (!punctuationFullWidth_) {
+      return HalfWidthPunctuationForKey(key);
+    }
     const bool shifted = IsShiftPressed();
     switch (key) {
       case VK_OEM_COMMA:
@@ -2309,6 +2315,159 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
   }
 
+  std::wstring HalfWidthPunctuationForKey(WPARAM key) const {
+    const bool shifted = IsShiftPressed();
+    switch (key) {
+      case VK_OEM_COMMA:
+      case L',':
+        return shifted ? L"<" : L",";
+      case VK_OEM_PERIOD:
+      case L'.':
+        return shifted ? L">" : L".";
+      case VK_OEM_1:
+      case L';':
+        return shifted ? L":" : L";";
+      case VK_OEM_2:
+      case L'/':
+        return shifted ? L"?" : L"/";
+      case VK_OEM_4:
+      case L'[':
+        return shifted ? L"{" : L"[";
+      case VK_OEM_6:
+      case L']':
+        return shifted ? L"}" : L"]";
+      case VK_OEM_7:
+      case L'\'':
+        return shifted ? L"\"" : L"'";
+      case VK_OEM_MINUS:
+      case L'-':
+        return shifted ? L"_" : L"-";
+      case L'<':
+        return L"<";
+      case L'>':
+        return L">";
+      case L':':
+        return L":";
+      case L'?':
+        return L"?";
+      case L'{':
+        return L"{";
+      case L'}':
+        return L"}";
+      case L'"':
+        return L"\"";
+      case L'1':
+        return shifted ? L"!" : L"";
+      case L'6':
+        return shifted ? L"^" : L"";
+      case L'9':
+        return shifted ? L"(" : L"";
+      case L'0':
+        return shifted ? L")" : L"";
+      default:
+        return L"";
+    }
+  }
+
+  std::wstring ConfigPath() {
+    if (configPathResolved_) {
+      return configPath_;
+    }
+    configPathResolved_ = true;
+    wchar_t overridePath[MAX_PATH]{};
+    DWORD len = GetEnvironmentVariableW(L"SHURUFA233_CONFIG", overridePath, ARRAYSIZE(overridePath));
+    if (len > 0 && len < ARRAYSIZE(overridePath)) {
+      configPath_ = overridePath;
+      return configPath_;
+    }
+    wchar_t appData[MAX_PATH]{};
+    len = GetEnvironmentVariableW(L"APPDATA", appData, ARRAYSIZE(appData));
+    if (len == 0 || len >= ARRAYSIZE(appData)) {
+      return L"";
+    }
+    configPath_ = std::wstring(appData) + L"\\shurufa233\\config.json";
+    return configPath_;
+  }
+
+  static bool SameConfigFileTime(const FILETIME &left, const FILETIME &right) {
+    return left.dwLowDateTime == right.dwLowDateTime &&
+           left.dwHighDateTime == right.dwHighDateTime;
+  }
+
+  static std::string ReadConfigUtf8File(const std::wstring &path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+      return "";
+    }
+    return std::string(std::istreambuf_iterator<char>(file),
+                       std::istreambuf_iterator<char>());
+  }
+
+  static std::string JsonConfigStringField(const std::string &json, const char *field) {
+    const std::string key = std::string("\"") + field + "\"";
+    size_t pos = json.find(key);
+    if (pos == std::string::npos) {
+      return "";
+    }
+    pos = json.find(':', pos + key.size());
+    if (pos == std::string::npos) {
+      return "";
+    }
+    pos = json.find('"', pos + 1);
+    if (pos == std::string::npos) {
+      return "";
+    }
+    std::string out;
+    bool escaped = false;
+    for (size_t i = pos + 1; i < json.size(); ++i) {
+      const char ch = json[i];
+      if (escaped) {
+        out.push_back(ch);
+        escaped = false;
+        continue;
+      }
+      if (ch == '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch == '"') {
+        return out;
+      }
+      out.push_back(ch);
+    }
+    return "";
+  }
+
+  void RefreshPunctuationModeFromConfig() {
+    const std::wstring path = ConfigPath();
+    if (path.empty()) {
+      punctuationFullWidth_ = true;
+      return;
+    }
+    const DWORD now = GetTickCount();
+    if (lastLocalConfigCheckTick_ != 0 && now - lastLocalConfigCheckTick_ < kSkinConfigPollMs) {
+      return;
+    }
+    lastLocalConfigCheckTick_ = now;
+    WIN32_FILE_ATTRIBUTE_DATA attrs{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attrs)) {
+      punctuationFullWidth_ = true;
+      return;
+    }
+    if (hasConfigWriteTime_ && SameConfigFileTime(lastConfigWriteTime_, attrs.ftLastWriteTime)) {
+      return;
+    }
+    const std::string json = ReadConfigUtf8File(path);
+    if (json.empty()) {
+      punctuationFullWidth_ = true;
+      return;
+    }
+    const std::string punctuation = JsonConfigStringField(json, "punctuation");
+    punctuationFullWidth_ = punctuation != "half";
+    lastConfigWriteTime_ = attrs.ftLastWriteTime;
+    hasConfigWriteTime_ = true;
+  }
+
   void RefreshAsciiModeFromCore() {
     if (!session_ || !g_core.mode) {
       asciiMode_ = false;
@@ -2361,6 +2520,12 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   bool shiftToggleCandidate_ = false;
   bool doubleQuoteOpen_ = false;
   bool singleQuoteOpen_ = false;
+  bool punctuationFullWidth_ = true;
+  std::wstring configPath_;
+  bool configPathResolved_ = false;
+  DWORD lastLocalConfigCheckTick_ = 0;
+  FILETIME lastConfigWriteTime_{};
+  bool hasConfigWriteTime_ = false;
   ITfContext *lastContext_ = nullptr;
   CandidateWindow candidateWindow_;
 };

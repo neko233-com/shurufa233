@@ -23,6 +23,11 @@ The background daemon listens on `127.0.0.1:23333`.
 
 The settings UI uses this IPC directly in development. A Wails v3 shell can host the same React bundle and call the same daemon API or proxy these methods through its Go backend.
 
+`GET /config` and `PUT /config` include `punctuation`, which is normalized to
+`full` or `half`. `full` is the default Chinese punctuation mode; `half` keeps
+ASCII punctuation while preserving candidate-first commit behavior during active
+composition.
+
 `GET /ime/mode` returns the current session state, including `mode`.
 
 `POST /ime/mode` body:

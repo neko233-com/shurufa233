@@ -173,7 +173,8 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 - when double pinyin is enabled, the Go core decodes the Xiaohe layout while keeping full-pinyin fallback available
 - full-sentence input can fall back to a scored segmenter that chooses the best dictionary path, including user-learned word scores, instead of the first greedy split, while strong exact phrases still stay ahead
 - space, enter, main-row or numpad number keys, semicolon, apostrophe, brackets, page up/down, home/end, `-`, and `=` operate the visible candidate page
-- Chinese punctuation commits the selected candidate first, then inserts the punctuation; common shifted punctuation such as `!`, `^`, `(`, `)`, and `-` maps to `！`, `……`, `（`, `）`, and `——`, while quote keys alternate paired Chinese quotes `“”` and `‘’`
+- Chinese punctuation commits the selected candidate first, then inserts the punctuation; default `punctuation=full` maps common shifted punctuation such as `!`, `^`, `(`, `)`, and `-` to `！`, `……`, `（`, `）`, and `——`, while quote keys alternate paired Chinese quotes `“”` and `‘’`
+- when `punctuation=half`, punctuation keys use ASCII punctuation; if a candidate or raw pinyin buffer is active, TSF still commits that text first and then appends the half-width punctuation
 - if a raw letter buffer has no candidates, space, enter, or Chinese punctuation commits the raw letters instead of dropping the buffer
 
 Local TSF diagnostics are written to:
@@ -256,7 +257,7 @@ Current skin fields come from the settings UI:
 
 The daemon normalizes skin colors before saving config. Invalid color strings fall back to defaults, and low-contrast candidate text, muted text, or highlighted text is automatically corrected to a readable black/white value. This keeps custom skins from producing an unreadable candidate strip during live typing.
 The native Windows candidate renderer also detects dark skins from the configured surface color, so custom dark themes do not need a special theme id to get dark-mode derived borders, idle candidate backgrounds, and preedit chrome.
-The TSF renderer caches the local config path and checks its timestamp on a short local poll interval so skin changes can take effect quickly, while daemon HTTP skin fallback remains throttled to avoid network waits in the typing hot path.
+The TSF renderer caches the local config path and checks its timestamp on a short local poll interval so skin and punctuation mode changes can take effect quickly, while daemon HTTP skin fallback remains throttled to avoid network waits in the typing hot path.
 Candidate font metrics, spacing, radius, and page controls are scaled from the current Windows DPI so the strip stays readable on 125%/150% displays.
 
 The candidate window is local-only. It does not fetch remote UI assets or send input text to a cloud service.
