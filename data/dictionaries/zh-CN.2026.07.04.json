@@ -1,0 +1,11 @@
+{
+  "language": "zh-CN",
+  "version": "2026.07.04",
+  "entries": [
+    { "reading": "nihao", "text": "你好", "weight": 15000 },
+    { "reading": "shurufa", "text": "输入法", "weight": 13000 },
+    { "reading": "zhongyingwen", "text": "中英文", "weight": 9000 },
+    { "reading": "reci", "text": "热词", "weight": 7600 },
+    { "reading": "ciku", "text": "词库", "weight": 7600 }
+  ]
+}

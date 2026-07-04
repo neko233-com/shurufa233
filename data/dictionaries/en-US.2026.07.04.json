@@ -1,0 +1,8 @@
+{
+  "language": "en-US",
+  "version": "2026.07.04",
+  "entries": [
+    { "reading": "hello", "text": "hello", "weight": 100 },
+    { "reading": "input", "text": "input", "weight": 100 }
+  ]
+}

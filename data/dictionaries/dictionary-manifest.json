@@ -1,0 +1,17 @@
+{
+  "version": "2026.07.04",
+  "channel": "stable",
+  "generatedAt": "2026-07-04T00:00:00Z",
+  "dictionaries": [
+    {
+      "language": "zh-CN",
+      "version": "2026.07.04",
+      "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.2026.07.04.json"
+    },
+    {
+      "language": "en-US",
+      "version": "2026.07.04",
+      "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/en-US.2026.07.04.json"
+    }
+  ]
+}

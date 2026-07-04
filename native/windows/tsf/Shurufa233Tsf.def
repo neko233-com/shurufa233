@@ -1,0 +1,6 @@
+LIBRARY "Shurufa233Tsf"
+EXPORTS
+  DllCanUnloadNow PRIVATE
+  DllGetClassObject PRIVATE
+  DllRegisterServer PRIVATE
+  DllUnregisterServer PRIVATE

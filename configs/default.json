@@ -1,0 +1,23 @@
+{
+  "maxCandidates": 7,
+  "fuzzyInitials": ["zh=z", "ch=c", "sh=s"],
+  "doublePinyin": false,
+  "language": "zh-CN",
+  "mode": "zh",
+  "skin": {
+    "fontFamily": "Microsoft YaHei UI",
+    "fontSize": 15,
+    "accent": "#2563eb",
+    "theme": "system"
+  },
+  "update": {
+    "channel": "stable",
+    "manifestUrls": [
+      "https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json"
+    ],
+    "mirrorBaseUrls": [],
+    "autoCheck": true,
+    "autoApply": false,
+    "installedVersion": "builtin"
+  }
+}

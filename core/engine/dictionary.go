@@ -1,0 +1,45 @@
+package engine
+
+var defaultEntries = []Entry{
+	{Reading: "ni", Text: "你", Weight: 9000},
+	{Reading: "ni", Text: "尼", Weight: 500},
+	{Reading: "hao", Text: "好", Weight: 9000},
+	{Reading: "shi", Text: "是", Weight: 8500},
+	{Reading: "wo", Text: "我", Weight: 8700},
+	{Reading: "men", Text: "们", Weight: 7600},
+	{Reading: "de", Text: "的", Weight: 9800},
+	{Reading: "le", Text: "了", Weight: 9100},
+	{Reading: "zai", Text: "在", Weight: 8800},
+	{Reading: "zhong", Text: "中", Weight: 8200},
+	{Reading: "guo", Text: "国", Weight: 8000},
+	{Reading: "ren", Text: "人", Weight: 8400},
+	{Reading: "ma", Text: "吗", Weight: 7800},
+	{Reading: "ai", Text: "爱", Weight: 7200},
+	{Reading: "shu", Text: "输", Weight: 6000},
+	{Reading: "ru", Text: "入", Weight: 6000},
+	{Reading: "fa", Text: "法", Weight: 6000},
+	{Reading: "wei", Text: "微", Weight: 5600},
+	{Reading: "xin", Text: "信", Weight: 5600},
+	{Reading: "dou", Text: "豆", Weight: 5200},
+	{Reading: "bao", Text: "包", Weight: 5200},
+	{Reading: "nihao", Text: "你好", Weight: 15000},
+	{Reading: "women", Text: "我们", Weight: 14000},
+	{Reading: "zhongguo", Text: "中国", Weight: 13500},
+	{Reading: "shurufa", Text: "输入法", Weight: 13000},
+	{Reading: "weixin", Text: "微信", Weight: 11500},
+	{Reading: "doubao", Text: "豆包", Weight: 11000},
+	{Reading: "rime", Text: "中州韵", Weight: 5000},
+	{Reading: "zhongwen", Text: "中文", Weight: 9500},
+	{Reading: "yingwen", Text: "英文", Weight: 8500},
+	{Reading: "qiehuan", Text: "切换", Weight: 8200},
+	{Reading: "pifu", Text: "皮肤", Weight: 7600},
+	{Reading: "gengxin", Text: "更新", Weight: 7600},
+}
+
+func defaultDictionary() map[string][]Entry {
+	dict := make(map[string][]Entry)
+	for _, entry := range defaultEntries {
+		dict[entry.Reading] = append(dict[entry.Reading], entry)
+	}
+	return dict
+}
