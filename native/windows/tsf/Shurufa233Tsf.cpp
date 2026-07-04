@@ -433,6 +433,7 @@ class CandidateWindow {
     totalCount_ = max(static_cast<int>(candidates_.size()), totalCount);
     composing_ = CompositionText();
     EnsureWindow();
+    RefreshDpi();
     RefreshSkin();
 
     POINT anchor = CaretAnchor();
@@ -458,6 +459,7 @@ class CandidateWindow {
 
   void ShowStatus(const wchar_t *text) {
     EnsureWindow();
+    RefreshDpi();
     RefreshSkin();
     statusText_ = text ? text : L"";
     candidates_.clear();
@@ -486,6 +488,11 @@ class CandidateWindow {
     }
     if (self && message == WM_PAINT) {
       self->Paint(hwnd);
+      return 0;
+    }
+    if (self && message == WM_DPICHANGED) {
+      self->RefreshDpi(LOWORD(wparam));
+      InvalidateRect(hwnd, nullptr, TRUE);
       return 0;
     }
     if (self && message == WM_TIMER && wparam == kStatusTimerId) {
@@ -560,6 +567,7 @@ class CandidateWindow {
     if (hwnd_) {
       DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
       DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
+      RefreshDpi();
     }
   }
 
@@ -680,6 +688,7 @@ class CandidateWindow {
   std::wstring fontFamilyKey_;
   int fontSizeKey_ = 0;
   UINT fontDpiKey_ = 0;
+  UINT dpi_ = 96;
   void *clickOwner_ = nullptr;
   CandidateClickHandler clickHandler_ = nullptr;
   void *selectOwner_ = nullptr;
@@ -695,7 +704,7 @@ class CandidateWindow {
     return ScaledFontSize() + Scale(24);
   }
 
-  UINT CurrentDpi() const {
+  UINT ReadCurrentDpi() const {
     if (hwnd_) {
       const UINT dpi = GetDpiForWindow(hwnd_);
       if (dpi > 0) {
@@ -710,8 +719,18 @@ class CandidateWindow {
     return dpi > 0 ? static_cast<UINT>(dpi) : 96;
   }
 
+  void RefreshDpi(UINT dpi = 0) {
+    const UINT nextDpi = dpi > 0 ? dpi : ReadCurrentDpi();
+    const UINT normalizedDpi = nextDpi > 0 ? nextDpi : 96;
+    if (dpi_ == normalizedDpi) {
+      return;
+    }
+    dpi_ = normalizedDpi;
+    ResetFont();
+  }
+
   int Scale(int value) const {
-    return MulDiv(value, static_cast<int>(CurrentDpi()), 96);
+    return MulDiv(value, static_cast<int>(dpi_), 96);
   }
 
   int ScaledFontSize() const {
@@ -719,7 +738,7 @@ class CandidateWindow {
   }
 
   HFONT EnsureFont() {
-    const UINT dpi = CurrentDpi();
+    const UINT dpi = dpi_;
     if (font_ && fontFamilyKey_ == fontFamily_ && fontSizeKey_ == fontSize_ &&
         fontDpiKey_ == dpi) {
       return font_;
