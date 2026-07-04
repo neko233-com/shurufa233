@@ -168,11 +168,11 @@ Local TSF diagnostics are written to:
 
 ## Input Performance Lab
 
-Native packages include `Shurufa233SmokeEdit.exe`. It is a polished Win32 EDIT-based performance lab rather than a React surface, because it validates the real TSF path used by native Windows apps and latency-sensitive games. It tracks WPM, key events per second, average key-to-text-change latency, IME composition activity, and committed character count.
+Native packages include `Shurufa233SmokeEdit.exe`. It is a polished Win32 EDIT-based esports typing and performance lab rather than a React surface, because it validates the real TSF path used by native Windows apps and latency-sensitive games. It tracks WPM, key events per second, average key-to-text-change latency, IME composition state, committed character count, and text-change events.
 
 Inside SmokeEdit, press `F6` to activate the shurufa233 TSF profile for the current test session and immediately refocus the native edit control. This is intended for local validation and does not change the Windows default input method. Press `F5` to clear the test buffer and reset metrics.
 
-The React/Vite settings app also includes an esports-style typing lab for the browser/settings-panel path. It tracks WPM, CPM, input event rate, average key-to-input latency when key events are available, accuracy, and IME composition activity. This React lab is useful for UI and Wails-hosted settings validation, while `Shurufa233SmokeEdit.exe` remains the authoritative native TSF validation target.
+The React/Vite settings app also includes an esports-style typing lab for the browser/settings-panel path. It tracks WPM, CPM, input event rate, average key-to-input latency when key events are available, accuracy, IME composition activity, and prompt completion progress. This React lab is useful for UI and Wails-hosted settings validation, while `Shurufa233SmokeEdit.exe` remains the authoritative native TSF validation target. Use prompts such as `zan`, `kaixin`, `wuyu`, `shengqi`, and `shengluehao` to verify emoji, kaomoji, and symbol candidates.
 
 ## Agent Input Mode
 

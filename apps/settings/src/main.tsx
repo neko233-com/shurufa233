@@ -194,6 +194,11 @@ const typingPrompts: TypingPrompt[] = [
     name: "电竞短句",
     text: "flash mid peek left hold angle reset tap strafe confirm",
   },
+  {
+    id: "symbols",
+    name: "颜表情候选",
+    text: "zan kaixin wuyu shengqi aixin shengluehao",
+  },
 ];
 
 const defaultTypingMetrics: TypingMetrics = {
@@ -259,6 +264,13 @@ function App() {
   const typingPrompt = useMemo(
     () => typingPrompts.find((prompt) => prompt.id === typingPromptId) ?? typingPrompts[0],
     [typingPromptId],
+  );
+  const typingProgress = useMemo(
+    () =>
+      typingPrompt.text.length > 0
+        ? Math.min(100, (typingText.length / typingPrompt.text.length) * 100)
+        : 0,
+    [typingPrompt.text, typingText.length],
   );
   const accentStyle = useMemo(() => ({ "--accent": config.skin.accent }) as React.CSSProperties, [config.skin.accent]);
   const candidateBarStyle = useMemo(
@@ -763,6 +775,9 @@ function App() {
                 onCompositionEnd={handleCompositionEnd}
                 placeholder="在这里输入上方文本，测试键盘、候选选择、上屏和节奏..."
               />
+              <div className="typingProgress">
+                <span style={{ width: `${typingProgress}%` }} />
+              </div>
             </div>
 
             <div className="metricsGrid">

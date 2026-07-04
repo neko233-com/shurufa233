@@ -10,7 +10,7 @@ namespace {
 
 constexpr wchar_t kClassName[] = L"Shurufa233SmokeEditWindow";
 constexpr UINT_PTR kStatsTimer = 1;
-constexpr int kEditTop = 300;
+constexpr int kEditTop = 332;
 
 const CLSID kClsidTextService = {
     0x3d7b8d06,
@@ -182,6 +182,12 @@ void RoundedFill(HDC dc, RECT rect, COLORREF fill, COLORREF border, int radius) 
   DeleteObject(brush);
 }
 
+void FillSolidRect(HDC dc, RECT rect, COLORREF fill) {
+  HBRUSH brush = CreateSolidBrush(fill);
+  FillRect(dc, &rect, brush);
+  DeleteObject(brush);
+}
+
 void DrawTextLine(HDC dc, const wchar_t *text, RECT rect, HFONT font, COLORREF color,
                   UINT format = DT_SINGLELINE | DT_VCENTER | DT_LEFT) {
   HGDIOBJ oldFont = SelectObject(dc, font);
@@ -192,11 +198,20 @@ void DrawTextLine(HDC dc, const wchar_t *text, RECT rect, HFONT font, COLORREF c
 }
 
 void DrawMetric(HDC dc, RECT rect, const wchar_t *label, const wchar_t *value, COLORREF accent) {
-  RoundedFill(dc, rect, Rgb(255, 255, 255), Rgb(218, 225, 235), 14);
-  RECT labelRect{rect.left + 14, rect.top + 8, rect.right - 14, rect.top + 28};
-  RECT valueRect{rect.left + 14, rect.top + 28, rect.right - 14, rect.bottom - 8};
+  RoundedFill(dc, rect, Rgb(255, 255, 255), Rgb(216, 225, 238), 14);
+  RECT accentRect{rect.left + 12, rect.top + 12, rect.left + 17, rect.bottom - 12};
+  RoundedFill(dc, accentRect, accent, accent, 5);
+  RECT labelRect{rect.left + 28, rect.top + 8, rect.right - 14, rect.top + 30};
+  RECT valueRect{rect.left + 28, rect.top + 30, rect.right - 14, rect.bottom - 8};
   DrawTextLine(dc, label, labelRect, g_bodyFont, Rgb(91, 103, 122));
   DrawTextLine(dc, value, valueRect, g_titleFont, accent);
+}
+
+void DrawBadge(HDC dc, RECT rect, const wchar_t *text, COLORREF fill, COLORREF border,
+               COLORREF color) {
+  RoundedFill(dc, rect, fill, border, 16);
+  DrawTextLine(dc, text, rect, g_bodyFont, color,
+               DT_SINGLELINE | DT_VCENTER | DT_CENTER);
 }
 
 void Paint(HWND hwnd) {
@@ -205,17 +220,30 @@ void Paint(HWND hwnd) {
   RECT client{};
   GetClientRect(hwnd, &client);
 
-  HBRUSH bg = CreateSolidBrush(Rgb(246, 248, 252));
+  HBRUSH bg = CreateSolidBrush(Rgb(243, 246, 251));
   FillRect(dc, &client, bg);
   DeleteObject(bg);
 
-  RECT hero{24, 20, client.right - 24, 104};
-  RoundedFill(dc, hero, Rgb(20, 29, 43), Rgb(42, 55, 77), 18);
-  RECT title{hero.left + 22, hero.top + 12, hero.right - 22, hero.top + 42};
-  DrawTextLine(dc, L"shurufa233 输入性能验证", title, g_titleFont, Rgb(255, 255, 255));
-  RECT subtitle{hero.left + 22, hero.top + 48, hero.right - 22, hero.bottom - 12};
-  DrawTextLine(dc, L"Native Win32 EDIT / TSF path / Ctrl+Shift coexistence / low-latency typing smoke",
-               subtitle, g_bodyFont, Rgb(170, 231, 218));
+  RECT hero{24, 20, client.right - 24, 132};
+  RoundedFill(dc, hero, Rgb(18, 27, 42), Rgb(44, 57, 80), 18);
+  RECT heroAccent{hero.left, hero.top, hero.left + 7, hero.bottom};
+  FillSolidRect(dc, heroAccent, Rgb(37, 99, 235));
+  RECT title{hero.left + 26, hero.top + 14, hero.right - 230, hero.top + 46};
+  DrawTextLine(dc, L"shurufa233 电竞输入性能实验室", title, g_titleFont, Rgb(255, 255, 255));
+  RECT subtitle{hero.left + 26, hero.top + 50, hero.right - 26, hero.top + 78};
+  DrawTextLine(dc, L"真实 Win32 EDIT + TSF 输入链路，验证键盘触发、候选上屏、Ctrl+Shift 共存和低延迟节奏",
+               subtitle, g_bodyFont, Rgb(191, 219, 254));
+  RECT badges{hero.left + 26, hero.top + 84, hero.right - 26, hero.bottom - 14};
+  RECT badge{badges.left, badges.top, badges.left + 116, badges.bottom};
+  DrawBadge(dc, badge, L"F5 重置", Rgb(30, 41, 59), Rgb(71, 85, 105), Rgb(226, 232, 240));
+  OffsetRect(&badge, 126, 0);
+  DrawBadge(dc, badge, L"F6 激活本输入法", Rgb(30, 41, 59), Rgb(71, 85, 105),
+            Rgb(226, 232, 240));
+  RECT statusBadge{hero.right - 206, hero.top + 18, hero.right - 24, hero.top + 48};
+  DrawBadge(dc, statusBadge, g_shurufaActive ? L"shurufa233 active" : L"Microsoft 可共存",
+            g_shurufaActive ? Rgb(6, 95, 70) : Rgb(51, 65, 85),
+            g_shurufaActive ? Rgb(52, 211, 153) : Rgb(100, 116, 139),
+            Rgb(240, 253, 250));
 
   LARGE_INTEGER now = Now();
   const double elapsed = g_metrics.started ? std::max(0.001, MsSince(g_metrics.startedAt, now) / 1000.0) : 0.0;
@@ -226,10 +254,10 @@ void Paint(HWND hwnd) {
                                 : 0.0;
 
   wchar_t value[64]{};
-  const int cardTop = 120;
-  const int cardHeight = 70;
+  const int cardTop = 150;
+  const int cardHeight = 74;
   const int gap = 12;
-  const int cardWidth = std::max(130, (static_cast<int>(client.right) - 48 - gap * 4) / 5);
+  const int cardWidth = std::max(120, (static_cast<int>(client.right) - 48 - gap * 5) / 6);
   RECT card{24, cardTop, 24 + cardWidth, cardTop + cardHeight};
 
   StringCchPrintfW(value, ARRAYSIZE(value), L"%.1f", wpm);
@@ -242,21 +270,27 @@ void Paint(HWND hwnd) {
   DrawMetric(dc, card, L"Avg latency", value, Rgb(124, 58, 237));
   OffsetRect(&card, cardWidth + gap, 0);
   StringCchPrintfW(value, ARRAYSIZE(value), L"%d", g_metrics.imeStarts - g_metrics.imeEnds);
-  DrawMetric(dc, card, L"IME composing", value, Rgb(217, 119, 6));
+  DrawMetric(dc, card, L"IME state", value, Rgb(217, 119, 6));
   OffsetRect(&card, cardWidth + gap, 0);
   StringCchPrintfW(value, ARRAYSIZE(value), L"%d", g_metrics.textLength);
   DrawMetric(dc, card, L"Chars", value, Rgb(220, 38, 38));
+  OffsetRect(&card, cardWidth + gap, 0);
+  StringCchPrintfW(value, ARRAYSIZE(value), L"%d", g_metrics.changes);
+  DrawMetric(dc, card, L"Text changes", value, Rgb(8, 145, 178));
 
-  RECT editFrame{24, 222, client.right - 24, client.bottom - 24};
+  RECT editFrame{24, 248, client.right - 24, client.bottom - 24};
   RoundedFill(dc, editFrame, Rgb(255, 255, 255), Rgb(211, 219, 232), 16);
   RECT editTitle{editFrame.left + 18, editFrame.top + 12, editFrame.right - 18, editFrame.top + 42};
-  DrawTextLine(dc, L"输入区", editTitle, g_titleFont, Rgb(31, 41, 55));
-  RECT hint{editFrame.left + 100, editFrame.top + 14, editFrame.right - 18, editFrame.top + 40};
-  DrawTextLine(dc, L"F5 reset / F6 activate IME", hint, g_bodyFont, Rgb(100, 116, 139),
+  DrawTextLine(dc, L"原生输入轨道", editTitle, g_titleFont, Rgb(31, 41, 55));
+  RECT hint{editFrame.left + 128, editFrame.top + 14, editFrame.right - 18, editFrame.top + 40};
+  DrawTextLine(dc, L"建议测试：nihao / shurufa / zan / kaixin / 12345 连续高速输入",
+               hint, g_bodyFont, Rgb(100, 116, 139),
                DT_SINGLELINE | DT_VCENTER | DT_RIGHT);
   RECT imeHint{editFrame.left + 18, editFrame.top + 44, editFrame.right - 18, editFrame.top + 70};
   DrawTextLine(dc, g_imeStatus, imeHint, g_bodyFont,
                g_shurufaActive ? Rgb(5, 150, 105) : Rgb(100, 116, 139));
+  RECT divider{editFrame.left + 18, editFrame.top + 78, editFrame.right - 18, editFrame.top + 79};
+  FillSolidRect(dc, divider, Rgb(229, 235, 245));
 
   EndPaint(hwnd, &ps);
 }

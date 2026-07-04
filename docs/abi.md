@@ -55,6 +55,6 @@ Each row is:
 display_index<TAB>text<TAB>reading<TAB>score<TAB>kind<TAB>source
 ```
 
-`kind` and `source` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, and `phrase`; renderers must tolerate older four-column payloads.
+`kind` and `source` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, and `phrase`; renderers must tolerate older four-column payloads. Built-in examples include `zan` -> `👍` (`emoji`), `kaixin` -> `ヽ(・∀・)ﾉ` (`kaomoji`), and `shengluehao` -> `……` (`symbol`).
 
 The Windows glue calls `ShurufaFree` after copying the returned payload. Older per-candidate getters remain available as a compatibility fallback.

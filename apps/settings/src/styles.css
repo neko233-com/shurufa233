@@ -591,6 +591,22 @@ h2 {
   font-size: 18px;
 }
 
+.typingProgress {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #eef4fb;
+}
+
+.typingProgress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #14b8a6);
+  transition: width 120ms ease;
+}
+
 .metricsGrid {
   display: grid;
   grid-template-columns: repeat(6, minmax(116px, 1fr));

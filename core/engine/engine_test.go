@@ -126,18 +126,32 @@ func TestImportUserScoresAffectsRanking(t *testing.T) {
 
 func TestBuiltinEmojiCandidateMetadata(t *testing.T) {
 	e := New(DefaultConfig())
-	state := e.Preview("kaixin")
-	found := false
-	for _, candidate := range state.Candidates {
-		if candidate.Text == "ヽ(・∀・)ﾉ" {
-			found = true
-			if candidate.Kind != "kaomoji" || candidate.Source != "builtin-symbols" {
-				t.Fatalf("expected kaomoji metadata, got %#v", candidate)
+
+	tests := []struct {
+		reading string
+		text    string
+		kind    string
+	}{
+		{reading: "kaixin", text: "ヽ(・∀・)ﾉ", kind: "kaomoji"},
+		{reading: "zan", text: "👍", kind: "emoji"},
+		{reading: "wuyu", text: "=_=", kind: "kaomoji"},
+		{reading: "shengluehao", text: "……", kind: "symbol"},
+	}
+
+	for _, tt := range tests {
+		state := e.Preview(tt.reading)
+		found := false
+		for _, candidate := range state.Candidates {
+			if candidate.Text == tt.text {
+				found = true
+				if candidate.Kind != tt.kind || candidate.Source != "builtin-symbols" {
+					t.Fatalf("expected %s metadata for %q, got %#v", tt.kind, tt.text, candidate)
+				}
 			}
 		}
-	}
-	if !found {
-		t.Fatalf("expected builtin kaomoji candidate, got %#v", state.Candidates)
+		if !found {
+			t.Fatalf("expected builtin %s candidate %q for %s, got %#v", tt.kind, tt.text, tt.reading, state.Candidates)
+		}
 	}
 }
 
