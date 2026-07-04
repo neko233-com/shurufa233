@@ -125,10 +125,12 @@ patch:
       - °
 ```
 
-Rime's leading slash is dropped for the shurufa233 reading, so `/fs` becomes
-the `fs` candidate code. Imported rows are tagged as `symbol`, `emoji`, or
-`kaomoji` where possible so native and React candidate strips can keep showing
-the same readable badges.
+Rime's leading slash is dropped for the stored shurufa233 reading, so `/fs`
+becomes the `fs` candidate code. The runtime still accepts `/fs` as a
+slash-prefixed symbol input, preserves the slash in the preedit buffer, and
+filters candidates to symbol, emoji, kaomoji, and agent rows. Imported rows are
+tagged as `symbol`, `emoji`, or `kaomoji` where possible so native and React
+candidate strips can keep showing the same readable badges.
 
 Rime OpenCC emoji/symbol tables are also accepted. Projects such as
 `rime/rime-emoji` and Rime Ice ship files like `opencc/emoji_word.txt` or

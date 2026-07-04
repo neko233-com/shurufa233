@@ -110,6 +110,44 @@ func TestCandidateActionCallsPreviewThenActionEndpoint(t *testing.T) {
 	}
 }
 
+func TestPreviewSendsSlashPrefixInput(t *testing.T) {
+	var previewCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/engine/preview" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		previewCalled = true
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode preview: %v", err)
+		}
+		if req["input"] != "/fs" {
+			t.Fatalf("preview input = %q", req["input"])
+		}
+		_ = json.NewEncoder(w).Encode(engineState{
+			Buffer: "/fs",
+			Candidates: []candidate{{
+				Text:    "℃",
+				Reading: "fs",
+				Kind:    "symbol",
+				Source:  "builtin-symbols",
+				Weight:  6200,
+			}},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := preview(server.Client(), "/fs"); err != nil {
+		t.Fatal(err)
+	}
+	if !previewCalled {
+		t.Fatal("preview endpoint was not called")
+	}
+}
+
 func TestPhrasesAddCallsEndpoint(t *testing.T) {
 	var phraseCalled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

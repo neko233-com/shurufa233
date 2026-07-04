@@ -61,6 +61,31 @@ func TestWithCORSPreflightAllowsLoopbackVite(t *testing.T) {
 	}
 }
 
+func TestPreviewAcceptsRimeSlashSymbolPrefix(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/engine/preview", strings.NewReader(`{"input":"/fs"}`))
+	rec := httptest.NewRecorder()
+	state.preview(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got engine.State
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Buffer != "/fs" || len(got.Candidates) == 0 || got.Candidates[0].Text != "℃" {
+		t.Fatalf("preview /fs = %#v", got)
+	}
+}
+
 func TestPutConfigNormalizesCandidatePool(t *testing.T) {
 	state := &AppState{
 		config:   engine.DefaultConfig(),

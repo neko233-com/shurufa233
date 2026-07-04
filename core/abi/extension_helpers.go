@@ -25,6 +25,7 @@ var abiFeatureList = []string{
 	"gzip-dictionaries",
 	"abbreviation-candidates",
 	"pinyin-separators",
+	"rime-symbol-prefix",
 	"emoji-kaomoji-symbol-candidates",
 	"dynamic-datetime-candidates",
 	"candidate-char-commit",

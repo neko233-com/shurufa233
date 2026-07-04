@@ -367,7 +367,7 @@ func decompressDictionaryData(data []byte) ([]byte, error) {
 func (e *Engine) InputKey(key rune) State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if unicode.IsLetter(key) || key == ';' || key == '\'' {
+	if unicode.IsLetter(key) || key == ';' || key == '\'' || key == '/' {
 		e.buffer += strings.ToLower(string(key))
 	}
 	return e.stateLocked("")
@@ -553,6 +553,9 @@ func (e *Engine) candidatesLocked() []Candidate {
 
 func (e *Engine) lookupLocked(reading string) []Entry {
 	inputCode := normalizeInputCode(reading)
+	if strings.HasPrefix(inputCode, "/") {
+		return e.lookupSlashPrefixLocked(inputCode)
+	}
 	collapsedReading := normalizeReading(inputCode)
 	readings := e.lookupReadingsLocked(collapsedReading)
 	var exact []Entry
@@ -658,6 +661,58 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 		}
 	}
 	return nil
+}
+
+func (e *Engine) lookupSlashPrefixLocked(input string) []Entry {
+	code := normalizeReading(strings.TrimLeft(input, "/"))
+	if code == "" {
+		return nil
+	}
+	readings := e.lookupReadingsLocked(code)
+	var out []Entry
+	seen := map[string]bool{}
+	appendSpecial := func(entries []Entry, penalty int) {
+		for _, entry := range entries {
+			if !isSlashPrefixCandidate(entry) {
+				continue
+			}
+			next := entry
+			if penalty > 0 {
+				next.Weight = max(1, next.Weight-penalty)
+			}
+			key := next.Text + "\x00" + next.Kind + "\x00" + next.Source
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, next)
+		}
+	}
+	for _, item := range readings {
+		appendSpecial(e.dict[item.reading], item.penalty)
+		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
+			appendSpecial(e.dict[variant], item.penalty+fuzzyCandidatePenalty)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, item := range readings {
+		appendSpecial(e.prefix[item.reading], item.penalty+abbreviationCandidatePenalty)
+		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
+			appendSpecial(e.prefix[variant], item.penalty+fuzzyCandidatePenalty+abbreviationCandidatePenalty)
+		}
+	}
+	return out
+}
+
+func isSlashPrefixCandidate(entry Entry) bool {
+	switch entry.Kind {
+	case "symbol", "emoji", "kaomoji", "agent":
+		return true
+	default:
+		return strings.HasPrefix(entry.Source, "rime-symbol") || strings.Contains(entry.Source, "opencc")
+	}
 }
 
 func dynamicEntriesForInput(input string, now time.Time) []Entry {
@@ -896,7 +951,7 @@ func normalizeReading(input string) string {
 func normalizeInputCode(input string) string {
 	var builder strings.Builder
 	for _, r := range strings.ToLower(input) {
-		if r >= 'a' && r <= 'z' || r == ';' || r == '\'' {
+		if r >= 'a' && r <= 'z' || r == ';' || r == '\'' || r == '/' {
 			builder.WriteRune(r)
 		}
 	}

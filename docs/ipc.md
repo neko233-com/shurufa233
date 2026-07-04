@@ -36,6 +36,12 @@ explicit segmentation candidate when every separated syllable can be resolved.
 The same behavior is used by the React/Wails preview strip and
 `shurufa-imecli preview "xi'an"`.
 
+It also accepts Rime-style slash symbol prefixes such as `/fs` and `/xh`. The
+buffer keeps the slash for preedit display, lookup resolves the imported Rime
+symbol code without the slash, and the candidate list is filtered to symbol,
+emoji, kaomoji, and agent-style entries so ordinary pinyin words do not leak
+into slash-prefixed symbol mode.
+
 The settings UI uses this IPC directly in development. A Wails v3 shell can host the same React bundle and call the same daemon API or proxy these methods through its Go backend.
 
 `GET /config` and `PUT /config` include `punctuation`, which is normalized to

@@ -50,6 +50,11 @@ separated syllables resolve cleanly, for example `xi'an` -> `西安`. Platform
 glue can therefore display the upper English/pinyin preedit exactly as typed
 while sharing one cross-platform segmentation result.
 
+They also preserve Rime-style slash symbol prefixes such as `/fs`. The slash is
+kept in the returned `buffer`, while lookup uses the imported symbol code
+without the slash and filters the result to symbol, emoji, kaomoji, and agent
+candidates.
+
 ## Hot Path
 
 Windows TSF uses compact non-JSON calls on the per-key path:
@@ -120,7 +125,7 @@ comment text remains part of candidate payloads even when the UI hides it.
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
 `user-scores-json`, `user-phrases-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
-`abbreviation-candidates`, `pinyin-separators`,
+`abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
 `candidate-comments`, `candidate-action-json`, and `extension-command-json`.

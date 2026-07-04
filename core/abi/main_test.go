@@ -233,6 +233,15 @@ func TestCapabilitiesIncludePinyinSeparators(t *testing.T) {
 	t.Fatalf("capabilities missing pinyin-separators: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeRimeSymbolPrefix(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "rime-symbol-prefix" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing rime-symbol-prefix: %#v", abiFeatureList)
+}
+
 func TestCapabilitiesIncludeUserPhrasesJSON(t *testing.T) {
 	for _, feature := range abiFeatureList {
 		if feature == "user-phrases-json" {
@@ -268,6 +277,17 @@ func TestPreviewPreservesPinyinSeparatorCandidate(t *testing.T) {
 	}
 	if len(state.Candidates) == 0 || state.Candidates[0].Text != "西安" {
 		t.Fatalf("expected separator candidate 西安, got %#v", state.Candidates)
+	}
+}
+
+func TestPreviewPreservesRimeSymbolPrefixCandidate(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	state := session.Preview("/fs")
+	if state.Buffer != "/fs" {
+		t.Fatalf("buffer = %q, want /fs", state.Buffer)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "℃" {
+		t.Fatalf("expected symbol candidate ℃, got %#v", state.Candidates)
 	}
 }
 

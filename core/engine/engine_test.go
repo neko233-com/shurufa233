@@ -177,6 +177,43 @@ func TestInputKeyAcceptsApostropheSeparator(t *testing.T) {
 	}
 }
 
+func TestSlashSymbolPrefixPreservesBufferAndFiltersCandidates(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{{Reading: "fs", Text: "普通词", Weight: 90000}})
+
+	plain := e.Preview("fs")
+	if len(plain.Candidates) == 0 || plain.Candidates[0].Text != "普通词" {
+		t.Fatalf("expected plain fs to allow ordinary candidates, got %#v", plain.Candidates)
+	}
+
+	state := e.Preview("/fs")
+	if state.Buffer != "/fs" {
+		t.Fatalf("expected slash prefix buffer, got %q", state.Buffer)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "℃" {
+		t.Fatalf("expected /fs to prefer symbol candidates, got %#v", state.Candidates)
+	}
+	for _, candidate := range state.Candidates {
+		if candidate.Text == "普通词" {
+			t.Fatalf("slash prefix should filter ordinary candidates, got %#v", state.Candidates)
+		}
+	}
+}
+
+func TestInputKeyAcceptsSlashSymbolPrefix(t *testing.T) {
+	e := New(DefaultConfig())
+	for _, r := range "/xh" {
+		e.InputKey(r)
+	}
+	state := e.State()
+	if state.Buffer != "/xh" {
+		t.Fatalf("expected typed slash prefix buffer, got %q", state.Buffer)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "※" {
+		t.Fatalf("expected typed /xh to produce symbol candidates, got %#v", state.Candidates)
+	}
+}
+
 func TestUserPhrasesCanBeAddedListedAndDeleted(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddEntries([]Entry{{Reading: "msd", Text: "默认短语", Weight: 20000}})
