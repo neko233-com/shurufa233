@@ -85,6 +85,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	}
 	config = engine.NormalizeSchemaConfig(config)
 	config = engine.NormalizeKeyBehavior(config)
+	config.AppRules = engine.NormalizeAppRules(config.AppRules)
 	return config
 }
 

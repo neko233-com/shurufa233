@@ -69,6 +69,17 @@ type switchResponse struct {
 	UpdatedAt time.Time             `json:"updatedAt"`
 }
 
+type appRuleRequest struct {
+	Rules []engine.AppRule `json:"rules,omitempty"`
+}
+
+type appRuleResponse struct {
+	OK        bool             `json:"ok"`
+	Rules     []engine.AppRule `json:"rules"`
+	Config    engine.Config    `json:"config,omitempty"`
+	UpdatedAt time.Time        `json:"updatedAt"`
+}
+
 type schemaResponse struct {
 	Selected string                `json:"selected"`
 	Schemas  []engine.SchemaPreset `json:"schemas"`
@@ -308,6 +319,9 @@ func main() {
 	mux.HandleFunc("POST /schemas/apply", state.withCORS(state.applySchema))
 	mux.HandleFunc("GET /switches", state.withCORS(state.switches))
 	mux.HandleFunc("POST /switches/apply", state.withCORS(state.applySwitch))
+	mux.HandleFunc("GET /app-rules", state.withCORS(state.appRules))
+	mux.HandleFunc("PUT /app-rules", state.withCORS(state.putAppRules))
+	mux.HandleFunc("POST /app-context/resolve", state.withCORS(state.resolveAppContext))
 	mux.HandleFunc("POST /ime/key", state.withCORS(state.imeKey))
 	mux.HandleFunc("POST /ime/backspace", state.withCORS(state.imeBackspace))
 	mux.HandleFunc("POST /ime/clear", state.withCORS(state.imeClear))
@@ -520,6 +534,57 @@ func (s *AppState) applySwitch(w http.ResponseWriter, r *http.Request) {
 		Config:    s.config,
 		UpdatedAt: time.Now().UTC(),
 	})
+}
+
+func (s *AppState) appRules(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	writeJSON(w, appRuleResponse{
+		OK:        true,
+		Rules:     engine.NormalizeAppRules(s.config.AppRules),
+		Config:    s.config,
+		UpdatedAt: time.Now().UTC(),
+	})
+}
+
+func (s *AppState) putAppRules(w http.ResponseWriter, r *http.Request) {
+	var req appRuleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.config
+	next.AppRules = engine.NormalizeAppRules(req.Rules)
+	next = normalizeConfig(next)
+	s.config = next
+	s.engine.Configure(next)
+	for _, session := range s.sessions {
+		session.Configure(next)
+	}
+	if err := s.saveLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, appRuleResponse{
+		OK:        true,
+		Rules:     engine.NormalizeAppRules(s.config.AppRules),
+		Config:    s.config,
+		UpdatedAt: time.Now().UTC(),
+	})
+}
+
+func (s *AppState) resolveAppContext(w http.ResponseWriter, r *http.Request) {
+	var context engine.AppContext
+	if err := json.NewDecoder(r.Body).Decode(&context); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.RLock()
+	config := s.config
+	s.mu.RUnlock()
+	writeJSON(w, engine.ResolveAppContext(config, context))
 }
 
 func (s *AppState) preview(w http.ResponseWriter, r *http.Request) {
@@ -2254,6 +2319,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	}
 	config = engine.NormalizeSchemaConfig(config)
 	config = engine.NormalizeKeyBehavior(config)
+	config.AppRules = engine.NormalizeAppRules(config.AppRules)
 	return config
 }
 

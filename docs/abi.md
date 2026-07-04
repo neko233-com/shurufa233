@@ -115,6 +115,8 @@ char* ShurufaSchemaPresetsJSON(void);
 char* ShurufaApplySchemaJSON(char* json);
 char* ShurufaSwitchesJSON(uint64_t session);
 char* ShurufaApplySwitchJSON(uint64_t session, char* json);
+char* ShurufaAppRulesJSON(uint64_t session);
+char* ShurufaResolveAppContextJSON(uint64_t session, char* json);
 char* ShurufaReloadConfig(void);
 char* ShurufaReloadDictionaries(void);
 char* ShurufaDictionaryManifestJSON(void);
@@ -157,7 +159,8 @@ C++ export on developer machines that only consume packaged builds.
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
 `candidate-comments`, `association-candidates`, `candidate-action-json`, and
-`extension-command-json`, `key-behavior-config`, and `rime-switches-json`.
+`extension-command-json`, `key-behavior-config`, `rime-switches-json`, and
+`app-context-rules-json`.
 
 `ShurufaAssociate(session, {"context":"你好","limit":7})` returns a normal state
 object with post-commit association candidates. The same behavior is available
@@ -200,6 +203,8 @@ apply-schema-json       {"id":"double-pinyin-microsoft"}
 switches-json
 apply-switch-json       {"id":"ascii_mode","value":true}
 toggle-switch           {"id":"ascii_punct"}
+app-rules-json
+resolve-app-context-json {"appContext":{"processName":"WeGame.exe","gameMode":true}}
 reload-config
 reload-dictionaries
 dictionary-manifest-json
@@ -240,6 +245,18 @@ Current switches map directly onto shared config fields: `ascii_mode` (`mode`),
 `vertical_candidates` (`candidateLayout`). This lets native glue send one JSON
 switch event for Weasel/Squirrel-style UI behavior while Go owns the actual
 field mapping and future switch expansion.
+
+`app-rules-json`, `resolve-app-context-json`, `ShurufaAppRulesJSON`, and
+`ShurufaResolveAppContextJSON` reserve the app-aware behavior surface that
+native TSF/IMKit glue needs for WeChat-like scene switching. Rules live in the
+shared config as `appRules`, sorted by priority. Built-in rules cover password
+fields, terminals, games/esports contexts, and code editors. A context payload
+can include `processName`, `exePath`, `windowTitle`, `windowClass`,
+`passwordField`, `terminal`, and `gameMode`; the decision returns a derived
+config plus `mode`, `punctuation`, `candidateLayout`, `disableCandidates`, and
+`disableLearning`. Platform glue should call this before composition starts or
+when focus changes, then use the returned mode/candidate flags without hard
+coding game or password behavior in C++.
 
 `catalog-json` and `ShurufaCatalogJSON` reserve the shared emoji, kaomoji,
 symbol, and agent resource surface for future native panels. The payload accepts

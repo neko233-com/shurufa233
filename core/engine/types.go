@@ -3,28 +3,73 @@ package engine
 import "time"
 
 type Config struct {
-	MaxCandidates         int      `json:"maxCandidates"`
-	Schema                string   `json:"schema,omitempty"`
-	CandidatePageSize     int      `json:"candidatePageSize"`
-	CandidateLayout       string   `json:"candidateLayout"`
-	ShowCandidateComments bool     `json:"showCandidateComments"`
-	FuzzyInitials         []string `json:"fuzzyInitials"`
-	DoublePinyin          bool     `json:"doublePinyin"`
-	DoublePinyinScheme    string   `json:"doublePinyinScheme"`
-	Language              string   `json:"language"`
-	Mode                  string   `json:"mode"`
-	Punctuation           string   `json:"punctuation"`
-	Script                string   `json:"script"`
-	Associations          bool     `json:"associations"`
-	KeyProfile            string   `json:"keyProfile"`
-	ShiftToggleMode       bool     `json:"shiftToggleMode"`
-	SemicolonQuickSelect  bool     `json:"semicolonQuickSelect"`
-	QuoteQuickSelect      bool     `json:"quoteQuickSelect"`
-	BracketPageKeys       bool     `json:"bracketPageKeys"`
-	MinusEqualPageKeys    bool     `json:"minusEqualPageKeys"`
-	CommaPeriodPageKeys   bool     `json:"commaPeriodPageKeys"`
-	Skin                  Skin     `json:"skin"`
-	Update                Update   `json:"update"`
+	MaxCandidates         int       `json:"maxCandidates"`
+	Schema                string    `json:"schema,omitempty"`
+	CandidatePageSize     int       `json:"candidatePageSize"`
+	CandidateLayout       string    `json:"candidateLayout"`
+	ShowCandidateComments bool      `json:"showCandidateComments"`
+	FuzzyInitials         []string  `json:"fuzzyInitials"`
+	DoublePinyin          bool      `json:"doublePinyin"`
+	DoublePinyinScheme    string    `json:"doublePinyinScheme"`
+	Language              string    `json:"language"`
+	Mode                  string    `json:"mode"`
+	Punctuation           string    `json:"punctuation"`
+	Script                string    `json:"script"`
+	Associations          bool      `json:"associations"`
+	KeyProfile            string    `json:"keyProfile"`
+	ShiftToggleMode       bool      `json:"shiftToggleMode"`
+	SemicolonQuickSelect  bool      `json:"semicolonQuickSelect"`
+	QuoteQuickSelect      bool      `json:"quoteQuickSelect"`
+	BracketPageKeys       bool      `json:"bracketPageKeys"`
+	MinusEqualPageKeys    bool      `json:"minusEqualPageKeys"`
+	CommaPeriodPageKeys   bool      `json:"commaPeriodPageKeys"`
+	AppRules              []AppRule `json:"appRules,omitempty"`
+	Skin                  Skin      `json:"skin"`
+	Update                Update    `json:"update"`
+}
+
+type AppRule struct {
+	ID                string   `json:"id"`
+	Name              string   `json:"name"`
+	Description       string   `json:"description,omitempty"`
+	ProcessNames      []string `json:"processNames,omitempty"`
+	ExeContains       []string `json:"exeContains,omitempty"`
+	WindowTitle       []string `json:"windowTitle,omitempty"`
+	WindowClass       []string `json:"windowClass,omitempty"`
+	PasswordField     bool     `json:"passwordField,omitempty"`
+	Terminal          bool     `json:"terminal,omitempty"`
+	GameMode          bool     `json:"gameMode,omitempty"`
+	Mode              string   `json:"mode,omitempty"`
+	Punctuation       string   `json:"punctuation,omitempty"`
+	CandidateLayout   string   `json:"candidateLayout,omitempty"`
+	DisableCandidates bool     `json:"disableCandidates,omitempty"`
+	DisableLearning   bool     `json:"disableLearning,omitempty"`
+	Priority          int      `json:"priority,omitempty"`
+}
+
+type AppContext struct {
+	ProcessName     string `json:"processName,omitempty"`
+	ExePath         string `json:"exePath,omitempty"`
+	WindowTitle     string `json:"windowTitle,omitempty"`
+	WindowClass     string `json:"windowClass,omitempty"`
+	PasswordField   bool   `json:"passwordField,omitempty"`
+	Terminal        bool   `json:"terminal,omitempty"`
+	GameMode        bool   `json:"gameMode,omitempty"`
+	CompositionMode string `json:"compositionMode,omitempty"`
+}
+
+type AppContextDecision struct {
+	OK                bool       `json:"ok"`
+	Matched           bool       `json:"matched"`
+	Rule              *AppRule   `json:"rule,omitempty"`
+	Context           AppContext `json:"context"`
+	Config            Config     `json:"config"`
+	Mode              string     `json:"mode"`
+	Punctuation       string     `json:"punctuation"`
+	CandidateLayout   string     `json:"candidateLayout"`
+	DisableCandidates bool       `json:"disableCandidates,omitempty"`
+	DisableLearning   bool       `json:"disableLearning,omitempty"`
+	Reason            string     `json:"reason,omitempty"`
 }
 
 type Skin struct {

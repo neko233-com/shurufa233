@@ -195,6 +195,52 @@ func TestApplySwitchEndpointPersistsConfig(t *testing.T) {
 	}
 }
 
+func TestAppRulesEndpointListsDefaultRules(t *testing.T) {
+	config := engine.DefaultConfig()
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	req := httptest.NewRequest(http.MethodGet, "/app-rules", nil)
+	rec := httptest.NewRecorder()
+	state.appRules(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got appRuleResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || len(got.Rules) == 0 {
+		t.Fatalf("app rules = %#v", got)
+	}
+}
+
+func TestResolveAppContextEndpointReturnsGameDecision(t *testing.T) {
+	config := engine.DefaultConfig()
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	req := httptest.NewRequest(http.MethodPost, "/app-context/resolve", strings.NewReader(`{"processName":"WeGame.exe"}`))
+	rec := httptest.NewRecorder()
+	state.resolveAppContext(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got engine.AppContextDecision
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || !got.Matched || got.Mode != "en" || !got.DisableCandidates {
+		t.Fatalf("app context decision = %#v", got)
+	}
+}
+
 func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.CandidatePageSize = 5

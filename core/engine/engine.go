@@ -65,6 +65,7 @@ func DefaultConfig() Config {
 		BracketPageKeys:      true,
 		MinusEqualPageKeys:   true,
 		CommaPeriodPageKeys:  false,
+		AppRules:             BuiltinAppRules(),
 		Skin: Skin{
 			FontFamily:    "Microsoft YaHei UI",
 			FontSize:      15,
@@ -101,6 +102,7 @@ func New(config Config) *Engine {
 	config.Script = normalizeScript(config.Script)
 	config = NormalizeSchemaConfig(config)
 	config = NormalizeKeyBehavior(config)
+	config.AppRules = NormalizeAppRules(config.AppRules)
 	e := &Engine{
 		config:  config,
 		dict:    make(map[string][]Entry),
@@ -127,6 +129,7 @@ func (e *Engine) Configure(config Config) {
 	config.Script = normalizeScript(config.Script)
 	config = NormalizeSchemaConfig(config)
 	config = NormalizeKeyBehavior(config)
+	config.AppRules = NormalizeAppRules(config.AppRules)
 	e.config = config
 }
 

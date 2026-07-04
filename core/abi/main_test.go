@@ -612,6 +612,31 @@ func TestExecuteExtensionCommandRimeSwitches(t *testing.T) {
 	}
 }
 
+func TestExecuteExtensionCommandAppContextRules(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	got, handled := executeSessionExtensionCommand(session, "app-rules-json", `{}`)
+	if !handled {
+		t.Fatal("app-rules-json command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("app-rules-json = %#v", got)
+	}
+	rules, ok := result["rules"].([]engine.AppRule)
+	if !ok || len(rules) == 0 {
+		t.Fatalf("app rules = %#v", result["rules"])
+	}
+
+	decision, handled := executeSessionExtensionCommand(session, "resolve-app-context-json", `{"appContext":{"processName":"WeGame.exe"}}`)
+	if !handled {
+		t.Fatal("resolve-app-context-json command was not handled")
+	}
+	resolved, ok := decision.(engine.AppContextDecision)
+	if !ok || !resolved.OK || !resolved.Matched || resolved.Mode != "en" || !resolved.DisableCandidates {
+		t.Fatalf("resolve app context = %#v", decision)
+	}
+}
+
 func TestExecuteExtensionCommandCandidateActionCommitsCandidateChar(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	session.Preview("zhongwen")

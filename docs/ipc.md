@@ -29,6 +29,9 @@ The background daemon listens on `127.0.0.1:23333`.
 - `POST /updates/source`
 - `GET /switches`
 - `POST /switches/apply`
+- `GET /app-rules`
+- `PUT /app-rules`
+- `POST /app-context/resolve`
 - `GET /ime/mode`
 - `POST /ime/mode`
 - `POST /ime/select-char`
@@ -209,6 +212,30 @@ switch ids are `ascii_mode`, `ascii_punct`, `simplification`,
 `candidate_comments`, `associations`, and `vertical_candidates`. The daemon
 persists the resulting config and refreshes active sessions, giving Wails/React,
 CLI, and future native switch panels the same behavior without platform glue.
+
+`GET /app-rules` returns the app-aware behavior rules from `config.appRules`.
+`PUT /app-rules` accepts `{"rules":[...]}` and persists normalized rules. The
+default rules cover password fields, terminal/command-line apps, game/esports
+contexts, and IDE/code editors.
+
+`POST /app-context/resolve` accepts the focus context that native TSF/IMKit glue
+can gather on focus changes:
+
+```json
+{
+  "processName": "WeGame.exe",
+  "exePath": "D:\\App\\WeGame\\wegame.exe",
+  "windowTitle": "WeGame",
+  "windowClass": "",
+  "gameMode": true
+}
+```
+
+The response contains the matched rule, a derived config, and direct hot-path
+fields such as `mode`, `punctuation`, `candidateLayout`, `disableCandidates`,
+and `disableLearning`. This lets games, terminals, password boxes, and agent
+automation use English/half-width/no-candidate behavior without putting app
+lists or Rime-style recognizer logic inside C++.
 
 `POST /ime/select-char?index=0&side=first` commits the first character of a
 candidate, while `side=last` commits the last character. This mirrors Rime's

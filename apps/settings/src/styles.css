@@ -409,6 +409,129 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.appRuleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.appRuleCard {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 10px;
+}
+
+.appRuleCard strong,
+.appRuleCard span,
+.appRuleCard small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appRuleCard strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.appRuleCard span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.appRuleCard small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.contextProbe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.contextProbe input[type="text"],
+.contextProbe input:not([type]) {
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  color: #111827;
+  padding: 0 10px;
+}
+
+.contextProbe label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.contextProbe input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.contextProbe button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: #111827;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
+.contextDecision {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  margin-bottom: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  padding: 0 10px;
+}
+
+.contextDecision.matched {
+  border-color: color-mix(in srgb, var(--accent), transparent 64%);
+  background: color-mix(in srgb, var(--accent), white 92%);
+}
+
+.contextDecision span,
+.contextDecision strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextDecision span {
+  font-size: 12px;
+}
+
+.contextDecision strong {
+  color: #111827;
+  font-size: 12px;
+}
+
 .swatches {
   display: flex;
   gap: 10px;
@@ -1416,6 +1539,16 @@ h2 {
 
   .catalogControls {
     grid-template-columns: 1fr;
+  }
+
+  .appRuleGrid,
+  .contextProbe {
+    grid-template-columns: 1fr;
+  }
+
+  .contextProbe label,
+  .contextProbe button {
+    justify-content: center;
   }
 
   .metricsGrid {

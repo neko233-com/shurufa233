@@ -315,6 +315,79 @@ func TestApplySwitchPostsSelectedSwitch(t *testing.T) {
 	}
 }
 
+func TestParseAppContextArgs(t *testing.T) {
+	context, err := parseAppContextArgs([]string{"--process", "WeGame.exe", "--path=C:\\Games\\WeGame\\wegame.exe", "--game"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.ProcessName != "WeGame.exe" || context.ExePath == "" || !context.GameMode {
+		t.Fatalf("app context = %#v", context)
+	}
+}
+
+func TestAppRulesCallsEndpoint(t *testing.T) {
+	var called bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app-rules" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		called = true
+		_ = json.NewEncoder(w).Encode(appRuleResponse{
+			OK: true,
+			Rules: []appRule{{
+				ID:           "terminal-ascii",
+				Name:         "终端",
+				ProcessNames: []string{"pwsh.exe"},
+				Mode:         "en",
+				Punctuation:  "half",
+			}},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := appRules(server.Client()); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("app-rules endpoint was not called")
+	}
+}
+
+func TestAppContextResolvePostsContext(t *testing.T) {
+	var posted appContext
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/app-context/resolve" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(appContextDecision{
+			OK:                true,
+			Matched:           true,
+			Mode:              "en",
+			Punctuation:       "half",
+			CandidateLayout:   "horizontal",
+			DisableCandidates: true,
+			Reason:            "game-performance-ascii",
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := appContextCmd(server.Client(), []string{"resolve", "--process", "WeGame.exe", "--game"}); err != nil {
+		t.Fatal(err)
+	}
+	if posted.ProcessName != "WeGame.exe" || !posted.GameMode {
+		t.Fatalf("posted app context = %#v", posted)
+	}
+}
+
 func TestSchemaApplyPostsSelectedID(t *testing.T) {
 	var schemaCalled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

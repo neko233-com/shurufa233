@@ -42,6 +42,7 @@ var abiFeatureList = []string{
 	"extension-command-json",
 	"key-behavior-config",
 	"rime-switches-json",
+	"app-context-rules-json",
 }
 
 type abiEnvelope struct {
@@ -103,35 +104,36 @@ type candidateActionResult struct {
 }
 
 type extensionCommandPayload struct {
-	Input        string           `json:"input,omitempty"`
-	Context      string           `json:"context,omitempty"`
-	Action       string           `json:"action,omitempty"`
-	Mode         string           `json:"mode,omitempty"`
-	Toggle       bool             `json:"toggle,omitempty"`
-	Index        int              `json:"index,omitempty"`
-	DisplayIndex int              `json:"displayIndex,omitempty"`
-	Start        int              `json:"start,omitempty"`
-	Limit        int              `json:"limit,omitempty"`
-	PageSize     int              `json:"pageSize,omitempty"`
-	Delta        int              `json:"delta,omitempty"`
-	Side         string           `json:"side,omitempty"`
-	ID           string           `json:"id,omitempty"`
-	Switch       string           `json:"switch,omitempty"`
-	Value        *bool            `json:"value,omitempty"`
-	Schema       string           `json:"schema,omitempty"`
-	Reading      string           `json:"reading,omitempty"`
-	Text         string           `json:"text,omitempty"`
-	Kind         string           `json:"kind,omitempty"`
-	Query        string           `json:"query,omitempty"`
-	Config       *engine.Config   `json:"config,omitempty"`
-	UserScores   map[string]int   `json:"userScores,omitempty"`
-	Scores       map[string]int   `json:"scores,omitempty"`
-	Entries      []engine.Entry   `json:"entries,omitempty"`
-	Phrases      []engine.Entry   `json:"phrases,omitempty"`
-	Rejects      []engine.Entry   `json:"rejects,omitempty"`
-	Pins         []engine.Entry   `json:"pins,omitempty"`
-	Merge        bool             `json:"merge,omitempty"`
-	Raw          *json.RawMessage `json:"raw,omitempty"`
+	Input        string             `json:"input,omitempty"`
+	Context      string             `json:"context,omitempty"`
+	Action       string             `json:"action,omitempty"`
+	Mode         string             `json:"mode,omitempty"`
+	Toggle       bool               `json:"toggle,omitempty"`
+	Index        int                `json:"index,omitempty"`
+	DisplayIndex int                `json:"displayIndex,omitempty"`
+	Start        int                `json:"start,omitempty"`
+	Limit        int                `json:"limit,omitempty"`
+	PageSize     int                `json:"pageSize,omitempty"`
+	Delta        int                `json:"delta,omitempty"`
+	Side         string             `json:"side,omitempty"`
+	ID           string             `json:"id,omitempty"`
+	Switch       string             `json:"switch,omitempty"`
+	Value        *bool              `json:"value,omitempty"`
+	Schema       string             `json:"schema,omitempty"`
+	Reading      string             `json:"reading,omitempty"`
+	Text         string             `json:"text,omitempty"`
+	Kind         string             `json:"kind,omitempty"`
+	Query        string             `json:"query,omitempty"`
+	Config       *engine.Config     `json:"config,omitempty"`
+	AppContext   *engine.AppContext `json:"appContext,omitempty"`
+	UserScores   map[string]int     `json:"userScores,omitempty"`
+	Scores       map[string]int     `json:"scores,omitempty"`
+	Entries      []engine.Entry     `json:"entries,omitempty"`
+	Phrases      []engine.Entry     `json:"phrases,omitempty"`
+	Rejects      []engine.Entry     `json:"rejects,omitempty"`
+	Pins         []engine.Entry     `json:"pins,omitempty"`
+	Merge        bool               `json:"merge,omitempty"`
+	Raw          *json.RawMessage   `json:"raw,omitempty"`
 }
 
 func buildCandidatePayloadV2(session *engine.Engine, start int, limit int) candidatePayloadV2 {
@@ -499,6 +501,34 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"state":     session.State(),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
+	case "app-rules-json", "app-context-rules-json", "app-rules":
+		return map[string]any{
+			"ok":        true,
+			"rules":     engine.NormalizeAppRules(session.Config().AppRules),
+			"config":    session.Config(),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "resolve-app-context-json", "app-context-json", "app-context":
+		context := engine.AppContext{}
+		if req.AppContext != nil {
+			context = *req.AppContext
+		} else {
+			context = engine.AppContext{
+				ProcessName: strings.TrimSpace(req.ID),
+				ExePath:     strings.TrimSpace(req.Input),
+				WindowTitle: strings.TrimSpace(req.Text),
+				WindowClass: strings.TrimSpace(req.Kind),
+			}
+			switch strings.ToLower(strings.TrimSpace(req.Action)) {
+			case "password":
+				context.PasswordField = true
+			case "terminal":
+				context.Terminal = true
+			case "game":
+				context.GameMode = true
+			}
+		}
+		return engine.ResolveAppContext(session.Config(), context), true
 	case "candidate-action", "candidate-action-json":
 		return executeCandidateAction(session, req), true
 	case "catalog", "catalog-json", "symbols", "symbols-json":

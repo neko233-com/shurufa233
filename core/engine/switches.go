@@ -153,6 +153,7 @@ func NormalizeSwitchConfig(config Config) Config {
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config = NormalizeSchemaConfig(config)
 	config = NormalizeKeyBehavior(config)
+	config.AppRules = NormalizeAppRules(config.AppRules)
 	return config
 }
 

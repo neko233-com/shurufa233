@@ -57,8 +57,57 @@ type Config = {
   bracketPageKeys: boolean;
   minusEqualPageKeys: boolean;
   commaPeriodPageKeys: boolean;
+  appRules: AppRule[];
   skin: Skin;
   update: UpdateConfig;
+};
+
+type AppRule = {
+  id: string;
+  name: string;
+  description?: string;
+  processNames?: string[];
+  exeContains?: string[];
+  windowTitle?: string[];
+  windowClass?: string[];
+  passwordField?: boolean;
+  terminal?: boolean;
+  gameMode?: boolean;
+  mode?: Config["mode"];
+  punctuation?: Config["punctuation"];
+  candidateLayout?: Config["candidateLayout"];
+  disableCandidates?: boolean;
+  disableLearning?: boolean;
+  priority?: number;
+};
+
+type AppRuleResponse = {
+  ok: boolean;
+  rules: AppRule[];
+  config?: Config;
+};
+
+type AppContext = {
+  processName?: string;
+  exePath?: string;
+  windowTitle?: string;
+  windowClass?: string;
+  passwordField?: boolean;
+  terminal?: boolean;
+  gameMode?: boolean;
+};
+
+type AppContextDecision = {
+  ok: boolean;
+  matched: boolean;
+  rule?: AppRule;
+  context: AppContext;
+  mode: Config["mode"];
+  punctuation: Config["punctuation"];
+  candidateLayout: Config["candidateLayout"];
+  disableCandidates?: boolean;
+  disableLearning?: boolean;
+  reason?: string;
 };
 
 type UpdateConfig = {
@@ -330,6 +379,35 @@ const defaultConfig: Config = {
   bracketPageKeys: true,
   minusEqualPageKeys: true,
   commaPeriodPageKeys: false,
+  appRules: [
+    {
+      id: "password-field-ascii",
+      name: "密码框英文直通",
+      passwordField: true,
+      mode: "en",
+      punctuation: "half",
+      disableCandidates: true,
+      disableLearning: true,
+      priority: 1000,
+    },
+    {
+      id: "terminal-ascii",
+      name: "终端/命令行英文优先",
+      processNames: ["windowsterminal.exe", "powershell.exe", "pwsh.exe", "cmd.exe"],
+      mode: "en",
+      punctuation: "half",
+      priority: 800,
+    },
+    {
+      id: "game-performance-ascii",
+      name: "游戏/电竞性能模式",
+      processNames: ["wegame.exe", "steam.exe", "cs2.exe", "valorant.exe", "mumunxmain.exe"],
+      mode: "en",
+      punctuation: "half",
+      disableCandidates: true,
+      priority: 700,
+    },
+  ],
   skin: {
     fontFamily: "Microsoft YaHei UI",
     fontSize: 15,
@@ -542,6 +620,7 @@ function hydrateConfig(config: Config): Config {
     bracketPageKeys: config.bracketPageKeys ?? defaultConfig.bracketPageKeys,
     minusEqualPageKeys: config.minusEqualPageKeys ?? defaultConfig.minusEqualPageKeys,
     commaPeriodPageKeys: config.commaPeriodPageKeys ?? defaultConfig.commaPeriodPageKeys,
+    appRules: config.appRules?.length ? config.appRules : defaultConfig.appRules,
     showCandidateComments: config.showCandidateComments ?? defaultConfig.showCandidateComments,
     skin: {
       ...defaultConfig.skin,
@@ -613,6 +692,16 @@ function App() {
   const [schemaText, setSchemaText] = useState("未读取");
   const [switches, setSwitches] = useState<SwitchOption[]>([]);
   const [switchText, setSwitchText] = useState("未读取");
+  const [appRules, setAppRules] = useState<AppRule[]>(defaultConfig.appRules);
+  const [appRuleText, setAppRuleText] = useState("未读取");
+  const [appContextProbe, setAppContextProbe] = useState<AppContext>({
+    processName: "WeGame.exe",
+    exePath: "",
+    windowTitle: "",
+    windowClass: "",
+    gameMode: true,
+  });
+  const [appContextDecision, setAppContextDecision] = useState<AppContextDecision | null>(null);
   const [wordbook, setWordbook] = useState<WordbookEntry[]>([]);
   const [wordbookDraft, setWordbookDraft] = useState("{}");
   const [wordbookText, setWordbookText] = useState("未读取");
@@ -661,6 +750,8 @@ function App() {
     void loadDictionarySources();
     void loadSchemas();
     void loadSwitches();
+    void loadAppRules();
+    void resolveAppContext(appContextProbe);
     void runReverseLookup("你好");
   }, []);
 
@@ -1012,6 +1103,40 @@ function App() {
     } catch (err) {
       setSwitchText("应用失败");
       setError(err instanceof Error ? err.message : "switch apply failed");
+    }
+  }
+
+  async function loadAppRules() {
+    try {
+      const res = await fetch(`${apiBase}/app-rules`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as AppRuleResponse;
+      setAppRules(data.rules ?? []);
+      setAppRuleText(data.rules?.length ? `${data.rules.length} 条规则` : "无规则");
+      if (data.config) {
+        setConfig(hydrateConfig(data.config));
+      }
+      setError("");
+    } catch (err) {
+      setAppRuleText("读取失败");
+      setError(err instanceof Error ? err.message : "app rules load failed");
+    }
+  }
+
+  async function resolveAppContext(context: AppContext) {
+    try {
+      const res = await fetch(`${apiBase}/app-context/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(context),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as AppContextDecision;
+      setAppContextDecision(data);
+      setError("");
+    } catch (err) {
+      setAppContextDecision(null);
+      setError(err instanceof Error ? err.message : "app context resolve failed");
     }
   }
 
@@ -1621,6 +1746,62 @@ function App() {
                 </label>
               ))}
             </div>
+            <div className="subHeader">
+              <span>应用规则</span>
+              <small>{appRuleText}</small>
+            </div>
+            <div className="appRuleGrid">
+              {appRules.slice(0, 4).map((rule) => (
+                <div className="appRuleCard" key={rule.id}>
+                  <strong>{rule.name}</strong>
+                  <span>{rule.mode ?? "keep"} · {rule.punctuation ?? "keep"}{rule.disableCandidates ? " · 禁候选" : ""}</span>
+                  <small>{[...(rule.processNames ?? []), ...(rule.exeContains ?? [])].slice(0, 3).join(" / ") || rule.id}</small>
+                </div>
+              ))}
+            </div>
+            <div className="contextProbe">
+              <input
+                value={appContextProbe.processName ?? ""}
+                onChange={(event) => setAppContextProbe({ ...appContextProbe, processName: event.target.value })}
+                placeholder="process.exe"
+              />
+              <input
+                value={appContextProbe.windowTitle ?? ""}
+                onChange={(event) => setAppContextProbe({ ...appContextProbe, windowTitle: event.target.value })}
+                placeholder="window title"
+              />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!appContextProbe.passwordField}
+                  onChange={(event) => setAppContextProbe({ ...appContextProbe, passwordField: event.target.checked })}
+                />
+                密码
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!appContextProbe.terminal}
+                  onChange={(event) => setAppContextProbe({ ...appContextProbe, terminal: event.target.checked })}
+                />
+                终端
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!appContextProbe.gameMode}
+                  onChange={(event) => setAppContextProbe({ ...appContextProbe, gameMode: event.target.checked })}
+                />
+                游戏
+              </label>
+              <button onClick={() => void resolveAppContext(appContextProbe)}>探测</button>
+            </div>
+            {appContextDecision && (
+              <div className={appContextDecision.matched ? "contextDecision matched" : "contextDecision"}>
+                <span>{appContextDecision.matched ? appContextDecision.rule?.name ?? appContextDecision.reason : "默认规则"}</span>
+                <strong>{appContextDecision.mode} · {appContextDecision.punctuation}{appContextDecision.disableCandidates ? " · 禁候选" : ""}</strong>
+              </div>
+            )}
             <div className="segmented">
               <button className={config.mode === "zh" ? "selected" : ""} onClick={() => setConfig({ ...config, mode: "zh" })}>
                 中文

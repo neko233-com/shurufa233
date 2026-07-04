@@ -667,6 +667,35 @@ func TestApplySwitchTogglesConfigFields(t *testing.T) {
 	}
 }
 
+func TestResolveAppContextUsesPasswordRule(t *testing.T) {
+	decision := ResolveAppContext(DefaultConfig(), AppContext{PasswordField: true, ProcessName: "chrome.exe"})
+	if !decision.OK || !decision.Matched || decision.Rule == nil {
+		t.Fatalf("password context did not match: %#v", decision)
+	}
+	if decision.Mode != "en" || decision.Punctuation != "half" || !decision.DisableCandidates || !decision.DisableLearning {
+		t.Fatalf("password context decision = %#v", decision)
+	}
+}
+
+func TestResolveAppContextMatchesGameProcess(t *testing.T) {
+	decision := ResolveAppContext(DefaultConfig(), AppContext{ProcessName: "WeGame.exe"})
+	if !decision.Matched || decision.Rule == nil || decision.Rule.ID != "game-performance-ascii" {
+		t.Fatalf("game context decision = %#v", decision)
+	}
+	if decision.Mode != "en" || !decision.DisableCandidates {
+		t.Fatalf("game context mode/candidates = %#v", decision)
+	}
+}
+
+func TestResolveAppContextKeepsChineseForNormalApps(t *testing.T) {
+	config := DefaultConfig()
+	config.Mode = "zh"
+	decision := ResolveAppContext(config, AppContext{ProcessName: "notepad.exe", WindowTitle: "聊天记录"})
+	if decision.Matched || decision.Mode != "zh" || decision.Punctuation != "full" {
+		t.Fatalf("normal app decision = %#v", decision)
+	}
+}
+
 func TestFuzzyInitialsExpandCandidates(t *testing.T) {
 	e := New(DefaultConfig())
 

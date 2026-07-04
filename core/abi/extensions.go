@@ -164,6 +164,45 @@ func ShurufaApplySwitchJSON(id C.uint64_t, payload *C.char) *C.char {
 	})
 }
 
+//export ShurufaAppRulesJSON
+func ShurufaAppRulesJSON(id C.uint64_t) *C.char {
+	session := getSession(uint64(id))
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"rules":     engine.NormalizeAppRules(session.Config().AppRules),
+		"config":    session.Config(),
+		"updatedAt": time.Now().UTC(),
+	})
+}
+
+//export ShurufaResolveAppContextJSON
+func ShurufaResolveAppContextJSON(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	context := engine.AppContext{}
+	if req.AppContext != nil {
+		context = *req.AppContext
+	} else {
+		context = engine.AppContext{
+			ProcessName: strings.TrimSpace(req.ID),
+			ExePath:     strings.TrimSpace(req.Input),
+			WindowTitle: strings.TrimSpace(req.Text),
+			WindowClass: strings.TrimSpace(req.Kind),
+		}
+		switch strings.ToLower(strings.TrimSpace(req.Action)) {
+		case "password":
+			context.PasswordField = true
+		case "terminal":
+			context.Terminal = true
+		case "game":
+			context.GameMode = true
+		}
+	}
+	return jsonCString(engine.ResolveAppContext(getSession(uint64(id)).Config(), context))
+}
+
 //export ShurufaReloadConfig
 func ShurufaReloadConfig() *C.char {
 	config := loadConfig()

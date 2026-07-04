@@ -157,6 +157,53 @@ type switchResponse struct {
 	Config   configPayload  `json:"config,omitempty"`
 }
 
+type appRule struct {
+	ID                string   `json:"id"`
+	Name              string   `json:"name"`
+	Description       string   `json:"description,omitempty"`
+	ProcessNames      []string `json:"processNames,omitempty"`
+	ExeContains       []string `json:"exeContains,omitempty"`
+	WindowTitle       []string `json:"windowTitle,omitempty"`
+	WindowClass       []string `json:"windowClass,omitempty"`
+	PasswordField     bool     `json:"passwordField,omitempty"`
+	Terminal          bool     `json:"terminal,omitempty"`
+	GameMode          bool     `json:"gameMode,omitempty"`
+	Mode              string   `json:"mode,omitempty"`
+	Punctuation       string   `json:"punctuation,omitempty"`
+	CandidateLayout   string   `json:"candidateLayout,omitempty"`
+	DisableCandidates bool     `json:"disableCandidates,omitempty"`
+	DisableLearning   bool     `json:"disableLearning,omitempty"`
+	Priority          int      `json:"priority,omitempty"`
+}
+
+type appRuleResponse struct {
+	OK    bool      `json:"ok"`
+	Rules []appRule `json:"rules"`
+}
+
+type appContext struct {
+	ProcessName   string `json:"processName,omitempty"`
+	ExePath       string `json:"exePath,omitempty"`
+	WindowTitle   string `json:"windowTitle,omitempty"`
+	WindowClass   string `json:"windowClass,omitempty"`
+	PasswordField bool   `json:"passwordField,omitempty"`
+	Terminal      bool   `json:"terminal,omitempty"`
+	GameMode      bool   `json:"gameMode,omitempty"`
+}
+
+type appContextDecision struct {
+	OK                bool       `json:"ok"`
+	Matched           bool       `json:"matched"`
+	Rule              *appRule   `json:"rule,omitempty"`
+	Context           appContext `json:"context"`
+	Mode              string     `json:"mode"`
+	Punctuation       string     `json:"punctuation"`
+	CandidateLayout   string     `json:"candidateLayout"`
+	DisableCandidates bool       `json:"disableCandidates,omitempty"`
+	DisableLearning   bool       `json:"disableLearning,omitempty"`
+	Reason            string     `json:"reason,omitempty"`
+}
+
 type wordbookResponse struct {
 	UserScores map[string]int `json:"userScores"`
 	Count      int            `json:"count"`
@@ -257,6 +304,10 @@ func main() {
 		err = switches(client)
 	case "switch":
 		err = applySwitch(client, os.Args[2:])
+	case "app-rules":
+		err = appRules(client)
+	case "app-context":
+		err = appContextCmd(client, os.Args[2:])
 	case "wordbook":
 		err = wordbook(client, os.Args[2:])
 	case "phrases", "phrase":
@@ -295,6 +346,8 @@ Usage:
   shurufa-imecli mode [zh|en|toggle]
   shurufa-imecli switches
   shurufa-imecli switch <ascii_mode|ascii_punct|simplification|candidate_comments|associations|vertical_candidates> [on|off|toggle]
+  shurufa-imecli app-rules
+  shurufa-imecli app-context resolve --process WeGame.exe [--title TITLE] [--class CLASS] [--path EXE] [--password] [--terminal] [--game]
   shurufa-imecli wordbook list
   shurufa-imecli wordbook export
   shurufa-imecli wordbook import user-wordbook.json [--replace]
@@ -759,6 +812,134 @@ func printSwitches(items []switchOption) {
 		}
 		fmt.Printf("  %s\n", item.Description)
 	}
+}
+
+func appRules(client *http.Client) error {
+	var response appRuleResponse
+	if err := getJSON(client, "/app-rules", &response); err != nil {
+		return err
+	}
+	for _, rule := range response.Rules {
+		fmt.Printf("%s [%s] mode=%s punct=%s priority=%d\n", rule.ID, rule.Name, valueOr(rule.Mode, "keep"), valueOr(rule.Punctuation, "keep"), rule.Priority)
+		if rule.DisableCandidates {
+			fmt.Println("  disableCandidates=true")
+		}
+		if rule.DisableLearning {
+			fmt.Println("  disableLearning=true")
+		}
+		if len(rule.ProcessNames) > 0 {
+			fmt.Printf("  process=%s\n", strings.Join(rule.ProcessNames, ","))
+		}
+		if len(rule.ExeContains) > 0 {
+			fmt.Printf("  pathContains=%s\n", strings.Join(rule.ExeContains, ","))
+		}
+		if rule.Description != "" {
+			fmt.Printf("  %s\n", rule.Description)
+		}
+	}
+	return nil
+}
+
+func appContextCmd(client *http.Client, args []string) error {
+	if len(args) == 0 || strings.EqualFold(args[0], "help") {
+		return fmt.Errorf("usage: shurufa-imecli app-context resolve --process WeGame.exe [--path EXE] [--title TITLE] [--class CLASS] [--password] [--terminal] [--game]")
+	}
+	if strings.EqualFold(args[0], "resolve") {
+		args = args[1:]
+	}
+	context, err := parseAppContextArgs(args)
+	if err != nil {
+		return err
+	}
+	var decision appContextDecision
+	if err := postJSON(client, "/app-context/resolve", context, &decision); err != nil {
+		return err
+	}
+	fmt.Printf("matched=%v mode=%s punctuation=%s layout=%s disableCandidates=%v disableLearning=%v reason=%s\n",
+		decision.Matched,
+		decision.Mode,
+		decision.Punctuation,
+		decision.CandidateLayout,
+		decision.DisableCandidates,
+		decision.DisableLearning,
+		decision.Reason,
+	)
+	if decision.Rule != nil {
+		fmt.Printf("rule=%s [%s]\n", decision.Rule.ID, decision.Rule.Name)
+	}
+	return nil
+}
+
+func parseAppContextArgs(args []string) (appContext, error) {
+	var context appContext
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		valueArg := func() (string, error) {
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("missing value for %s", arg)
+			}
+			i++
+			return args[i], nil
+		}
+		switch arg {
+		case "--process", "-p":
+			value, err := valueArg()
+			if err != nil {
+				return context, err
+			}
+			context.ProcessName = value
+		case "--path":
+			value, err := valueArg()
+			if err != nil {
+				return context, err
+			}
+			context.ExePath = value
+		case "--title", "-t":
+			value, err := valueArg()
+			if err != nil {
+				return context, err
+			}
+			context.WindowTitle = value
+		case "--class":
+			value, err := valueArg()
+			if err != nil {
+				return context, err
+			}
+			context.WindowClass = value
+		case "--password":
+			context.PasswordField = true
+		case "--terminal":
+			context.Terminal = true
+		case "--game":
+			context.GameMode = true
+		default:
+			if strings.HasPrefix(arg, "--process=") {
+				context.ProcessName = strings.TrimPrefix(arg, "--process=")
+			} else if strings.HasPrefix(arg, "--path=") {
+				context.ExePath = strings.TrimPrefix(arg, "--path=")
+			} else if strings.HasPrefix(arg, "--title=") {
+				context.WindowTitle = strings.TrimPrefix(arg, "--title=")
+			} else if strings.HasPrefix(arg, "--class=") {
+				context.WindowClass = strings.TrimPrefix(arg, "--class=")
+			} else if context.ProcessName == "" {
+				context.ProcessName = arg
+			} else {
+				return context, fmt.Errorf("unknown app-context argument %q", arg)
+			}
+		}
+	}
+	if context.ProcessName == "" && context.ExePath == "" && context.WindowTitle == "" && context.WindowClass == "" &&
+		!context.PasswordField && !context.Terminal && !context.GameMode {
+		return context, fmt.Errorf("missing app context matcher")
+	}
+	return context, nil
+}
+
+func valueOr(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func wordbook(client *http.Client, args []string) error {
