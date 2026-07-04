@@ -1,6 +1,6 @@
 param(
   [ValidateSet("x64", "x86", "arm64")]
-  [string[]]$Arch = @("x64", "arm64"),
+  [string[]]$Arch = @("x64", "arm64", "x86"),
 
   [string]$Version,
   [switch]$SkipMissingArch

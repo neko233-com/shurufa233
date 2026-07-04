@@ -52,10 +52,10 @@ If ARM64 native linking fails with `msvcprt.lib`, the ARM64 VC tools are not ins
 Create installable Windows zip packages from existing build artifacts:
 
 ```powershell
-.\scripts\package-windows.ps1 -Arch @('x64','arm64')
+.\scripts\package-windows.ps1
 ```
 
-Each package contains the `build/windows` artifacts, install/uninstall scripts, docs, and a `manifest.json` with SHA-256 hashes. The manifest includes `performanceMode`; production-quality performance should be `in-process-core`, not `daemon-ipc-fallback`. Install from the package root with:
+By default this produces `x64`, `arm64`, and `x86` packages. Each package contains the `build/windows` artifacts, install/uninstall scripts, docs, and a `manifest.json` with SHA-256 hashes. The manifest includes `performanceMode`; production-quality performance should be `in-process-core`, not `daemon-ipc-fallback`. Install from the package root with:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -SkipBuild
@@ -72,6 +72,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 The installer:
 
 - copies daemon, CLI, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
+- detects the real Windows OS architecture, including 32-bit PowerShell running under WOW64, before choosing x64, arm64, or x86 artifacts
 - copies `Shurufa233ProfileCtl.exe` for current-session enable/activate/probe operations
 - copies `Shurufa233SmokeEdit.exe` for native TSF and typing performance validation
 - stops fixed and versioned `Shurufa233SmokeEdit*` validation labs before copying

@@ -29,21 +29,30 @@ function Test-IsAdmin {
   return $principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
 }
 
+function Get-EffectiveProcessorArchitecture {
+  if ($env:PROCESSOR_ARCHITEW6432) {
+    return $env:PROCESSOR_ARCHITEW6432
+  }
+  return $env:PROCESSOR_ARCHITECTURE
+}
+
 function Get-CurrentNativeArch {
-  switch ($env:PROCESSOR_ARCHITECTURE) {
+  $arch = Get-EffectiveProcessorArchitecture
+  switch ($arch) {
     "AMD64" { return "x64" }
     "ARM64" { return "arm64" }
     "x86" { return "x86" }
-    default { throw "Unsupported PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE" }
+    default { throw "Unsupported processor architecture. PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE PROCESSOR_ARCHITEW6432=$env:PROCESSOR_ARCHITEW6432" }
   }
 }
 
 function Get-CurrentGoArch {
-  switch ($env:PROCESSOR_ARCHITECTURE) {
+  $arch = Get-EffectiveProcessorArchitecture
+  switch ($arch) {
     "AMD64" { return "amd64" }
     "ARM64" { return "arm64" }
     "x86" { return "386" }
-    default { throw "Unsupported PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE" }
+    default { throw "Unsupported processor architecture. PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE PROCESSOR_ARCHITEW6432=$env:PROCESSOR_ARCHITEW6432" }
   }
 }
 
