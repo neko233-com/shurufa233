@@ -10,10 +10,12 @@
 namespace {
 
 constexpr wchar_t kClassName[] = L"Shurufa233SmokeEditWindow";
+constexpr wchar_t kSingletonName[] = L"Local\\Shurufa233SmokeEditSingleton";
 constexpr UINT_PTR kStatsTimer = 1;
-constexpr int kEditTop = 396;
+constexpr int kEditTop = 602;
 constexpr int kRecentKeyWindow = 256;
 constexpr int kLatencyWindow = 512;
+constexpr int kRecentKeyLabels = 14;
 
 const CLSID kClsidTextService = {
     0x3d7b8d06,
@@ -48,6 +50,9 @@ struct Metrics {
   double latencyWindow[kLatencyWindow]{};
   int latencyCursor = 0;
   int latencyCount = 0;
+  wchar_t recentKeyLabels[kRecentKeyLabels][32]{};
+  int recentKeyLabelCursor = 0;
+  int recentKeyLabelCount = 0;
   bool started = false;
 };
 
@@ -95,11 +100,26 @@ void EnsureStarted() {
   }
 }
 
-void RecordKeyDown() {
+void RecordKeyLabel(WPARAM key, LPARAM lparam) {
+  wchar_t label[32]{};
+  LONG keyInfo = static_cast<LONG>(lparam);
+  if (GetKeyNameTextW(keyInfo, label, ARRAYSIZE(label)) == 0) {
+    StringCchPrintfW(label, ARRAYSIZE(label), L"VK %02X", static_cast<unsigned int>(key));
+  }
+  StringCchCopyW(g_metrics.recentKeyLabels[g_metrics.recentKeyLabelCursor],
+                 ARRAYSIZE(g_metrics.recentKeyLabels[g_metrics.recentKeyLabelCursor]), label);
+  g_metrics.recentKeyLabelCursor = (g_metrics.recentKeyLabelCursor + 1) % kRecentKeyLabels;
+  if (g_metrics.recentKeyLabelCount < kRecentKeyLabels) {
+    g_metrics.recentKeyLabelCount++;
+  }
+}
+
+void RecordKeyDown(WPARAM key, LPARAM lparam) {
   EnsureStarted();
   const LARGE_INTEGER now = Now();
   g_metrics.keyDowns++;
   g_metrics.lastKeyAt = now;
+  RecordKeyLabel(key, lparam);
   g_metrics.recentKeys[g_metrics.recentKeyCursor] = now;
   g_metrics.recentKeyCursor = (g_metrics.recentKeyCursor + 1) % kRecentKeyWindow;
   if (g_metrics.recentKeyCount < kRecentKeyWindow) {
@@ -282,11 +302,100 @@ void DrawSegment(HDC dc, RECT rect, const wchar_t *label, const wchar_t *value,
   DrawTextLine(dc, hint, hintRect, g_bodyFont, Rgb(107, 114, 128));
 }
 
+void DrawBar(HDC dc, RECT rect, double value, double excellentMax, double warnMax) {
+  RoundedFill(dc, rect, Rgb(232, 238, 248), Rgb(232, 238, 248), 8);
+  const double clamped = std::clamp(value / warnMax, 0.0, 1.0);
+  RECT fill = rect;
+  fill.right = fill.left + static_cast<int>((fill.right - fill.left) * clamped);
+  const COLORREF color = value <= excellentMax ? Rgb(5, 150, 105)
+                         : value <= warnMax   ? Rgb(217, 119, 6)
+                                              : Rgb(220, 38, 38);
+  if (fill.right > fill.left) {
+    RoundedFill(dc, fill, color, color, 8);
+  }
+}
+
+void DrawSparkline(HDC dc, RECT rect) {
+  RoundedFill(dc, rect, Rgb(248, 250, 252), Rgb(226, 232, 240), 10);
+  RECT title{rect.left + 12, rect.top + 8, rect.right - 12, rect.top + 30};
+  DrawTextLine(dc, L"延迟火花线", title, g_bodyFont, Rgb(71, 85, 105));
+
+  RECT plot{rect.left + 12, rect.top + 36, rect.right - 12, rect.bottom - 14};
+  HPEN gridPen = CreatePen(PS_SOLID, 1, Rgb(226, 232, 240));
+  HGDIOBJ oldPen = SelectObject(dc, gridPen);
+  for (int i = 0; i < 3; ++i) {
+    const int y = plot.top + ((plot.bottom - plot.top) * (i + 1)) / 4;
+    MoveToEx(dc, plot.left, y, nullptr);
+    LineTo(dc, plot.right, y);
+  }
+  SelectObject(dc, oldPen);
+  DeleteObject(gridPen);
+
+  if (g_metrics.latencyCount <= 1) {
+    DrawTextLine(dc, L"输入并上屏后开始采样", plot, g_bodyFont, Rgb(148, 163, 184),
+                 DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+    return;
+  }
+
+  HPEN linePen = CreatePen(PS_SOLID, 2, Rgb(37, 99, 235));
+  oldPen = SelectObject(dc, linePen);
+  const int count = g_metrics.latencyCount;
+  const int start = count == kLatencyWindow ? g_metrics.latencyCursor : 0;
+  for (int i = 0; i < count; ++i) {
+    const int source = (start + i) % kLatencyWindow;
+    const double sample = std::clamp(g_metrics.latencyWindow[source], 0.0, 50.0);
+    const int x = plot.left + ((plot.right - plot.left) * i) / std::max(1, count - 1);
+    const int y = plot.bottom - static_cast<int>((plot.bottom - plot.top) * (sample / 50.0));
+    if (i == 0) {
+      MoveToEx(dc, x, y, nullptr);
+    } else {
+      LineTo(dc, x, y);
+    }
+  }
+  SelectObject(dc, oldPen);
+  DeleteObject(linePen);
+}
+
+void DrawKeyTrail(HDC dc, RECT rect) {
+  RoundedFill(dc, rect, Rgb(248, 250, 252), Rgb(226, 232, 240), 10);
+  RECT labelRect{rect.left + 12, rect.top + 8, rect.left + 112, rect.bottom - 8};
+  DrawTextLine(dc, L"最近按键", labelRect, g_bodyFont, Rgb(71, 85, 105));
+  if (g_metrics.recentKeyLabelCount <= 0) {
+    RECT empty{rect.left + 112, rect.top + 8, rect.right - 12, rect.bottom - 8};
+    DrawTextLine(dc, L"等待输入", empty, g_bodyFont, Rgb(148, 163, 184));
+    return;
+  }
+
+  int x = rect.left + 112;
+  const int y = rect.top + 9;
+  const int count = g_metrics.recentKeyLabelCount;
+  const int start = count == kRecentKeyLabels ? g_metrics.recentKeyLabelCursor : 0;
+  HGDIOBJ oldFont = SelectObject(dc, g_bodyFont);
+  for (int i = 0; i < count; ++i) {
+    const int source = (start + i) % kRecentKeyLabels;
+    const wchar_t *text = g_metrics.recentKeyLabels[source];
+    SIZE size{};
+    GetTextExtentPoint32W(dc, text, static_cast<int>(wcslen(text)), &size);
+    const int width = std::clamp(static_cast<int>(size.cx) + 22, 44, 104);
+    if (x + width > rect.right - 12) {
+      break;
+    }
+    RECT chip{x, y, x + width, rect.bottom - 9};
+    DrawBadge(dc, chip, text, Rgb(239, 246, 255), Rgb(191, 219, 254), Rgb(29, 78, 216));
+    x += width + 8;
+  }
+  SelectObject(dc, oldFont);
+}
+
 void Paint(HWND hwnd) {
   PAINTSTRUCT ps{};
-  HDC dc = BeginPaint(hwnd, &ps);
+  HDC paintDc = BeginPaint(hwnd, &ps);
   RECT client{};
   GetClientRect(hwnd, &client);
+  HDC dc = CreateCompatibleDC(paintDc);
+  HBITMAP bitmap = CreateCompatibleBitmap(paintDc, client.right - client.left,
+                                          client.bottom - client.top);
+  HGDIOBJ oldBitmap = SelectObject(dc, bitmap);
 
   HBRUSH bg = CreateSolidBrush(Rgb(243, 246, 251));
   FillRect(dc, &client, bg);
@@ -350,7 +459,7 @@ void Paint(HWND hwnd) {
   StringCchPrintfW(value, ARRAYSIZE(value), L"%d", g_metrics.changes);
   DrawMetric(dc, card, L"Text changes", value, Rgb(8, 145, 178));
 
-  RECT perfPanel{24, 244, client.right - 24, 334};
+  RECT perfPanel{24, 244, client.right - 24, 374};
   RoundedFill(dc, perfPanel, Rgb(255, 255, 255), Rgb(211, 219, 232), 16);
   RECT perfTitle{perfPanel.left + 18, perfPanel.top + 10, perfPanel.right - 18, perfPanel.top + 32};
   DrawTextLine(dc, L"电竞性能雷达", perfTitle, g_bodyFont, Rgb(55, 65, 81));
@@ -374,7 +483,17 @@ void Paint(HWND hwnd) {
               g_shurufaActive ? L"TSF profile active" : L"F6 激活后再测",
               latencyGood ? Rgb(5, 150, 105) : Rgb(220, 38, 38));
 
-  RECT editFrame{24, 350, client.right - 24, client.bottom - 24};
+  RECT bar{perfPanel.left + 18, perfPanel.bottom - 30, perfPanel.left + segmentWidth - 8,
+           perfPanel.bottom - 18};
+  DrawBar(dc, bar, g_metrics.latencySamples > 0 ? p95Latency : 0.0, 16.0, 50.0);
+  RECT spark{perfPanel.left + 18 + segmentWidth + segmentGap, perfPanel.bottom - 38,
+             perfPanel.right - 18, perfPanel.bottom - 10};
+  DrawKeyTrail(dc, spark);
+
+  RECT sparkPanel{24, 388, client.right - 24, 494};
+  DrawSparkline(dc, sparkPanel);
+
+  RECT editFrame{24, 510, client.right - 24, client.bottom - 24};
   RoundedFill(dc, editFrame, Rgb(255, 255, 255), Rgb(211, 219, 232), 16);
   RECT editTitle{editFrame.left + 18, editFrame.top + 12, editFrame.right - 18, editFrame.top + 42};
   DrawTextLine(dc, L"原生输入轨道", editTitle, g_titleFont, Rgb(31, 41, 55));
@@ -388,6 +507,11 @@ void Paint(HWND hwnd) {
   RECT divider{editFrame.left + 18, editFrame.top + 78, editFrame.right - 18, editFrame.top + 79};
   FillSolidRect(dc, divider, Rgb(229, 235, 245));
 
+  BitBlt(paintDc, client.left, client.top, client.right - client.left, client.bottom - client.top,
+         dc, 0, 0, SRCCOPY);
+  SelectObject(dc, oldBitmap);
+  DeleteObject(bitmap);
+  DeleteDC(dc);
   EndPaint(hwnd, &ps);
 }
 
@@ -401,7 +525,7 @@ LRESULT CALLBACK EditProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
           return 0;
         }
       }
-      RecordKeyDown();
+      RecordKeyDown(wparam, lparam);
       break;
     case WM_CHAR:
       EnsureStarted();
@@ -496,6 +620,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
         return 0;
       }
       break;
+    case WM_GETMINMAXINFO: {
+      auto *info = reinterpret_cast<MINMAXINFO *>(lparam);
+      info->ptMinTrackSize.x = 920;
+      info->ptMinTrackSize.y = 760;
+      return 0;
+    }
     case WM_KEYDOWN:
       if (wparam == VK_F5) {
         ResetMetrics(hwnd);
@@ -536,9 +666,23 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpara
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
+  HANDLE singleton = CreateMutexW(nullptr, FALSE, kSingletonName);
+  if (singleton && GetLastError() == ERROR_ALREADY_EXISTS) {
+    HWND existing = FindWindowW(kClassName, nullptr);
+    if (existing) {
+      ShowWindow(existing, SW_RESTORE);
+      SetForegroundWindow(existing);
+      CloseHandle(singleton);
+      return 0;
+    }
+  }
+
   HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   const bool didCoInit = SUCCEEDED(hr);
   if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
+    if (singleton) {
+      CloseHandle(singleton);
+    }
     return 1;
   }
 
@@ -552,8 +696,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
 
   HWND hwnd = CreateWindowExW(0, kClassName, L"shurufa233 input performance lab",
                               WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
-                              980, 700, nullptr, nullptr, instance, nullptr);
+                              1040, 860, nullptr, nullptr, instance, nullptr);
   if (!hwnd) {
+    if (didCoInit) {
+      CoUninitialize();
+    }
+    if (singleton) {
+      CloseHandle(singleton);
+    }
     return 1;
   }
   ShowWindow(hwnd, show);
@@ -566,6 +716,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
   }
   if (didCoInit) {
     CoUninitialize();
+  }
+  if (singleton) {
+    CloseHandle(singleton);
   }
   return static_cast<int>(msg.wParam);
 }
