@@ -65,6 +65,12 @@ type updateCheck struct {
 	Manifest        dictionaryManifest `json:"manifest,omitempty"`
 }
 
+type userScoreStore struct {
+	Version   int            `json:"version"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	Scores    map[string]int `json:"scores"`
+}
+
 func main() {
 	configPath, err := configFile()
 	if err != nil {
@@ -122,6 +128,7 @@ func (s *AppState) load() error {
 	config = normalizeConfig(config)
 	s.config = config
 	s.engine = engine.New(config)
+	s.engine.ImportUserScores(s.loadUserScores())
 	s.sessions["default"] = s.engine
 	if err := s.loadLocalDictionariesLocked(); err != nil {
 		return err
@@ -217,6 +224,10 @@ func (s *AppState) imeSelect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := s.saveUserScores(session.UserScores()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(state.Committed))
 }
@@ -272,6 +283,7 @@ func (s *AppState) sessionForRequest(r *http.Request) *engine.Engine {
 	session := s.sessions[id]
 	if session == nil {
 		session = engine.New(s.config)
+		session.ImportUserScores(s.loadUserScores())
 		s.sessions[id] = session
 	}
 	return session
@@ -525,6 +537,67 @@ func (s *AppState) loadLocalDictionariesLocked() error {
 
 func (s *AppState) dictionaryDir() string {
 	return filepath.Join(filepath.Dir(s.path), "dictionaries")
+}
+
+func (s *AppState) userScoresPath() string {
+	return filepath.Join(filepath.Dir(s.path), "user-scores.json")
+}
+
+func (s *AppState) loadUserScores() map[string]int {
+	data, err := os.ReadFile(s.userScoresPath())
+	if err != nil {
+		return nil
+	}
+	var store userScoreStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		return nil
+	}
+	return store.Scores
+}
+
+func (s *AppState) saveUserScores(scores map[string]int) error {
+	if len(scores) == 0 {
+		return nil
+	}
+	path := s.userScoresPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	merged := make(map[string]int, len(scores))
+	for key, value := range scores {
+		merged[key] = value
+	}
+	if data, err := os.ReadFile(path); err == nil {
+		var existing userScoreStore
+		if json.Unmarshal(data, &existing) == nil {
+			for key, value := range existing.Scores {
+				if value > merged[key] {
+					merged[key] = value
+				}
+			}
+		}
+	}
+	store := userScoreStore{
+		Version:   1,
+		UpdatedAt: time.Now().UTC(),
+		Scores:    merged,
+	}
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(path)
+		if retryErr := os.Rename(tmp, path); retryErr != nil {
+			_ = os.Remove(tmp)
+			return retryErr
+		}
+	}
+	return nil
 }
 
 func (s *AppState) withCORS(next http.HandlerFunc) http.HandlerFunc {

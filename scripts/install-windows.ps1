@@ -64,6 +64,28 @@ function Save-InputMethodBackup {
   Write-Host "Saved input method backup to $InputMethodBackupPath"
 }
 
+function Remove-StaleNativeArtifacts {
+  param(
+    [string]$KeepTsfDll,
+    [string]$KeepCoreDll
+  )
+
+  if (-not (Test-Path $NativeInstallDir)) {
+    return
+  }
+
+  Get-ChildItem $NativeInstallDir -Filter "Shurufa233Tsf-*.dll" -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -ne $KeepTsfDll } |
+    ForEach-Object {
+      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {}
+    }
+  Get-ChildItem $NativeInstallDir -Filter "shurufa_core-*.dll" -ErrorAction SilentlyContinue |
+    Where-Object { -not $KeepCoreDll -or $_.FullName -ne $KeepCoreDll } |
+    ForEach-Object {
+      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch {}
+    }
+}
+
 $NativeArch = Get-CurrentNativeArch
 $GoArch = Get-CurrentGoArch
 
@@ -178,6 +200,17 @@ if (-not (Test-IsAdmin)) {
   if ($RegisteredComPath -ne $RegisteredTsfDll) {
     throw "TSF registration did not update HKLM. Expected $RegisteredTsfDll but found $RegisteredComPath"
   }
+  $RegisteredCoreDll = if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
+    Join-Path $NativeInstallDir (Split-Path $LocalCoreDll -Leaf)
+  } else {
+    $null
+  }
+  Remove-StaleNativeArtifacts -KeepTsfDll $RegisteredTsfDll -KeepCoreDll $RegisteredCoreDll
+}
+
+if ($RegisterOnly) {
+  Write-Host "Registered native TSF artifacts under $NativeInstallDir"
+  return
 }
 
 if (-not $RegisterOnly) {

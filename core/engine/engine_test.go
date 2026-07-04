@@ -83,3 +83,23 @@ func TestLoadDictionaryMergesDuplicates(t *testing.T) {
 		t.Fatalf("expected merged candidate to keep highest weight, got %d", state.Candidates[0].Weight)
 	}
 }
+
+func TestImportUserScoresAffectsRanking(t *testing.T) {
+	e := New(DefaultConfig())
+	_, err := e.LoadDictionary(strings.NewReader(`{
+		"language": "zh-CN",
+		"version": "test",
+		"entries": [
+			{ "reading": "ceshi", "text": "测试", "weight": 100 },
+			{ "reading": "ceshi", "text": "侧室", "weight": 90 }
+		]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.ImportUserScores(map[string]int{"ceshi|侧室": 1000})
+	state := e.Preview("ceshi")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "侧室" {
+		t.Fatalf("expected imported user score to rerank candidates, got %#v", state.Candidates)
+	}
+}

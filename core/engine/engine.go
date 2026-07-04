@@ -209,6 +209,23 @@ func (e *Engine) UserScores() map[string]int {
 	return copyScores
 }
 
+func (e *Engine) ImportUserScores(scores map[string]int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(scores) == 0 {
+		return
+	}
+	if e.user == nil {
+		e.user = make(map[string]int, len(scores))
+	}
+	for key, value := range scores {
+		if key == "" || value <= 0 {
+			continue
+		}
+		e.user[key] = value
+	}
+}
+
 func (e *Engine) stateLocked(committed string) State {
 	return State{
 		Buffer:     e.buffer,
