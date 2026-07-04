@@ -26,6 +26,8 @@ const maxPrefixEntries = 256
 const fuzzyCandidatePenalty = 120
 const fuzzyVariantLimit = 64
 const doublePinyinVariantLimit = 64
+const segmentedCandidatePenalty = 9000
+const segmentedPiecePenalty = 220
 
 func DefaultConfig() Config {
 	return Config{
@@ -339,9 +341,23 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 	}
 
 	for _, item := range readings {
-		appendEntries(e.dict[item.reading], item.penalty)
+		exactEntries := e.dict[item.reading]
+		appendEntries(exactEntries, item.penalty)
 		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
 			appendEntries(e.dict[variant], item.penalty+fuzzyCandidatePenalty)
+		}
+		if len(exactEntries) > 0 {
+			segmented, weight := e.segmentBestLocked(item.reading)
+			if segmented == "" || segmented == reading {
+				continue
+			}
+			appendEntries([]Entry{{
+				Reading: item.reading,
+				Text:    segmented,
+				Kind:    "phrase",
+				Source:  "segmenter",
+				Weight:  weight,
+			}}, item.penalty)
 		}
 	}
 	if len(exact) > 0 {
@@ -361,13 +377,19 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 
 	for _, item := range readings {
 		for _, variant := range append([]string{item.reading}, e.fuzzyReadingsLocked(item.reading)...) {
-			segmented := e.segmentGreedyLocked(variant)
+			segmented, weight := e.segmentBestLocked(variant)
 			if segmented != "" && segmented != reading {
 				penalty := item.penalty
 				if variant != item.reading {
 					penalty += fuzzyCandidatePenalty
 				}
-				return []Entry{{Reading: variant, Text: segmented, Weight: max(1, 3000-penalty)}}
+				return []Entry{{
+					Reading: variant,
+					Text:    segmented,
+					Kind:    "phrase",
+					Source:  "segmenter",
+					Weight:  max(1, weight-penalty),
+				}}
 			}
 		}
 	}
@@ -430,32 +452,48 @@ func (e *Engine) fuzzyReadingsLocked(reading string) []string {
 	return out
 }
 
-func (e *Engine) segmentGreedyLocked(reading string) string {
-	var out strings.Builder
-	for i := 0; i < len(reading); {
-		bestEnd := -1
-		var best Entry
+func (e *Engine) segmentBestLocked(reading string) (string, int) {
+	type segmentState struct {
+		text   string
+		score  int
+		pieces int
+		ok     bool
+	}
+	states := make([]segmentState, len(reading)+1)
+	states[0] = segmentState{ok: true}
+	for i := 0; i < len(reading); i++ {
+		if !states[i].ok {
+			continue
+		}
 		end := len(reading)
 		if e.maxReadingLen > 0 && i+e.maxReadingLen < end {
 			end = i + e.maxReadingLen
 		}
-		for j := end; j > i; j-- {
+		for j := i + 1; j <= end; j++ {
 			part := reading[i:j]
 			entries := e.dict[part]
 			if len(entries) == 0 {
 				continue
 			}
-			bestEnd = j
-			best = entries[0]
-			break
+			best := entries[0]
+			score := states[i].score + best.Weight - segmentedPiecePenalty
+			pieces := states[i].pieces + 1
+			if !states[j].ok || score > states[j].score ||
+				(score == states[j].score && pieces < states[j].pieces) {
+				states[j] = segmentState{
+					text:   states[i].text + best.Text,
+					score:  score,
+					pieces: pieces,
+					ok:     true,
+				}
+			}
 		}
-		if bestEnd == -1 {
-			return ""
-		}
-		out.WriteString(best.Text)
-		i = bestEnd
 	}
-	return out.String()
+	best := states[len(reading)]
+	if !best.ok || best.pieces < 2 {
+		return "", 0
+	}
+	return best.text, max(1, best.score-segmentedCandidatePenalty)
 }
 
 func normalizeReading(input string) string {

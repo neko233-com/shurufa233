@@ -37,6 +37,32 @@ func TestGreedySegmentation(t *testing.T) {
 	}
 }
 
+func TestSegmentedCandidateUsesBestScoredPath(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{
+		{Reading: "nide", Text: "泥德", Weight: 100},
+	})
+
+	state := e.Preview("nide")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "你的" {
+		t.Fatalf("expected best segmented candidate 你的 to outrank low-quality exact word, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Kind != "phrase" || state.Candidates[0].Source != "segmenter" {
+		t.Fatalf("expected segmented phrase metadata, got %#v", state.Candidates[0])
+	}
+}
+
+func TestSegmentedCandidateDoesNotOverrideStrongExactPhrase(t *testing.T) {
+	e := New(DefaultConfig())
+	state := e.Preview("nihao")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "你好" {
+		t.Fatalf("expected exact phrase 你好 to remain first, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Source == "segmenter" {
+		t.Fatalf("exact phrase should not be replaced by segmented metadata: %#v", state.Candidates[0])
+	}
+}
+
 func TestEnglishMode(t *testing.T) {
 	config := DefaultConfig()
 	config.Mode = "en"
