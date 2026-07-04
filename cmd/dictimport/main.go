@@ -16,6 +16,8 @@ import (
 	"github.com/neko233-com/shurufa233/core/engine"
 )
 
+const customPhraseWeightBase = 50000
+
 func main() {
 	language := flag.String("language", "zh-CN", "dictionary language")
 	version := flag.String("version", "rime-import", "dictionary version")
@@ -183,12 +185,18 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	inBody := false
+	sawYAMLHeader := false
 	var entries []engine.Entry
 	var imports []string
 	importList := false
 	for scanner.Scan() {
 		line := strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "\ufeff"))
 		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if line == "---" {
+			sawYAMLHeader = true
+			importList = false
 			continue
 		}
 		if !inBody {
@@ -209,6 +217,14 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 					continue
 				}
 				importList = false
+			}
+			if sawYAMLHeader {
+				continue
+			}
+			entry, ok := parseRimeEntry(line, source)
+			if ok {
+				entry.Weight = customPhraseWeight(entry.Weight)
+				entries = append(entries, entry)
 			}
 			continue
 		}
@@ -301,18 +317,21 @@ func resolveImportTable(baseDir string, table string) (string, bool, error) {
 }
 
 func parseRimeEntry(line string, source string) (engine.Entry, bool) {
-	fields := strings.Split(line, "\t")
+	fields, ok := splitRimeEntryFields(line)
+	if !ok {
+		return engine.Entry{}, false
+	}
 	if len(fields) < 2 {
 		return engine.Entry{}, false
 	}
 	text := strings.TrimSpace(fields[0])
-	reading := normalizeRimeReading(fields[1])
+	reading := normalizeRimeReading(stripRimeInlineComment(fields[1]))
 	if text == "" || reading == "" {
 		return engine.Entry{}, false
 	}
 	weight := 1000
 	if len(fields) >= 3 {
-		if parsed, err := strconv.Atoi(strings.TrimSpace(fields[2])); err == nil && parsed > 0 {
+		if parsed, err := strconv.Atoi(strings.TrimSpace(stripRimeInlineComment(fields[2]))); err == nil && parsed > 0 {
 			weight = parsed
 		}
 	}
@@ -322,6 +341,48 @@ func parseRimeEntry(line string, source string) (engine.Entry, bool) {
 		Source:  source,
 		Weight:  weight,
 	}, true
+}
+
+func splitRimeEntryFields(line string) ([]string, bool) {
+	if strings.Contains(line, "\t") {
+		return strings.Split(line, "\t"), true
+	}
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return nil, false
+	}
+	codeIndex := len(fields) - 1
+	var weight string
+	if parsed, err := strconv.Atoi(stripRimeInlineComment(fields[codeIndex])); err == nil && parsed > 0 {
+		weight = fields[codeIndex]
+		codeIndex--
+	}
+	if codeIndex < 1 {
+		return nil, false
+	}
+	text := strings.Join(fields[:codeIndex], " ")
+	if strings.HasPrefix(text, "-") || strings.HasSuffix(text, ":") {
+		return nil, false
+	}
+	out := []string{text, fields[codeIndex]}
+	if weight != "" {
+		out = append(out, weight)
+	}
+	return out, true
+}
+
+func customPhraseWeight(weight int) int {
+	if weight <= 0 {
+		weight = 1000
+	}
+	return customPhraseWeightBase + weight
+}
+
+func stripRimeInlineComment(value string) string {
+	if index := strings.Index(value, "#"); index >= 0 {
+		value = value[:index]
+	}
+	return strings.TrimSpace(value)
 }
 
 var rimeReadingReplacer = strings.NewReplacer(

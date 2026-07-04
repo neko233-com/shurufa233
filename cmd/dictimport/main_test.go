@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/neko233-com/shurufa233/core/engine"
 )
 
 func TestParseRimeDictionary(t *testing.T) {
@@ -112,6 +114,85 @@ import_tables: [luna_pinyin, cn_dicts/ext]
 		if imports[index] != want[index] {
 			t.Fatalf("imports = %#v, want %#v", imports, want)
 		}
+	}
+}
+
+func TestParseRimeCustomPhraseText(t *testing.T) {
+	input := `# Rime custom_phrase.txt
+#@/db_name custom_phrase.txt
+# 以 Tab 分割：词汇<TAB>编码<TAB>权重
+马上到！	msd	99
+邮箱	youxiang
+`
+	entries, imports, err := parseRimeDocument(strings.NewReader(input), "custom-phrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(imports) != 0 {
+		t.Fatalf("imports = %#v, want none", imports)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %#v, want 2", entries)
+	}
+	if entries[0].Text != "马上到！" || entries[0].Reading != "msd" || entries[0].Weight != customPhraseWeightBase+99 {
+		t.Fatalf("first custom phrase = %#v", entries[0])
+	}
+	if entries[1].Text != "邮箱" || entries[1].Reading != "youxiang" || entries[1].Weight != customPhraseWeightBase+1000 {
+		t.Fatalf("second custom phrase = %#v", entries[1])
+	}
+}
+
+func TestParseRimeCustomPhraseWhitespaceFallback(t *testing.T) {
+	input := `What the fuck! wtf 3
+http://rime.im/ rime 1
+Rime rime
+`
+	entries, err := parseRimeDictionary(strings.NewReader(input), "custom-phrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("entries = %#v, want 3", entries)
+	}
+	if entries[0].Text != "What the fuck!" || entries[0].Reading != "wtf" || entries[0].Weight != customPhraseWeightBase+3 {
+		t.Fatalf("whitespace custom phrase = %#v", entries[0])
+	}
+	if entries[1].Text != "http://rime.im/" || entries[1].Reading != "rime" || entries[1].Weight != customPhraseWeightBase+1 {
+		t.Fatalf("url custom phrase = %#v", entries[1])
+	}
+	if entries[2].Text != "Rime" || entries[2].Reading != "rime" || entries[2].Weight != customPhraseWeightBase+1000 {
+		t.Fatalf("weightless custom phrase = %#v", entries[2])
+	}
+}
+
+func TestCustomPhraseImportRanksAboveOrdinaryDictionary(t *testing.T) {
+	input := `马上到！	msd	1`
+	entries, err := parseRimeDictionary(strings.NewReader(input), "custom-phrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := engine.New(engine.DefaultConfig())
+	e.AddEntries([]engine.Entry{{Reading: "msd", Text: "普通短语", Weight: 20000}})
+	e.AddEntries(entries)
+	state := e.Preview("msd")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "马上到！" {
+		t.Fatalf("expected custom phrase to rank first, got %#v", state.Candidates)
+	}
+}
+
+func TestParseRimeYAMLHeaderIsNotImportedAsCustomPhrase(t *testing.T) {
+	input := `---
+name: rime_ice
+version: "test"
+...
+入口	ru kou	900
+`
+	entries, err := parseRimeDictionary(strings.NewReader(input), "rime-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Text != "入口" {
+		t.Fatalf("entries = %#v, want only body row", entries)
 	}
 }
 

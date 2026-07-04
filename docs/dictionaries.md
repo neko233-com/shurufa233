@@ -23,6 +23,21 @@ Rime dictionaries usually use `.dict.yaml` files with a YAML header ending in
 词条<TAB>pin yin<TAB>weight
 ```
 
+Rime user phrases such as `custom_phrase.txt` are also supported. These files
+often have no YAML header and use the same table shape:
+
+```text
+词条<TAB>编码<TAB>权重
+```
+
+For easier migration from existing personal Rime folders, `shurufa-dictimport`
+also accepts whitespace-separated custom phrase rows when there is no YAML
+header, so examples such as `What the fuck! wtf 3` and
+`http://rime.im/ rime 1` import as fixed high-priority personal phrases.
+Because Rime usually gives `custom_phrase` a high `initial_quality`, headerless
+custom phrase rows are mapped into a high shurufa233 weight band while keeping
+their row weight for ordering within the personal phrase set.
+
 Convert one or more Rime dictionaries into the shurufa233 JSON format:
 
 ```powershell
@@ -32,6 +47,17 @@ go run ./cmd/dictimport `
   -source rime-luna-pinyin `
   -out data/dictionaries/zh-CN.rime-luna.json `
   path\to\luna_pinyin.dict.yaml
+```
+
+Convert personal Rime custom phrases into a shurufa233 dictionary:
+
+```powershell
+go run ./cmd/dictimport `
+  -language zh-CN `
+  -version custom-phrase-2026-07-05 `
+  -source rime-custom-phrase `
+  -out data/dictionaries/zh-CN.custom-phrase.json `
+  path\to\custom_phrase.txt
 ```
 
 By default, `shurufa-dictimport` resolves Rime `import_tables` recursively, so
