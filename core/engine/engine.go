@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -25,7 +26,7 @@ const maxPrefixEntries = 256
 
 func DefaultConfig() Config {
 	return Config{
-		MaxCandidates: 7,
+		MaxCandidates: 42,
 		FuzzyInitials: []string{
 			"zh=z",
 			"ch=c",
@@ -140,7 +141,12 @@ func (e *Engine) sortIndexLocked() {
 
 func (e *Engine) LoadDictionary(reader io.Reader) (DictionaryFile, error) {
 	var file DictionaryFile
-	if err := json.NewDecoder(reader).Decode(&file); err != nil {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return file, err
+	}
+	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
+	if err := json.Unmarshal(data, &file); err != nil {
 		return file, err
 	}
 	e.AddEntries(file.Entries)
@@ -254,6 +260,8 @@ func (e *Engine) candidatesLocked() []Candidate {
 		candidates = append(candidates, Candidate{
 			Text:      entry.Text,
 			Reading:   entry.Reading,
+			Kind:      entry.Kind,
+			Source:    entry.Source,
 			Weight:    entry.Weight,
 			UserScore: e.user[scoreKey],
 		})

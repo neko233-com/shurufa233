@@ -133,21 +133,33 @@ func ShurufaCandidateScore(id C.uint64_t, index C.int) C.int {
 
 //export ShurufaCandidatePayload
 func ShurufaCandidatePayload(id C.uint64_t, limit C.int) *C.char {
+	return ShurufaCandidatePayloadRange(id, 0, limit)
+}
+
+//export ShurufaCandidatePayloadRange
+func ShurufaCandidatePayloadRange(id C.uint64_t, start C.int, limit C.int) *C.char {
 	session := getSession(uint64(id))
 	candidates := session.State().Candidates
+	startIndex := int(start)
+	if startIndex < 0 {
+		startIndex = 0
+	}
+	if startIndex > len(candidates) {
+		startIndex = len(candidates)
+	}
 	maxItems := int(limit)
 	if maxItems <= 0 || maxItems > 9 {
 		maxItems = 9
 	}
-	if len(candidates) < maxItems {
-		maxItems = len(candidates)
+	if remaining := len(candidates) - startIndex; remaining < maxItems {
+		maxItems = remaining
 	}
 	var out strings.Builder
 	for i := 0; i < maxItems; i++ {
 		if i > 0 {
 			out.WriteByte('\n')
 		}
-		candidate := candidates[i]
+		candidate := candidates[startIndex+i]
 		out.WriteString(strconv.Itoa(i + 1))
 		out.WriteByte('\t')
 		out.WriteString(sanitizePayloadField(candidate.Text))
@@ -155,6 +167,10 @@ func ShurufaCandidatePayload(id C.uint64_t, limit C.int) *C.char {
 		out.WriteString(sanitizePayloadField(candidate.Reading))
 		out.WriteByte('\t')
 		out.WriteString(strconv.Itoa(candidate.Weight + candidate.UserScore))
+		out.WriteByte('\t')
+		out.WriteString(sanitizePayloadField(candidate.Kind))
+		out.WriteByte('\t')
+		out.WriteString(sanitizePayloadField(candidate.Source))
 	}
 	return C.CString(out.String())
 }

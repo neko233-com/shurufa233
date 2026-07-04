@@ -69,7 +69,7 @@ type SkinPreset = {
 const apiBase = "http://127.0.0.1:23333";
 
 const defaultConfig: Config = {
-  maxCandidates: 7,
+  maxCandidates: 42,
   fuzzyInitials: ["zh=z", "ch=c", "sh=s"],
   doublePinyin: false,
   language: "zh-CN",
@@ -314,11 +314,11 @@ function App() {
               </select>
             </label>
             <label className="field">
-              <span>候选数量</span>
+              <span>候选池上限</span>
               <input
                 type="number"
-                min={3}
-                max={12}
+                min={7}
+                max={99}
                 value={config.maxCandidates}
                 onChange={(event) => setConfig({ ...config, maxCandidates: Number(event.target.value) })}
               />

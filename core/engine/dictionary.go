@@ -34,6 +34,12 @@ var defaultEntries = []Entry{
 	{Reading: "qiehuan", Text: "切换", Weight: 8200},
 	{Reading: "pifu", Text: "皮肤", Weight: 7600},
 	{Reading: "gengxin", Text: "更新", Weight: 7600},
+	{Reading: "weixiao", Text: "😊", Kind: "emoji", Source: "builtin-symbols", Weight: 6200},
+	{Reading: "xiaolian", Text: "😊", Kind: "emoji", Source: "builtin-symbols", Weight: 6000},
+	{Reading: "aixin", Text: "❤️", Kind: "emoji", Source: "builtin-symbols", Weight: 6000},
+	{Reading: "kaixin", Text: "ヽ(・∀・)ﾉ", Kind: "kaomoji", Source: "builtin-symbols", Weight: 5600},
+	{Reading: "haixiu", Text: "(*/ω＼*)", Kind: "kaomoji", Source: "builtin-symbols", Weight: 5400},
+	{Reading: "wunai", Text: "┐(´-｀)┌", Kind: "kaomoji", Source: "builtin-symbols", Weight: 5200},
 }
 
 func defaultDictionary() map[string][]Entry {

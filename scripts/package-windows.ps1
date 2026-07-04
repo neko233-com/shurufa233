@@ -89,6 +89,7 @@ foreach ($NativeArch in $Arch) {
   $required = @(
     (Join-Path $NativeOut "Shurufa233Tsf.dll"),
     (Join-Path $NativeOut "Shurufa233ProfileCtl.exe"),
+    (Join-Path $NativeOut "Shurufa233SmokeEdit.exe"),
     (Join-Path $GoOut "shurufa-daemon.exe"),
     (Join-Path $GoOut "shurufa-imecli.exe")
   )
@@ -110,6 +111,7 @@ foreach ($NativeArch in $Arch) {
 
   Copy-RequiredFile -Source (Join-Path $NativeOut "Shurufa233Tsf.dll") -Destination (Join-Path $Stage "build\windows\$NativeArch\Shurufa233Tsf.dll")
   Copy-RequiredFile -Source (Join-Path $NativeOut "Shurufa233ProfileCtl.exe") -Destination (Join-Path $Stage "build\windows\$NativeArch\Shurufa233ProfileCtl.exe")
+  Copy-RequiredFile -Source (Join-Path $NativeOut "Shurufa233SmokeEdit.exe") -Destination (Join-Path $Stage "build\windows\$NativeArch\Shurufa233SmokeEdit.exe")
   Copy-RequiredFile -Source (Join-Path $GoOut "shurufa-daemon.exe") -Destination (Join-Path $Stage "build\windows\go-$GoArch\shurufa-daemon.exe")
   Copy-RequiredFile -Source (Join-Path $GoOut "shurufa-imecli.exe") -Destination (Join-Path $Stage "build\windows\go-$GoArch\shurufa-imecli.exe")
 

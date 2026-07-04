@@ -43,13 +43,18 @@ int ShurufaInputKeyFast(uint64_t session, char key);
 int ShurufaBackspaceFast(uint64_t session);
 int ShurufaCandidateCount(uint64_t session);
 char* ShurufaCandidatePayload(uint64_t session, int limit);
+char* ShurufaCandidatePayloadRange(uint64_t session, int start, int limit);
 char* ShurufaCommitCandidate(uint64_t session, int index);
 ```
 
-`ShurufaCandidatePayload` returns up to `limit` UTF-8 rows separated by `\n`. Each row is:
+`ShurufaCandidatePayload` returns up to `limit` UTF-8 rows separated by `\n` from the first candidate.
+`ShurufaCandidatePayloadRange` returns a paged slice beginning at `start`; Windows uses it for Microsoft IME-style candidate paging.
+Each row is:
 
 ```text
-display_index<TAB>text<TAB>reading<TAB>score
+display_index<TAB>text<TAB>reading<TAB>score<TAB>kind<TAB>source
 ```
+
+`kind` and `source` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, and `phrase`; renderers must tolerate older four-column payloads.
 
 The Windows glue calls `ShurufaFree` after copying the returned payload. Older per-candidate getters remain available as a compatibility fallback.

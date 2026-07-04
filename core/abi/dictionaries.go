@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"os"
@@ -58,6 +59,7 @@ func loadDictionaryFile(path string) ([]engine.Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
 	var dict engine.DictionaryFile
 	if err := json.Unmarshal(data, &dict); err != nil {
 		return nil, err

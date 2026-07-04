@@ -90,6 +90,7 @@ $VcVarsAll = Get-VcVarsAll -InstallPath $VsInstallPath
 $Source = Join-Path $PSScriptRoot "Shurufa233Tsf.cpp"
 $Def = Join-Path $PSScriptRoot "Shurufa233Tsf.def"
 $ProfileCtlSource = Join-Path $PSScriptRoot "..\profilectl\Shurufa233ProfileCtl.cpp"
+$SmokeEditSource = Join-Path $PSScriptRoot "..\smokeedit\SmokeEdit.cpp"
 
 foreach ($TargetArch in $Arch) {
   Assert-VcRuntimeLibrary -InstallPath $VsInstallPath -TargetArch $TargetArch
@@ -103,8 +104,11 @@ foreach ($TargetArch in $Arch) {
   $Obj = Join-Path $ObjDir "Shurufa233Tsf.obj"
   $ProfileCtl = Join-Path $Out "Shurufa233ProfileCtl.exe"
   $ProfileCtlObj = Join-Path $ObjDir "Shurufa233ProfileCtl.obj"
+  $SmokeEdit = Join-Path $Out "Shurufa233SmokeEdit.exe"
+  $SmokeEditObj = Join-Path $ObjDir "Shurufa233SmokeEdit.obj"
   Remove-Item -Force $Dll -ErrorAction SilentlyContinue
   Remove-Item -Force $ProfileCtl -ErrorAction SilentlyContinue
+  Remove-Item -Force $SmokeEdit -ErrorAction SilentlyContinue
   $compile = @(
     "cl.exe",
     "/nologo",
@@ -169,4 +173,34 @@ foreach ($TargetArch in $Arch) {
     throw "Native build failed: $ProfileCtl was not created."
   }
   Write-Host "Built $ProfileCtl"
+
+  $smokeCompile = @(
+    "cl.exe",
+    "/nologo",
+    "/std:c++20",
+    "/EHsc",
+    "/O2",
+    "/GL",
+    "/guard:cf",
+    "/MD",
+    "/DNDEBUG",
+    "/DUNICODE",
+    "/D_UNICODE",
+    "`"$SmokeEditSource`"",
+    "/Fo`"$SmokeEditObj`"",
+    "/Fe:`"$SmokeEdit`"",
+    "/link",
+    "user32.lib",
+    "gdi32.lib",
+    "/SUBSYSTEM:WINDOWS",
+    "/OPT:REF",
+    "/OPT:ICF",
+    "/LTCG"
+  ) -join " "
+
+  Invoke-VcBuild -VcVarsAll $VcVarsAll -TargetArch (Get-VcTarget $TargetArch) -Command $smokeCompile
+  if (-not (Test-Path $SmokeEdit)) {
+    throw "Native build failed: $SmokeEdit was not created."
+  }
+  Write-Host "Built $SmokeEdit"
 }

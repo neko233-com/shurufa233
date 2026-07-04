@@ -144,6 +144,12 @@ Local TSF diagnostics are written to:
 %LOCALAPPDATA%\shurufa233-tsf.log
 ```
 
+## Input Performance Lab
+
+Native packages include `Shurufa233SmokeEdit.exe`. It is a polished Win32 EDIT-based performance lab rather than a React surface, because it validates the real TSF path used by native Windows apps and latency-sensitive games. It tracks WPM, key events per second, average key-to-text-change latency, IME composition activity, and committed character count.
+
+The React/Vite app remains the cross-platform settings surface. Browser/React typing tests can be added later as a separate compatibility target, but they do not replace the native SmokeEdit path.
+
 ## Agent Input Mode
 
 The daemon exposes:

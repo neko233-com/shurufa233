@@ -1,5 +1,5 @@
 {
-  "maxCandidates": 7,
+  "maxCandidates": 42,
   "fuzzyInitials": ["zh=z", "ch=c", "sh=s"],
   "doublePinyin": false,
   "language": "zh-CN",

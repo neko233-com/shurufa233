@@ -27,6 +27,8 @@ type Skin struct {
 type Candidate struct {
 	Text      string `json:"text"`
 	Reading   string `json:"reading"`
+	Kind      string `json:"kind,omitempty"`
+	Source    string `json:"source,omitempty"`
 	Weight    int    `json:"weight"`
 	UserScore int    `json:"userScore"`
 }
@@ -41,6 +43,8 @@ type State struct {
 type Entry struct {
 	Reading string `json:"reading"`
 	Text    string `json:"text"`
+	Kind    string `json:"kind,omitempty"`
+	Source  string `json:"source,omitempty"`
 	Weight  int    `json:"weight"`
 }
 

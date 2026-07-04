@@ -28,6 +28,7 @@ const GUID kProfileGuid = {
 constexpr wchar_t kDescription[] = L"shurufa233";
 constexpr wchar_t kModel[] = L"Apartment";
 constexpr LANGID kLanguage = MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
+constexpr int kCandidatesPerPage = 7;
 
 long g_dllRefCount = 0;
 HINSTANCE g_instance = nullptr;
@@ -42,6 +43,7 @@ using CandidateTextFn = char *(*)(uint64_t, int);
 using CandidateReadingFn = char *(*)(uint64_t, int);
 using CandidateScoreFn = int (*)(uint64_t, int);
 using CandidatePayloadFn = char *(*)(uint64_t, int);
+using CandidatePayloadRangeFn = char *(*)(uint64_t, int, int);
 using ClearSessionFn = char *(*)(uint64_t);
 using CommitCandidateFn = char *(*)(uint64_t, int);
 using FreeFn = void (*)(char *);
@@ -58,6 +60,7 @@ struct CoreApi {
   CandidateReadingFn candidateReading = nullptr;
   CandidateScoreFn candidateScore = nullptr;
   CandidatePayloadFn candidatePayload = nullptr;
+  CandidatePayloadRangeFn candidatePayloadRange = nullptr;
   ClearSessionFn clearSession = nullptr;
   CommitCandidateFn commitCandidate = nullptr;
   FreeFn freeValue = nullptr;
@@ -315,6 +318,8 @@ bool TryLoadInProcessCore() {
   api.candidateReading = LoadCoreProc<CandidateReadingFn>(module, "ShurufaCandidateReading");
   api.candidateScore = LoadCoreProc<CandidateScoreFn>(module, "ShurufaCandidateScore");
   api.candidatePayload = LoadCoreProc<CandidatePayloadFn>(module, "ShurufaCandidatePayload");
+  api.candidatePayloadRange =
+      LoadCoreProc<CandidatePayloadRangeFn>(module, "ShurufaCandidatePayloadRange");
   api.clearSession = LoadCoreProc<ClearSessionFn>(module, "ShurufaClear");
   api.commitCandidate = LoadCoreProc<CommitCandidateFn>(module, "ShurufaCommitCandidate");
   api.freeValue = LoadCoreProc<FreeFn>(module, "ShurufaFree");
@@ -345,6 +350,7 @@ void UseHttpCoreFallback() {
   g_core.candidateReading = HttpCandidateReading;
   g_core.candidateScore = HttpCandidateScore;
   g_core.candidatePayload = nullptr;
+  g_core.candidatePayloadRange = nullptr;
   g_core.clearSession = HttpClearSessionValue;
   g_core.commitCandidate = HttpCommitCandidate;
   g_core.freeValue = HttpFree;
@@ -381,6 +387,8 @@ class CandidateWindow {
     int index = 0;
     std::wstring text;
     std::wstring reading;
+    std::wstring kind;
+    std::wstring source;
     int score = 0;
   };
 
@@ -388,7 +396,7 @@ class CandidateWindow {
     ResetFont();
   }
 
-  void Show(const std::string &payload, int selectedIndex) {
+  void Show(const std::string &payload, int selectedIndex, int pageStart, int totalCount) {
     candidates_ = ParseCandidates(payload);
     if (candidates_.empty()) {
       Hide();
@@ -398,6 +406,8 @@ class CandidateWindow {
       KillTimer(hwnd_, kStatusTimerId);
     }
     selectedIndex_ = max(0, min(selectedIndex, static_cast<int>(candidates_.size()) - 1));
+    pageStart_ = max(0, pageStart);
+    totalCount_ = max(static_cast<int>(candidates_.size()), totalCount);
     composing_ = CompositionText();
     EnsureWindow();
     RefreshSkin();
@@ -425,6 +435,8 @@ class CandidateWindow {
     statusText_ = text ? text : L"";
     candidates_.clear();
     composing_.clear();
+    pageStart_ = 0;
+    totalCount_ = 0;
     POINT anchor = CaretAnchor();
     const int width = MeasureStatusWidth();
     const int height = max(42, fontSize_ + 28);
@@ -567,6 +579,8 @@ class CandidateWindow {
   std::wstring composing_;
   std::wstring statusText_;
   int selectedIndex_ = 0;
+  int pageStart_ = 0;
+  int totalCount_ = 0;
   std::wstring fontFamily_ = L"Microsoft YaHei UI";
   int fontSize_ = 18;
   COLORREF accent_ = RGB(37, 99, 235);
@@ -625,15 +639,19 @@ class CandidateWindow {
 
   int CandidateItemWidth(HDC dc, const CandidateView &candidate, bool selected) const {
     const int textWidth = TextWidth(dc, candidate.text);
-    return max(62, min(220, 44 + textWidth));
+    const int kindWidth = candidate.kind.empty() ? 0 : TextWidth(dc, CandidateKindLabel(candidate.kind)) + 18;
+    return max(62, min(260, 44 + textWidth + kindWidth));
   }
 
   int MeasureWindowWidth() {
     HDC dc = GetDC(hwnd_);
     HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
-    int width = max(220, TextWidth(dc, composing_) + 44);
-    for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
+    int width = max(260, TextWidth(dc, composing_) + 44);
+    for (size_t i = 0; i < candidates_.size() && i < kCandidatesPerPage; ++i) {
       width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + 6;
+    }
+    if (totalCount_ > static_cast<int>(candidates_.size())) {
+      width += 88;
     }
     SelectObject(dc, oldFont);
     ReleaseDC(hwnd_, dc);
@@ -717,12 +735,20 @@ class CandidateWindow {
         size_t first = line.find('\t');
         size_t second = first == std::string::npos ? std::string::npos : line.find('\t', first + 1);
         size_t third = second == std::string::npos ? std::string::npos : line.find('\t', second + 1);
+        size_t fourth = third == std::string::npos ? std::string::npos : line.find('\t', third + 1);
+        size_t fifth = fourth == std::string::npos ? std::string::npos : line.find('\t', fourth + 1);
         if (first != std::string::npos && second != std::string::npos && third != std::string::npos) {
           CandidateView item;
           item.index = atoi(line.substr(0, first).c_str());
           item.text = Utf8ToWide(line.substr(first + 1, second - first - 1).c_str());
           item.reading = Utf8ToWide(line.substr(second + 1, third - second - 1).c_str());
-          item.score = atoi(line.substr(third + 1).c_str());
+          item.score = atoi(line.substr(third + 1, fourth == std::string::npos ? std::string::npos : fourth - third - 1).c_str());
+          if (fourth != std::string::npos) {
+            item.kind = Utf8ToWide(line.substr(fourth + 1, fifth == std::string::npos ? std::string::npos : fifth - fourth - 1).c_str());
+          }
+          if (fifth != std::string::npos) {
+            item.source = Utf8ToWide(line.substr(fifth + 1).c_str());
+          }
           parsed.push_back(item);
         }
       }
@@ -741,6 +767,22 @@ class CandidateWindow {
       if (!candidate.reading.empty()) {
         return candidate.reading;
       }
+    }
+    return L"";
+  }
+
+  std::wstring CandidateKindLabel(const std::wstring &kind) const {
+    if (kind == L"emoji") {
+      return L"Emoji";
+    }
+    if (kind == L"kaomoji") {
+      return L"颜";
+    }
+    if (kind == L"symbol") {
+      return L"符";
+    }
+    if (kind == L"phrase") {
+      return L"短";
     }
     return L"";
   }
@@ -769,7 +811,7 @@ class CandidateWindow {
     int x = rect.left + 14;
     const int y = CandidateBandTop() + 7;
     const int itemHeight = max(32, fontSize_ + 18);
-    for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
+    for (size_t i = 0; i < candidates_.size() && i < kCandidatesPerPage; ++i) {
       const CandidateView &candidate = candidates_[i];
       const bool selected = static_cast<int>(i) == selectedIndex_;
       const int itemWidth = CandidateItemWidth(dc, candidate, selected);
@@ -795,6 +837,28 @@ class CandidateWindow {
 
       SetTextColor(dc, selected ? highlightText_ : text_);
       RECT textRect{itemRect.left + 28, itemRect.top, itemRect.right - 8, itemRect.bottom};
+      const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
+      if (!kindLabel.empty()) {
+        const int badgeWidth = TextWidth(dc, kindLabel) + 14;
+        textRect.right = max(textRect.left + 24, itemRect.right - badgeWidth - 8);
+        RECT badgeRect{itemRect.right - badgeWidth - 6, itemRect.top + 7,
+                       itemRect.right - 6, itemRect.bottom - 7};
+        HBRUSH badgeBrush = CreateSolidBrush(selected ? MixColor(accent_, highlightText_, 20)
+                                                       : MixColor(surface_, accent_, 12));
+        HPEN badgePen = CreatePen(PS_SOLID, 1, selected ? MixColor(accent_, highlightText_, 20)
+                                                        : MixColor(border_, accent_, 20));
+        HGDIOBJ oldBadgeBrush = SelectObject(dc, badgeBrush);
+        HGDIOBJ oldBadgePen = SelectObject(dc, badgePen);
+        RoundRect(dc, badgeRect.left, badgeRect.top, badgeRect.right, badgeRect.bottom, 8, 8);
+        SelectObject(dc, oldBadgePen);
+        SelectObject(dc, oldBadgeBrush);
+        DeleteObject(badgePen);
+        DeleteObject(badgeBrush);
+        SetTextColor(dc, selected ? highlightText_ : mutedText_);
+        DrawTextW(dc, kindLabel.c_str(), static_cast<int>(kindLabel.size()), &badgeRect,
+                  DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS);
+        SetTextColor(dc, selected ? highlightText_ : text_);
+      }
       DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
                 DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
       x += itemWidth + 6;
@@ -802,6 +866,21 @@ class CandidateWindow {
         break;
       }
     }
+    DrawPageIndicator(dc, rect);
+  }
+
+  void DrawPageIndicator(HDC dc, const RECT &rect) {
+    if (totalCount_ <= static_cast<int>(candidates_.size())) {
+      return;
+    }
+    const int first = pageStart_ + 1;
+    const int last = min(pageStart_ + static_cast<int>(candidates_.size()), totalCount_);
+    wchar_t label[32]{};
+    StringCchPrintfW(label, ARRAYSIZE(label), L"%d-%d/%d", first, last, totalCount_);
+    SetTextColor(dc, mutedText_);
+    RECT labelRect{max(rect.left + 12, rect.right - 96), CandidateBandTop() + 7,
+                   rect.right - 14, rect.bottom - 8};
+    DrawTextW(dc, label, -1, &labelRect, DT_SINGLELINE | DT_VCENTER | DT_RIGHT);
   }
 
   void DrawStatus(HDC dc, const RECT &rect) {
@@ -936,6 +1015,10 @@ int CandidateIndexFromKey(WPARAM key) {
     return static_cast<int>(key - L'1');
   }
   return 0;
+}
+
+bool IsPageKey(WPARAM key) {
+  return key == VK_NEXT || key == VK_PRIOR;
 }
 
 class EditSession final : public ITfEditSession {
@@ -1144,6 +1227,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
         ch = static_cast<char>(ch - 'A' + 'a');
       }
       selectedIndex_ = 0;
+      pageOffset_ = 0;
       const int count = g_core.inputKeyFast(session_, ch);
       UpdateCandidateWindow(count);
       *eaten = TRUE;
@@ -1152,6 +1236,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
 
     if (key == VK_BACK) {
       selectedIndex_ = 0;
+      pageOffset_ = 0;
       const int count = g_core.backspaceFast(session_);
       UpdateCandidateWindow(count);
       *eaten = TRUE;
@@ -1179,11 +1264,18 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return S_OK;
     }
 
+    if (IsPageKey(key)) {
+      MovePage(key == VK_NEXT ? 1 : -1);
+      *eaten = TRUE;
+      return S_OK;
+    }
+
     const std::wstring punctuation = ChinesePunctuationForKey(key);
     if (!asciiMode_ && !punctuation.empty()) {
       if (cachedCandidateCount_ > 0) {
         CommitCandidate(context, selectedIndex_);
         selectedIndex_ = 0;
+        pageOffset_ = 0;
         candidateWindow_.Hide();
         cachedCandidateCount_ = 0;
       }
@@ -1193,9 +1285,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
 
     if (key == VK_SPACE || key == VK_RETURN || (key >= L'1' && key <= L'9')) {
-      const int index = (key >= L'1' && key <= L'9') ? CandidateIndexFromKey(key) : selectedIndex_;
+      const int index =
+          (key >= L'1' && key <= L'9') ? pageOffset_ + CandidateIndexFromKey(key) : selectedIndex_;
       CommitCandidate(context, index);
       selectedIndex_ = 0;
+      pageOffset_ = 0;
       candidateWindow_.Hide();
       cachedCandidateCount_ = 0;
       *eaten = TRUE;
@@ -1259,7 +1353,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (key == VK_ESCAPE) {
       return cachedCandidateCount_ > 0;
     }
-    if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB || key == VK_LEFT || key == VK_UP) {
+    if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB || key == VK_LEFT || key == VK_UP ||
+        IsPageKey(key)) {
       return cachedCandidateCount_ > 0;
     }
     if (key == VK_SPACE || key == VK_RETURN) {
@@ -1269,7 +1364,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return true;
     }
     if (key >= L'1' && key <= L'9') {
-      return cachedCandidateCount_ > CandidateIndexFromKey(key);
+      const int relativeIndex = CandidateIndexFromKey(key);
+      return relativeIndex < kCandidatesPerPage &&
+             cachedCandidateCount_ > pageOffset_ + relativeIndex;
     }
     return false;
   }
@@ -1317,8 +1414,19 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
   std::string BuildCandidatePayloadFromCore(int count) {
-    if (g_core.candidatePayload) {
-      char *payload = g_core.candidatePayload(session_, min(count, 9));
+    const int pageCount = min(kCandidatesPerPage, max(0, count - pageOffset_));
+    if (g_core.candidatePayloadRange) {
+      char *payload = g_core.candidatePayloadRange(session_, pageOffset_, pageCount);
+      std::string result = payload ? payload : "";
+      if (payload) {
+        g_core.freeValue(payload);
+      }
+      if (!result.empty()) {
+        return result;
+      }
+    }
+    if (g_core.candidatePayload && pageOffset_ == 0) {
+      char *payload = g_core.candidatePayload(session_, pageCount);
       std::string result = payload ? payload : "";
       if (payload) {
         g_core.freeValue(payload);
@@ -1329,10 +1437,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
 
     std::string payload;
-    for (int i = 0; i < count && i < 9; ++i) {
-      char *text = g_core.candidateText(session_, i);
-      char *reading = g_core.candidateReading(session_, i);
-      const int score = g_core.candidateScore(session_, i);
+    for (int i = 0; i < pageCount; ++i) {
+      const int absoluteIndex = pageOffset_ + i;
+      char *text = g_core.candidateText(session_, absoluteIndex);
+      char *reading = g_core.candidateReading(session_, absoluteIndex);
+      const int score = g_core.candidateScore(session_, absoluteIndex);
 
       char prefix[32]{};
       sprintf_s(prefix, "%d\t", i + 1);
@@ -1362,12 +1471,17 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     const int count = knownCount >= 0 ? knownCount : g_core.candidateCount(session_);
     cachedCandidateCount_ = count;
     if (count <= 0) {
+      pageOffset_ = 0;
       candidateWindow_.Hide();
       return;
     }
     if (count > 0 && selectedIndex_ >= count) {
       selectedIndex_ = count - 1;
     }
+    if (selectedIndex_ < 0) {
+      selectedIndex_ = 0;
+    }
+    pageOffset_ = (selectedIndex_ / kCandidatesPerPage) * kCandidatesPerPage;
     std::string candidates;
     if (g_core.inProcess) {
       candidates = BuildCandidatePayloadFromCore(count);
@@ -1384,7 +1498,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       cachedCandidateCount_ = 0;
       return;
     }
-    candidateWindow_.Show(candidates, selectedIndex_);
+    candidateWindow_.Show(candidates, selectedIndex_ - pageOffset_, pageOffset_, count);
   }
 
   void MoveSelection(int delta) {
@@ -1393,6 +1507,23 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return;
     }
     selectedIndex_ = (selectedIndex_ + delta + count) % count;
+    UpdateCandidateWindow();
+  }
+
+  void MovePage(int delta) {
+    const int count = cachedCandidateCount_;
+    if (count <= kCandidatesPerPage) {
+      return;
+    }
+    const int lastPageOffset = ((count - 1) / kCandidatesPerPage) * kCandidatesPerPage;
+    int nextOffset = pageOffset_ + delta * kCandidatesPerPage;
+    if (nextOffset > lastPageOffset) {
+      nextOffset = 0;
+    } else if (nextOffset < 0) {
+      nextOffset = lastPageOffset;
+    }
+    pageOffset_ = nextOffset;
+    selectedIndex_ = min(pageOffset_, count - 1);
     UpdateCandidateWindow();
   }
 
@@ -1405,6 +1536,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       g_core.freeValue(cleared);
     }
     cachedCandidateCount_ = 0;
+    selectedIndex_ = 0;
+    pageOffset_ = 0;
   }
 
   void ToggleAsciiMode() {
@@ -1423,6 +1556,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   TfClientId clientId_ = TF_CLIENTID_NULL;
   uint64_t session_ = 0;
   int selectedIndex_ = 0;
+  int pageOffset_ = 0;
   int cachedCandidateCount_ = 0;
   bool asciiMode_ = false;
   bool shiftDown_ = false;

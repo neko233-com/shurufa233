@@ -59,6 +59,22 @@ func TestLoadDictionary(t *testing.T) {
 	}
 }
 
+func TestLoadDictionaryAcceptsUTF8BOM(t *testing.T) {
+	e := New(DefaultConfig())
+	_, err := e.LoadDictionary(strings.NewReader("\ufeff" + `{
+		"language": "zh-CN",
+		"version": "bom",
+		"entries": [{ "reading": "bom", "text": "字节序", "weight": 9000 }]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := e.Preview("bom")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "字节序" {
+		t.Fatalf("expected BOM dictionary candidate, got %#v", state.Candidates)
+	}
+}
+
 func TestLoadDictionaryMergesDuplicates(t *testing.T) {
 	e := New(DefaultConfig())
 	_, err := e.LoadDictionary(strings.NewReader(`{
@@ -101,5 +117,22 @@ func TestImportUserScoresAffectsRanking(t *testing.T) {
 	state := e.Preview("ceshi")
 	if len(state.Candidates) == 0 || state.Candidates[0].Text != "侧室" {
 		t.Fatalf("expected imported user score to rerank candidates, got %#v", state.Candidates)
+	}
+}
+
+func TestBuiltinEmojiCandidateMetadata(t *testing.T) {
+	e := New(DefaultConfig())
+	state := e.Preview("kaixin")
+	found := false
+	for _, candidate := range state.Candidates {
+		if candidate.Text == "ヽ(・∀・)ﾉ" {
+			found = true
+			if candidate.Kind != "kaomoji" || candidate.Source != "builtin-symbols" {
+				t.Fatalf("expected kaomoji metadata, got %#v", candidate)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected builtin kaomoji candidate, got %#v", state.Candidates)
 	}
 }
