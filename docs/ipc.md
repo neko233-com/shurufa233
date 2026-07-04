@@ -134,7 +134,10 @@ debugging tools can show which Rime fields were accepted without adding
 platform-specific glue. Original `speller/algebra` strings are stored in
 `config.spellerAlgebra`; common fuzzy `derive` forms such as `derive/^zh/z/`
 and `derive/^([nl])ue$/$1ve/` are also converted into active fuzzy spelling
-pairs such as `zh=z` and `ue=ve`.
+pairs such as `zh=z` and `ue=ve`. Rime punctuation maps are stored as
+`config.punctuationFullShape` and `config.punctuationHalfShape`; Windows TSF
+reads those local config fields and uses them before falling back to the built-in
+WeChat/Microsoft-style punctuation table.
 
 `GET /wordbook` returns learned user word scores. `PUT /wordbook` accepts
 `{"userScores":{"reading|text":1000},"merge":true}` for JSON import or

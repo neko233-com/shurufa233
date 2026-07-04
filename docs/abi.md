@@ -263,7 +263,10 @@ core maps common Rime patch fields such as `schema_list`, `menu/page_size`,
 of learning individual Rime YAML concepts in C++. The raw spelling algebra is
 kept as `config.spellerAlgebra`, and common fuzzy `derive` rules are folded
 into active `fuzzyInitials` pairs so native callers get behavior changes through
-the existing config reload path.
+the existing config reload path. Rime `punctuator/full_shape` and
+`punctuator/half_shape` maps are persisted as `config.punctuationFullShape` and
+`config.punctuationHalfShape`; Windows TSF reads those maps from the same local
+config file before using its default punctuation table.
 
 `app-rules-json`, `resolve-app-context-json`, `ShurufaAppRulesJSON`, and
 `ShurufaResolveAppContextJSON` reserve the app-aware behavior surface that

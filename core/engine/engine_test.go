@@ -757,6 +757,37 @@ patch:
 	}
 }
 
+func TestApplyRimeCustomYAMLMapsPunctuationShapes(t *testing.T) {
+	result, err := ApplyRimeCustomYAML(DefaultConfig(), []byte(`
+patch:
+  punctuator/full_shape:
+    ",": "，"
+    "<": ["《", "〈"]
+    "!": { commit: "！" }
+  punctuator/half_shape:
+    ",": ","
+    "<": "<"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Config.PunctuationFullShape[","]; len(got) != 1 || got[0] != "，" {
+		t.Fatalf("full comma = %#v", got)
+	}
+	if got := result.Config.PunctuationFullShape["<"]; len(got) != 2 || got[0] != "《" || got[1] != "〈" {
+		t.Fatalf("full angle = %#v", got)
+	}
+	if got := result.Config.PunctuationFullShape["!"]; len(got) != 1 || got[0] != "！" {
+		t.Fatalf("full bang = %#v", got)
+	}
+	if got := result.Config.PunctuationHalfShape[","]; len(got) != 1 || got[0] != "," {
+		t.Fatalf("half comma = %#v", got)
+	}
+	if result.Config.Punctuation != "half" {
+		t.Fatalf("half_shape should preserve existing half-mode behavior, got %q", result.Config.Punctuation)
+	}
+}
+
 func TestResolveAppContextUsesPasswordRule(t *testing.T) {
 	decision := ResolveAppContext(DefaultConfig(), AppContext{PasswordField: true, ProcessName: "chrome.exe"})
 	if !decision.OK || !decision.Matched || decision.Rule == nil {

@@ -115,10 +115,24 @@ func ApplyRimeCustomYAML(base Config, data []byte) (RimeCustomResult, error) {
 			warnings = append(warnings, "unsupported punctuator preset: "+preset)
 		}
 	}
+	if raw, ok := rimeLookup(patch, "punctuator/full_shape"); ok {
+		if shape := rimePunctuationShape(raw); len(shape) > 0 {
+			config.PunctuationFullShape = mergePunctuationShape(config.PunctuationFullShape, shape)
+			applied = append(applied, "punctuator/full_shape")
+		} else {
+			warnings = append(warnings, "punctuator/full_shape has no supported entries")
+		}
+	}
 	if raw, ok := rimeLookup(patch, "punctuator/half_shape"); ok {
-		if _, ok := rimeMap(raw); ok {
+		if shape := rimePunctuationShape(raw); len(shape) > 0 {
+			config.PunctuationHalfShape = mergePunctuationShape(config.PunctuationHalfShape, shape)
 			config.Punctuation = "half"
 			applied = append(applied, "punctuator/half_shape")
+		} else if _, ok := rimeMap(raw); ok {
+			config.Punctuation = "half"
+			applied = append(applied, "punctuator/half_shape")
+		} else {
+			warnings = append(warnings, "punctuator/half_shape has no supported entries")
 		}
 	}
 	if raw, ok := rimeLookup(patch, "key_binder/import_preset"); ok {
@@ -212,6 +226,67 @@ func applyRimeSpellerAlgebra(config Config, raw any) (Config, []string, []string
 		}
 	}
 	return config, applied, warnings
+}
+
+func rimePunctuationShape(raw any) map[string][]string {
+	mapped, ok := rimeMap(raw)
+	if !ok {
+		return nil
+	}
+	out := map[string][]string{}
+	for key, value := range mapped {
+		if key == "" {
+			continue
+		}
+		values := rimePunctuationValues(value)
+		if len(values) > 0 {
+			out[key] = values
+		}
+	}
+	return out
+}
+
+func rimePunctuationValues(raw any) []string {
+	switch typed := raw.(type) {
+	case string:
+		if typed == "" {
+			return nil
+		}
+		return []string{typed}
+	case []any:
+		values := []string{}
+		for _, item := range typed {
+			values = append(values, rimePunctuationValues(item)...)
+		}
+		return uniqueRawStrings(values)
+	case []string:
+		return uniqueRawStrings(typed)
+	default:
+		if mapped, ok := rimeMap(raw); ok {
+			for _, field := range []string{"commit", "pair", "text"} {
+				if value, ok := mapped[field]; ok {
+					if values := rimePunctuationValues(value); len(values) > 0 {
+						return values
+					}
+				}
+			}
+		}
+	}
+	value := rimeString(raw)
+	if value == "" || value == "<nil>" {
+		return nil
+	}
+	return []string{value}
+}
+
+func mergePunctuationShape(base map[string][]string, next map[string][]string) map[string][]string {
+	if len(base) == 0 {
+		base = map[string][]string{}
+	}
+	for key, values := range next {
+		base[key] = uniqueRawStrings(append(base[key], values...))
+	}
+	return base
 }
 
 func rimeAlgebraFuzzyRule(rule string) string {
@@ -428,6 +503,19 @@ func uniqueStrings(values []string) []string {
 	out := make([]string, 0, len(values))
 	for _, value := range values {
 		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func uniqueRawStrings(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
 		if value == "" || seen[value] {
 			continue
 		}

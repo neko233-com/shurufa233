@@ -3,30 +3,32 @@ package engine
 import "time"
 
 type Config struct {
-	MaxCandidates         int       `json:"maxCandidates"`
-	Schema                string    `json:"schema,omitempty"`
-	CandidatePageSize     int       `json:"candidatePageSize"`
-	CandidateLayout       string    `json:"candidateLayout"`
-	ShowCandidateComments bool      `json:"showCandidateComments"`
-	FuzzyInitials         []string  `json:"fuzzyInitials"`
-	SpellerAlgebra        []string  `json:"spellerAlgebra,omitempty"`
-	DoublePinyin          bool      `json:"doublePinyin"`
-	DoublePinyinScheme    string    `json:"doublePinyinScheme"`
-	Language              string    `json:"language"`
-	Mode                  string    `json:"mode"`
-	Punctuation           string    `json:"punctuation"`
-	Script                string    `json:"script"`
-	Associations          bool      `json:"associations"`
-	KeyProfile            string    `json:"keyProfile"`
-	ShiftToggleMode       bool      `json:"shiftToggleMode"`
-	SemicolonQuickSelect  bool      `json:"semicolonQuickSelect"`
-	QuoteQuickSelect      bool      `json:"quoteQuickSelect"`
-	BracketPageKeys       bool      `json:"bracketPageKeys"`
-	MinusEqualPageKeys    bool      `json:"minusEqualPageKeys"`
-	CommaPeriodPageKeys   bool      `json:"commaPeriodPageKeys"`
-	AppRules              []AppRule `json:"appRules,omitempty"`
-	Skin                  Skin      `json:"skin"`
-	Update                Update    `json:"update"`
+	MaxCandidates         int                 `json:"maxCandidates"`
+	Schema                string              `json:"schema,omitempty"`
+	CandidatePageSize     int                 `json:"candidatePageSize"`
+	CandidateLayout       string              `json:"candidateLayout"`
+	ShowCandidateComments bool                `json:"showCandidateComments"`
+	FuzzyInitials         []string            `json:"fuzzyInitials"`
+	SpellerAlgebra        []string            `json:"spellerAlgebra,omitempty"`
+	DoublePinyin          bool                `json:"doublePinyin"`
+	DoublePinyinScheme    string              `json:"doublePinyinScheme"`
+	Language              string              `json:"language"`
+	Mode                  string              `json:"mode"`
+	Punctuation           string              `json:"punctuation"`
+	PunctuationFullShape  map[string][]string `json:"punctuationFullShape,omitempty"`
+	PunctuationHalfShape  map[string][]string `json:"punctuationHalfShape,omitempty"`
+	Script                string              `json:"script"`
+	Associations          bool                `json:"associations"`
+	KeyProfile            string              `json:"keyProfile"`
+	ShiftToggleMode       bool                `json:"shiftToggleMode"`
+	SemicolonQuickSelect  bool                `json:"semicolonQuickSelect"`
+	QuoteQuickSelect      bool                `json:"quoteQuickSelect"`
+	BracketPageKeys       bool                `json:"bracketPageKeys"`
+	MinusEqualPageKeys    bool                `json:"minusEqualPageKeys"`
+	CommaPeriodPageKeys   bool                `json:"commaPeriodPageKeys"`
+	AppRules              []AppRule           `json:"appRules,omitempty"`
+	Skin                  Skin                `json:"skin"`
+	Update                Update              `json:"update"`
 }
 
 type AppRule struct {

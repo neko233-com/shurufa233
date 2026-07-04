@@ -134,14 +134,16 @@ type schemaPreset struct {
 }
 
 type configPayload struct {
-	Schema             string   `json:"schema,omitempty"`
-	DoublePinyin       bool     `json:"doublePinyin"`
-	DoublePinyinScheme string   `json:"doublePinyinScheme"`
-	CandidatePageSize  int      `json:"candidatePageSize,omitempty"`
-	CandidateLayout    string   `json:"candidateLayout,omitempty"`
-	Punctuation        string   `json:"punctuation,omitempty"`
-	KeyProfile         string   `json:"keyProfile,omitempty"`
-	SpellerAlgebra     []string `json:"spellerAlgebra,omitempty"`
+	Schema               string              `json:"schema,omitempty"`
+	DoublePinyin         bool                `json:"doublePinyin"`
+	DoublePinyinScheme   string              `json:"doublePinyinScheme"`
+	CandidatePageSize    int                 `json:"candidatePageSize,omitempty"`
+	CandidateLayout      string              `json:"candidateLayout,omitempty"`
+	Punctuation          string              `json:"punctuation,omitempty"`
+	PunctuationFullShape map[string][]string `json:"punctuationFullShape,omitempty"`
+	PunctuationHalfShape map[string][]string `json:"punctuationHalfShape,omitempty"`
+	KeyProfile           string              `json:"keyProfile,omitempty"`
+	SpellerAlgebra       []string            `json:"spellerAlgebra,omitempty"`
 }
 
 type switchOption struct {
@@ -787,7 +789,7 @@ func rimeCustom(client *http.Client, args []string) error {
 		if err := postJSON(client, "/rime/custom", map[string]string{"yaml": string(data)}, &result); err != nil {
 			return err
 		}
-		fmt.Printf("schema=%s doublePinyin=%v scheme=%s pageSize=%d layout=%s punctuation=%s keyProfile=%s algebra=%d\n",
+		fmt.Printf("schema=%s doublePinyin=%v scheme=%s pageSize=%d layout=%s punctuation=%s keyProfile=%s algebra=%d punctFull=%d punctHalf=%d\n",
 			valueOr(result.Schema, result.Config.Schema),
 			result.Config.DoublePinyin,
 			result.Config.DoublePinyinScheme,
@@ -796,6 +798,8 @@ func rimeCustom(client *http.Client, args []string) error {
 			result.Config.Punctuation,
 			result.Config.KeyProfile,
 			len(result.Config.SpellerAlgebra),
+			len(result.Config.PunctuationFullShape),
+			len(result.Config.PunctuationHalfShape),
 		)
 		if len(result.Applied) > 0 {
 			fmt.Printf("applied=%s\n", strings.Join(result.Applied, ", "))

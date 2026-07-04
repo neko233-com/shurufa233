@@ -49,6 +49,8 @@ type Config = {
   language: string;
   mode: "zh" | "en";
   punctuation: "full" | "half";
+  punctuationFullShape?: Record<string, string[]>;
+  punctuationHalfShape?: Record<string, string[]>;
   script: "simplified" | "traditional";
   associations: boolean;
   keyProfile: "wechat" | "microsoft" | "rime" | "custom";
@@ -394,6 +396,8 @@ const defaultConfig: Config = {
   language: "zh-CN",
   mode: "zh",
   punctuation: "full",
+  punctuationFullShape: {},
+  punctuationHalfShape: {},
   script: "simplified",
   associations: true,
   keyProfile: "wechat",
@@ -1160,6 +1164,8 @@ function App() {
       setRimeCustomText(
         `${data.schema ?? data.config?.schema ?? "已应用"} · ${data.applied?.length ?? 0} 项${
           data.config?.spellerAlgebra?.length ? ` · algebra ${data.config.spellerAlgebra.length}` : ""
+        }${
+          data.config?.punctuationFullShape ? ` · 全角标点 ${Object.keys(data.config.punctuationFullShape).length}` : ""
         }${
           data.warnings?.length ? ` · ${data.warnings.length} 个警告` : ""
         }`,

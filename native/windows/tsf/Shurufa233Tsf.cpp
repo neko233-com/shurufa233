@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -2551,9 +2552,84 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     singleQuoteOpen_ = false;
   }
 
+  std::wstring ConfiguredPunctuationForKey(
+      WPARAM key,
+      const std::unordered_map<std::string, std::wstring> &shape) const {
+    if (shape.empty()) {
+      return L"";
+    }
+    const std::string label = PunctuationKeyLabel(key);
+    if (label.empty()) {
+      return L"";
+    }
+    auto found = shape.find(label);
+    if (found != shape.end()) {
+      return found->second;
+    }
+    return L"";
+  }
+
+  std::string PunctuationKeyLabel(WPARAM key) const {
+    const bool shifted = IsShiftPressed();
+    switch (key) {
+      case VK_OEM_COMMA:
+      case L',':
+        return shifted ? "<" : ",";
+      case VK_OEM_PERIOD:
+      case L'.':
+        return shifted ? ">" : ".";
+      case VK_OEM_1:
+      case L';':
+        return shifted ? ":" : ";";
+      case VK_OEM_2:
+      case L'/':
+        return shifted ? "?" : "/";
+      case VK_OEM_4:
+      case L'[':
+        return shifted ? "{" : "[";
+      case VK_OEM_6:
+      case L']':
+        return shifted ? "}" : "]";
+      case VK_OEM_7:
+      case L'\'':
+        return shifted ? "\"" : "'";
+      case VK_OEM_MINUS:
+      case L'-':
+        return shifted ? "_" : "-";
+      case L'1':
+        return shifted ? "!" : "1";
+      case L'6':
+        return shifted ? "^" : "6";
+      case L'9':
+        return shifted ? "(" : "9";
+      case L'0':
+        return shifted ? ")" : "0";
+      case L'<':
+        return "<";
+      case L'>':
+        return ">";
+      case L':':
+        return ":";
+      case L'?':
+        return "?";
+      case L'{':
+        return "{";
+      case L'}':
+        return "}";
+      case L'"':
+        return "\"";
+      default:
+        return "";
+    }
+  }
+
   std::wstring ChinesePunctuationForKey(WPARAM key) {
     if (!punctuationFullWidth_) {
       return HalfWidthPunctuationForKey(key);
+    }
+    const std::wstring configured = ConfiguredPunctuationForKey(key, punctuationFullShape_);
+    if (!configured.empty()) {
+      return configured;
     }
     const bool shifted = IsShiftPressed();
     switch (key) {
@@ -2615,6 +2691,10 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
   std::wstring HalfWidthPunctuationForKey(WPARAM key) const {
+    const std::wstring configured = ConfiguredPunctuationForKey(key, punctuationHalfShape_);
+    if (!configured.empty()) {
+      return configured;
+    }
     const bool shifted = IsShiftPressed();
     switch (key) {
       case VK_OEM_COMMA:
@@ -2771,6 +2851,234 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     return atoi(json.c_str() + pos);
   }
 
+  static void SkipJsonWhitespace(const std::string &json, size_t &pos) {
+    while (pos < json.size() && isspace(static_cast<unsigned char>(json[pos]))) {
+      ++pos;
+    }
+  }
+
+  static int JsonHexValue(char ch) {
+    if (ch >= '0' && ch <= '9') {
+      return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+      return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+      return ch - 'A' + 10;
+    }
+    return -1;
+  }
+
+  static bool ParseJsonHex4(const std::string &json, size_t pos, uint32_t &out) {
+    if (pos + 4 > json.size()) {
+      return false;
+    }
+    out = 0;
+    for (size_t i = 0; i < 4; ++i) {
+      const int value = JsonHexValue(json[pos + i]);
+      if (value < 0) {
+        return false;
+      }
+      out = (out << 4) | static_cast<uint32_t>(value);
+    }
+    return true;
+  }
+
+  static void AppendUtf8Codepoint(std::string &out, uint32_t codepoint) {
+    if (codepoint <= 0x7F) {
+      out.push_back(static_cast<char>(codepoint));
+    } else if (codepoint <= 0x7FF) {
+      out.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
+      out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else if (codepoint <= 0xFFFF) {
+      out.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
+      out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else if (codepoint <= 0x10FFFF) {
+      out.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
+      out.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    }
+  }
+
+  static bool ParseJsonStringAt(const std::string &json, size_t &pos, std::string &out) {
+    SkipJsonWhitespace(json, pos);
+    if (pos >= json.size() || json[pos] != '"') {
+      return false;
+    }
+    out.clear();
+    bool escaped = false;
+    for (++pos; pos < json.size(); ++pos) {
+      const char ch = json[pos];
+      if (escaped) {
+        switch (ch) {
+          case '"':
+          case '\\':
+          case '/':
+            out.push_back(ch);
+            break;
+          case 'n':
+            out.push_back('\n');
+            break;
+          case 'r':
+            out.push_back('\r');
+            break;
+          case 't':
+            out.push_back('\t');
+            break;
+          case 'u': {
+            uint32_t codepoint = 0;
+            if (ParseJsonHex4(json, pos + 1, codepoint)) {
+              pos += 4;
+              if (codepoint >= 0xD800 && codepoint <= 0xDBFF &&
+                  pos + 6 < json.size() && json[pos + 1] == '\\' && json[pos + 2] == 'u') {
+                uint32_t low = 0;
+                if (ParseJsonHex4(json, pos + 3, low) && low >= 0xDC00 && low <= 0xDFFF) {
+                  codepoint = 0x10000 + ((codepoint - 0xD800) << 10) + (low - 0xDC00);
+                  pos += 6;
+                }
+              }
+              AppendUtf8Codepoint(out, codepoint);
+            } else {
+              out.push_back(ch);
+            }
+            break;
+          }
+          default:
+            out.push_back(ch);
+            break;
+        }
+        escaped = false;
+        continue;
+      }
+      if (ch == '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch == '"') {
+        ++pos;
+        return true;
+      }
+      out.push_back(ch);
+    }
+    return false;
+  }
+
+  static void SkipJsonValue(const std::string &json, size_t &pos) {
+    SkipJsonWhitespace(json, pos);
+    if (pos >= json.size()) {
+      return;
+    }
+    if (json[pos] == '"') {
+      std::string ignored;
+      ParseJsonStringAt(json, pos, ignored);
+      return;
+    }
+    int depth = 0;
+    bool inString = false;
+    bool escaped = false;
+    for (; pos < json.size(); ++pos) {
+      const char ch = json[pos];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch == '\\') {
+          escaped = true;
+        } else if (ch == '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (ch == '"') {
+        inString = true;
+      } else if (ch == '{' || ch == '[') {
+        ++depth;
+      } else if (ch == '}' || ch == ']') {
+        if (depth == 0) {
+          return;
+        }
+        --depth;
+      } else if (depth == 0 && ch == ',') {
+        return;
+      }
+    }
+  }
+
+  static std::wstring ParseJsonFirstStringValue(const std::string &json, size_t &pos) {
+    SkipJsonWhitespace(json, pos);
+    std::string value;
+    if (pos < json.size() && json[pos] == '"') {
+      if (ParseJsonStringAt(json, pos, value)) {
+        return Utf8ToWide(value.c_str());
+      }
+      return L"";
+    }
+    if (pos < json.size() && json[pos] == '[') {
+      ++pos;
+      SkipJsonWhitespace(json, pos);
+      if (pos < json.size() && json[pos] == '"' && ParseJsonStringAt(json, pos, value)) {
+        while (pos < json.size() && json[pos] != ']') {
+          ++pos;
+        }
+        if (pos < json.size()) {
+          ++pos;
+        }
+        return Utf8ToWide(value.c_str());
+      }
+    }
+    SkipJsonValue(json, pos);
+    return L"";
+  }
+
+  static std::unordered_map<std::string, std::wstring> JsonConfigPunctuationMapField(
+      const std::string &json,
+      const char *field) {
+    std::unordered_map<std::string, std::wstring> out;
+    const std::string key = std::string("\"") + field + "\"";
+    size_t pos = json.find(key);
+    if (pos == std::string::npos) {
+      return out;
+    }
+    pos = json.find(':', pos + key.size());
+    if (pos == std::string::npos) {
+      return out;
+    }
+    ++pos;
+    SkipJsonWhitespace(json, pos);
+    if (pos >= json.size() || json[pos] != '{') {
+      return out;
+    }
+    ++pos;
+    for (;;) {
+      SkipJsonWhitespace(json, pos);
+      if (pos >= json.size() || json[pos] == '}') {
+        break;
+      }
+      std::string itemKey;
+      if (!ParseJsonStringAt(json, pos, itemKey)) {
+        break;
+      }
+      SkipJsonWhitespace(json, pos);
+      if (pos >= json.size() || json[pos] != ':') {
+        break;
+      }
+      ++pos;
+      std::wstring value = ParseJsonFirstStringValue(json, pos);
+      if (!itemKey.empty() && !value.empty()) {
+        out[itemKey] = value;
+      }
+      SkipJsonWhitespace(json, pos);
+      if (pos < json.size() && json[pos] == ',') {
+        ++pos;
+        continue;
+      }
+      break;
+    }
+    return out;
+  }
+
   void RefreshTypingConfigFromConfig() {
     const std::wstring path = ConfigPath();
     if (path.empty()) {
@@ -2797,6 +3105,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
     const std::string punctuation = JsonConfigStringField(json, "punctuation");
     punctuationFullWidth_ = punctuation != "half";
+    punctuationFullShape_ = JsonConfigPunctuationMapField(json, "punctuationFullShape");
+    punctuationHalfShape_ = JsonConfigPunctuationMapField(json, "punctuationHalfShape");
     doublePinyinEnabled_ = JsonConfigBoolField(json, "doublePinyin");
     const std::string scheme = JsonConfigStringField(json, "doublePinyinScheme");
     microsoftDoublePinyin_ = doublePinyinEnabled_ &&
@@ -2813,6 +3123,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
 
   void ResetTypingConfigDefaults() {
     punctuationFullWidth_ = true;
+    punctuationFullShape_.clear();
+    punctuationHalfShape_.clear();
     doublePinyinEnabled_ = false;
     microsoftDoublePinyin_ = false;
     candidatePageSize_ = kDefaultCandidatesPerPage;
@@ -2908,6 +3220,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   bool doubleQuoteOpen_ = false;
   bool singleQuoteOpen_ = false;
   bool punctuationFullWidth_ = true;
+  std::unordered_map<std::string, std::wstring> punctuationFullShape_;
+  std::unordered_map<std::string, std::wstring> punctuationHalfShape_;
   bool doublePinyinEnabled_ = false;
   bool microsoftDoublePinyin_ = false;
   bool shiftToggleMode_ = true;
