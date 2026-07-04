@@ -1312,6 +1312,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     LogLine(L"Deactivate called");
     candidateWindow_.Hide();
     cachedCandidateCount_ = 0;
+    compositionLength_ = 0;
     if (session_ && g_core.Ready()) {
       g_core.destroySession(session_);
       session_ = 0;
@@ -1380,6 +1381,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       }
       selectedIndex_ = 0;
       pageOffset_ = 0;
+      compositionLength_++;
       const int count = g_core.inputKeyFast(session_, ch);
       UpdateCandidateWindow(count);
       *eaten = TRUE;
@@ -1390,6 +1392,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       selectedIndex_ = 0;
       pageOffset_ = 0;
       const int count = g_core.backspaceFast(session_);
+      if (compositionLength_ > 0) {
+        compositionLength_--;
+      }
       UpdateCandidateWindow(count);
       *eaten = TRUE;
       return S_OK;
@@ -1400,6 +1405,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       ClearSession();
       candidateWindow_.Hide();
       cachedCandidateCount_ = 0;
+      compositionLength_ = 0;
       *eaten = TRUE;
       return S_OK;
     }
@@ -1430,6 +1436,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
         pageOffset_ = 0;
         candidateWindow_.Hide();
         cachedCandidateCount_ = 0;
+      } else if (compositionLength_ > 0) {
+        ClearSession();
       }
       CommitText(context, punctuation);
       *eaten = TRUE;
@@ -1444,6 +1452,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       pageOffset_ = 0;
       candidateWindow_.Hide();
       cachedCandidateCount_ = 0;
+      compositionLength_ = 0;
       *eaten = TRUE;
       return S_OK;
     }
@@ -1499,11 +1508,14 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (asciiMode_) {
       return cachedCandidateCount_ > 0 && (key == VK_ESCAPE || key == VK_SPACE || key == VK_RETURN);
     }
-    if (IsAsciiLetter(key) || key == VK_BACK) {
+    if (IsAsciiLetter(key)) {
       return true;
     }
+    if (key == VK_BACK) {
+      return compositionLength_ > 0;
+    }
     if (key == VK_ESCAPE) {
-      return cachedCandidateCount_ > 0;
+      return cachedCandidateCount_ > 0 || compositionLength_ > 0;
     }
     if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB || key == VK_LEFT || key == VK_UP ||
         IsPageKey(key)) {
@@ -1562,6 +1574,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return;
     }
 
+    compositionLength_ = 0;
     CommitText(context, text);
   }
 
@@ -1690,6 +1703,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     cachedCandidateCount_ = 0;
     selectedIndex_ = 0;
     pageOffset_ = 0;
+    compositionLength_ = 0;
   }
 
   void ToggleAsciiMode() {
@@ -1710,6 +1724,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   int selectedIndex_ = 0;
   int pageOffset_ = 0;
   int cachedCandidateCount_ = 0;
+  int compositionLength_ = 0;
   bool asciiMode_ = false;
   bool shiftDown_ = false;
   bool shiftToggleCandidate_ = false;
