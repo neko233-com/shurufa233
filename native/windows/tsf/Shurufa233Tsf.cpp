@@ -1662,7 +1662,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (IsShiftKey(key)) {
       if (!shiftDown_) {
         shiftDown_ = true;
-        shiftToggleCandidate_ = true;
+        shiftToggleCandidate_ = rawBuffer_.empty() && cachedCandidateCount_ == 0;
       }
       *eaten = TRUE;
       return S_OK;
@@ -1680,6 +1680,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       selectedIndex_ = 0;
       pageOffset_ = 0;
       compositionLength_++;
+      rawBuffer_.push_back(ch);
       const int count = g_core.inputKeyFast(session_, ch);
       UpdateCandidateWindow(count);
       *eaten = TRUE;
@@ -1690,9 +1691,10 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       selectedIndex_ = 0;
       pageOffset_ = 0;
       const int count = g_core.backspaceFast(session_);
-      if (compositionLength_ > 0) {
-        compositionLength_--;
+      if (!rawBuffer_.empty()) {
+        rawBuffer_.pop_back();
       }
+      compositionLength_ = static_cast<int>(rawBuffer_.size());
       UpdateCandidateWindow(count);
       *eaten = TRUE;
       return S_OK;
@@ -1746,10 +1748,19 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
         pageOffset_ = 0;
         candidateWindow_.Hide();
         cachedCandidateCount_ = 0;
-      } else if (compositionLength_ > 0) {
-        ClearSession();
+        CommitText(context, punctuation);
+      } else if (!rawBuffer_.empty()) {
+        CommitRawBuffer(context, punctuation);
+      } else {
+        CommitText(context, punctuation);
       }
-      CommitText(context, punctuation);
+      *eaten = TRUE;
+      return S_OK;
+    }
+
+    if ((key == VK_SPACE || key == VK_RETURN) && cachedCandidateCount_ <= 0 && !rawBuffer_.empty()) {
+      CommitRawBuffer(context, key == VK_SPACE ? L" " : L"");
+      candidateWindow_.Hide();
       *eaten = TRUE;
       return S_OK;
     }
@@ -1899,7 +1910,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return cachedCandidateCount_ > kCandidatesPerPage;
     }
     if (key == VK_SPACE || key == VK_RETURN) {
-      return cachedCandidateCount_ > 0;
+      return cachedCandidateCount_ > 0 || !rawBuffer_.empty();
     }
     const int quickIndex = CandidateQuickSelectIndexFromKey(key);
     if (quickIndex >= 0) {
@@ -1940,6 +1951,17 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
   }
 
+  void CommitRawBuffer(ITfContext *context, const std::wstring &suffix = L"") {
+    if (rawBuffer_.empty()) {
+      return;
+    }
+    std::wstring text = Utf8ToWide(rawBuffer_.c_str()) + suffix;
+    ClearSession();
+    candidateWindow_.Hide();
+    cachedCandidateCount_ = 0;
+    CommitText(context, text);
+  }
+
   void CommitCandidate(ITfContext *context, int index) {
     if (!context || !session_) {
       LogLine(L"CommitCandidate skipped: no context/session");
@@ -1956,6 +1978,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
 
     compositionLength_ = 0;
+    rawBuffer_.clear();
     CommitText(context, text);
   }
 
@@ -2088,6 +2111,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     selectedIndex_ = 0;
     pageOffset_ = 0;
     compositionLength_ = 0;
+    rawBuffer_.clear();
   }
 
   void ToggleAsciiMode() {
@@ -2109,6 +2133,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   int pageOffset_ = 0;
   int cachedCandidateCount_ = 0;
   int compositionLength_ = 0;
+  std::string rawBuffer_;
   bool asciiMode_ = false;
   bool shiftDown_ = false;
   bool shiftToggleCandidate_ = false;

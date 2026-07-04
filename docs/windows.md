@@ -159,6 +159,16 @@ Running `Shurufa233ProfileCtl.exe` without arguments only enables the profile. U
 
 `probe` creates the TSF COM object directly and is useful when checking whether Windows is loading the registered DLL.
 
+## Native Typing Behavior
+
+The Windows TSF layer keeps Microsoft IME-style session behavior:
+
+- `Shift` toggles Chinese/English mode only when no composition is active
+- `Ctrl`/`Alt` shortcuts are passed through to the host app
+- space, enter, number keys, semicolon, apostrophe, brackets, page up/down, `-`, and `=` operate the visible candidate page
+- Chinese punctuation commits the selected candidate first, then inserts the punctuation
+- if a raw letter buffer has no candidates, space, enter, or Chinese punctuation commits the raw letters instead of dropping the buffer
+
 Local TSF diagnostics are written to:
 
 ```text
