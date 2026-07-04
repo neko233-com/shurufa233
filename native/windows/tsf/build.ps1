@@ -8,17 +8,58 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path "$PSScriptRoot\..\..\.."
 $VsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 
-function Get-VcVarsAll {
+function Get-VsInstallPath {
   if (Test-Path $VsWhere) {
     $installPath = & $VsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     if ($installPath) {
-      $candidate = Join-Path $installPath "VC\Auxiliary\Build\vcvarsall.bat"
-      if (Test-Path $candidate) {
-        return $candidate
-      }
+      return $installPath
     }
   }
   throw "Visual Studio Build Tools with VC tools was not found. Install Microsoft.VisualStudio.2022.BuildTools with the VCTools workload."
+}
+
+function Get-VcVarsAll {
+  param([string]$InstallPath)
+
+  $candidate = Join-Path $InstallPath "VC\Auxiliary\Build\vcvarsall.bat"
+  if (Test-Path $candidate) {
+    return $candidate
+  }
+  throw "vcvarsall.bat was not found under $InstallPath."
+}
+
+function Get-VcLibArch {
+  param([string]$TargetArch)
+
+  switch ($TargetArch) {
+    "x64" { return "x64" }
+    "arm64" { return "arm64" }
+    "x86" { return "x86" }
+    default { throw "Unsupported native arch $TargetArch" }
+  }
+}
+
+function Assert-VcRuntimeLibrary {
+  param(
+    [string]$InstallPath,
+    [string]$TargetArch
+  )
+
+  $libArch = Get-VcLibArch $TargetArch
+  $msvcRoot = Join-Path $InstallPath "VC\Tools\MSVC"
+  $runtimeLib = Get-ChildItem $msvcRoot -Recurse -Filter "msvcprt.lib" -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match "\\lib\\$libArch\\msvcprt\.lib$" } |
+    Select-Object -First 1
+
+  if (-not $runtimeLib) {
+    $componentHint = if ($TargetArch -eq "arm64") {
+      "Microsoft.VisualStudio.Component.VC.Tools.ARM64 and Microsoft.VisualStudio.Component.VC.14.44.17.14.ARM64"
+    } else {
+      "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+    }
+
+    throw "MSVC runtime library for native arch '$TargetArch' was not found under '$msvcRoot'. Install/modify Visual Studio Build Tools with: $componentHint, then rerun scripts\install-windows-buildtools.ps1."
+  }
 }
 
 function Invoke-VcBuild {
@@ -44,12 +85,15 @@ function Get-VcTarget {
   }
 }
 
-$VcVarsAll = Get-VcVarsAll
+$VsInstallPath = Get-VsInstallPath
+$VcVarsAll = Get-VcVarsAll -InstallPath $VsInstallPath
 $Source = Join-Path $PSScriptRoot "Shurufa233Tsf.cpp"
 $Def = Join-Path $PSScriptRoot "Shurufa233Tsf.def"
 $ProfileCtlSource = Join-Path $PSScriptRoot "..\profilectl\Shurufa233ProfileCtl.cpp"
 
 foreach ($TargetArch in $Arch) {
+  Assert-VcRuntimeLibrary -InstallPath $VsInstallPath -TargetArch $TargetArch
+
   $Out = Join-Path $Root "build\windows\$TargetArch"
   New-Item -ItemType Directory -Force $Out | Out-Null
   $ObjDir = Join-Path $Out "obj"
