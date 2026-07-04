@@ -35,6 +35,7 @@ type Candidate struct {
 
 type State struct {
 	Buffer     string      `json:"buffer"`
+	Mode       string      `json:"mode"`
 	Candidates []Candidate `json:"candidates"`
 	Committed  string      `json:"committed,omitempty"`
 	UpdatedAt  time.Time   `json:"updatedAt"`

@@ -16,6 +16,9 @@ char* ShurufaInputKey(uint64_t session, char key);
 char* ShurufaPreview(uint64_t session, const char* input);
 char* ShurufaBackspace(uint64_t session);
 char* ShurufaClear(uint64_t session);
+char* ShurufaSetMode(uint64_t session, const char* mode);
+char* ShurufaToggleMode(uint64_t session);
+char* ShurufaMode(uint64_t session);
 char* ShurufaSelect(uint64_t session, int index);
 void ShurufaFree(char* value);
 ```
@@ -27,12 +30,18 @@ Example response:
 ```json
 {
   "buffer": "nihao",
+  "mode": "zh",
   "candidates": [
     { "text": "你好", "reading": "nihao", "weight": 15000, "userScore": 0 }
   ],
   "updatedAt": "2026-07-04T00:00:00Z"
 }
 ```
+
+`mode` is session-scoped and normalized to `zh` or `en`. Native glue can use
+`ShurufaToggleMode` for a light Shift tap and `ShurufaSetMode` for an explicit UI
+choice. Switching modes clears the active composition buffer, matching Microsoft
+IME-style Chinese/English toggling.
 
 ## Hot Path
 

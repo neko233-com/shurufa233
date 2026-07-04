@@ -22,6 +22,7 @@ type candidate struct {
 
 type engineState struct {
 	Buffer     string      `json:"buffer"`
+	Mode       string      `json:"mode"`
 	Candidates []candidate `json:"candidates"`
 	Committed  string      `json:"committed,omitempty"`
 }
@@ -66,6 +67,8 @@ func main() {
 		err = updateCheckCmd(client)
 	case "update-apply":
 		err = updateApply(client)
+	case "mode":
+		err = mode(client, os.Args[2:])
 	case "agent":
 		err = agent(client, os.Args[2:])
 	case "repl":
@@ -86,6 +89,7 @@ func usage() {
 Usage:
   shurufa-imecli status
   shurufa-imecli preview nihao
+  shurufa-imecli mode [zh|en|toggle]
   shurufa-imecli update-check
   shurufa-imecli update-apply
   shurufa-imecli agent "/rewrite hello"
@@ -133,6 +137,28 @@ func updateApply(client *http.Client) error {
 		return err
 	}
 	fmt.Println(string(body))
+	return nil
+}
+
+func mode(client *http.Client, args []string) error {
+	if len(args) == 0 {
+		var state engineState
+		if err := getJSON(client, "/ime/mode", &state); err != nil {
+			return err
+		}
+		fmt.Println(state.Mode)
+		return nil
+	}
+	next := strings.TrimSpace(strings.ToLower(strings.Join(args, " ")))
+	payload := map[string]any{"mode": next}
+	if next == "toggle" {
+		payload = map[string]any{"toggle": true}
+	}
+	var state engineState
+	if err := postJSON(client, "/ime/mode", payload, &state); err != nil {
+		return err
+	}
+	fmt.Println(state.Mode)
 	return nil
 }
 

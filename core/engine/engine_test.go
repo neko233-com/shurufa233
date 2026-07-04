@@ -42,8 +42,32 @@ func TestEnglishMode(t *testing.T) {
 	config.Mode = "en"
 	e := New(config)
 	state := e.Preview("hello")
+	if state.Mode != "en" {
+		t.Fatalf("mode = %q, want en", state.Mode)
+	}
 	if len(state.Candidates) != 1 || state.Candidates[0].Text != "hello" {
 		t.Fatalf("expected passthrough English candidate, got %#v", state.Candidates)
+	}
+}
+
+func TestToggleModeClearsBufferAndNormalizesMode(t *testing.T) {
+	config := DefaultConfig()
+	config.Mode = "broken"
+	e := New(config)
+	if got := e.State().Mode; got != "zh" {
+		t.Fatalf("initial normalized mode = %q, want zh", got)
+	}
+	e.Preview("nihao")
+	state := e.ToggleMode()
+	if state.Mode != "en" {
+		t.Fatalf("mode after toggle = %q, want en", state.Mode)
+	}
+	if state.Buffer != "" || len(state.Candidates) != 0 {
+		t.Fatalf("toggle should clear composition, got %#v", state)
+	}
+	state = e.SetMode("zh")
+	if state.Mode != "zh" {
+		t.Fatalf("mode after set = %q, want zh", state.Mode)
 	}
 }
 

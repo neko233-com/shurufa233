@@ -167,6 +167,7 @@ Running `Shurufa233ProfileCtl.exe` without arguments only enables the profile. U
 The Windows TSF layer keeps Microsoft IME-style session behavior:
 
 - `Shift` toggles Chinese/English mode only when no composition is active
+- the Go session state exposes the normalized `zh`/`en` mode, and the daemon mirrors it through `GET/POST /ime/mode`
 - `Ctrl`/`Alt` shortcuts are passed through to the host app
 - configured fuzzy initials such as `zh=z`, `ch=c`, and `sh=s` are handled in the Go core with exact pinyin candidates kept ahead of fuzzy matches
 - when double pinyin is enabled, the Go core decodes the Xiaohe layout while keeping full-pinyin fallback available

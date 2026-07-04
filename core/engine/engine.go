@@ -66,6 +66,7 @@ func New(config Config) *Engine {
 	if config.MaxCandidates <= 0 {
 		config = DefaultConfig()
 	}
+	config.Mode = normalizeMode(config.Mode)
 	e := &Engine{
 		config: config,
 		dict:   make(map[string][]Entry),
@@ -82,6 +83,7 @@ func (e *Engine) Configure(config Config) {
 	if config.MaxCandidates <= 0 {
 		config.MaxCandidates = DefaultConfig().MaxCandidates
 	}
+	config.Mode = normalizeMode(config.Mode)
 	e.config = config
 }
 
@@ -182,6 +184,26 @@ func (e *Engine) Clear() State {
 	return e.stateLocked("")
 }
 
+func (e *Engine) SetMode(mode string) State {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.config.Mode = normalizeMode(mode)
+	e.buffer = ""
+	return e.stateLocked("")
+}
+
+func (e *Engine) ToggleMode() State {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if normalizeMode(e.config.Mode) == "en" {
+		e.config.Mode = "zh"
+	} else {
+		e.config.Mode = "en"
+	}
+	e.buffer = ""
+	return e.stateLocked("")
+}
+
 func (e *Engine) Preview(input string) State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -238,6 +260,7 @@ func (e *Engine) ImportUserScores(scores map[string]int) {
 func (e *Engine) stateLocked(committed string) State {
 	return State{
 		Buffer:     e.buffer,
+		Mode:       normalizeMode(e.config.Mode),
 		Candidates: e.candidatesLocked(),
 		Committed:  committed,
 		UpdatedAt:  time.Now().UTC(),
@@ -443,6 +466,15 @@ func normalizeReading(input string) string {
 		}
 	}
 	return builder.String()
+}
+
+func normalizeMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "en":
+		return "en"
+	default:
+		return "zh"
+	}
 }
 
 var xiaoheInitials = map[byte]string{

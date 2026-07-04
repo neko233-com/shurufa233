@@ -37,6 +37,11 @@ type previewRequest struct {
 	Input string `json:"input"`
 }
 
+type modeRequest struct {
+	Mode   string `json:"mode,omitempty"`
+	Toggle bool   `json:"toggle,omitempty"`
+}
+
 type agentRequest struct {
 	Input   string `json:"input"`
 	Context string `json:"context,omitempty"`
@@ -136,6 +141,8 @@ func main() {
 	mux.HandleFunc("GET /ime/count", state.withCORS(state.imeCount))
 	mux.HandleFunc("GET /ime/candidates", state.withCORS(state.imeCandidates))
 	mux.HandleFunc("GET /ime/skin", state.withCORS(state.imeSkin))
+	mux.HandleFunc("GET /ime/mode", state.withCORS(state.imeMode))
+	mux.HandleFunc("POST /ime/mode", state.withCORS(state.imeMode))
 	mux.HandleFunc("POST /agent/compose", state.withCORS(state.agentCompose))
 	if settingsDir := settingsStaticDir(); settingsDir != "" {
 		fileServer := http.StripPrefix("/settings/", http.FileServer(http.Dir(settingsDir)))
@@ -378,6 +385,26 @@ func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 		s.config.Skin.HighlightText,
 		s.config.Skin.Theme,
 	)
+}
+
+func (s *AppState) imeMode(w http.ResponseWriter, r *http.Request) {
+	session := s.sessionForRequest(r)
+	if r.Method == http.MethodGet {
+		writeJSON(w, session.State())
+		return
+	}
+	var req modeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var state engine.State
+	if req.Toggle || strings.EqualFold(strings.TrimSpace(req.Mode), "toggle") {
+		state = session.ToggleMode()
+	} else {
+		state = session.SetMode(req.Mode)
+	}
+	writeJSON(w, state)
 }
 
 func (s *AppState) sessionForRequest(r *http.Request) *engine.Engine {
@@ -937,6 +964,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	if config.Mode == "" {
 		config.Mode = defaults.Mode
 	}
+	config.Mode = normalizeModeValue(config.Mode, defaults.Mode)
 	if config.Skin.FontFamily == "" {
 		config.Skin = defaults.Skin
 	}
@@ -989,6 +1017,15 @@ func normalizeConfig(config engine.Config) engine.Config {
 		config.Update.InstalledVersion = defaults.Update.InstalledVersion
 	}
 	return config
+}
+
+func normalizeModeValue(mode string, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "zh", "en":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		return fallback
+	}
 }
 
 type rgbColor struct {

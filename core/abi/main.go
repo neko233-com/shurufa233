@@ -85,6 +85,24 @@ func ShurufaClear(id C.uint64_t) *C.char {
 	return jsonCString(session.Clear())
 }
 
+//export ShurufaSetMode
+func ShurufaSetMode(id C.uint64_t, mode *C.char) *C.char {
+	session := getSession(uint64(id))
+	return jsonCString(session.SetMode(C.GoString(mode)))
+}
+
+//export ShurufaToggleMode
+func ShurufaToggleMode(id C.uint64_t) *C.char {
+	session := getSession(uint64(id))
+	return jsonCString(session.ToggleMode())
+}
+
+//export ShurufaMode
+func ShurufaMode(id C.uint64_t) *C.char {
+	session := getSession(uint64(id))
+	return C.CString(session.State().Mode)
+}
+
 //export ShurufaCandidateCount
 func ShurufaCandidateCount(id C.uint64_t) C.int {
 	session := getSession(uint64(id))

@@ -11,6 +11,8 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /wordbook`
 - `GET /updates/check`
 - `POST /updates/apply`
+- `GET /ime/mode`
+- `POST /ime/mode`
 - `POST /agent/compose`
 
 `POST /engine/preview` body:
@@ -20,6 +22,24 @@ The background daemon listens on `127.0.0.1:23333`.
 ```
 
 The settings UI uses this IPC directly in development. A Wails v3 shell can host the same React bundle and call the same daemon API or proxy these methods through its Go backend.
+
+`GET /ime/mode` returns the current session state, including `mode`.
+
+`POST /ime/mode` body:
+
+```json
+{ "mode": "en" }
+```
+
+or:
+
+```json
+{ "toggle": true }
+```
+
+Mode is session-scoped (`zh` or `en`) and switching mode clears the active
+composition buffer. This mirrors the native Shift toggle without rewriting the
+saved default input mode in `config.json`.
 
 `POST /agent/compose` body:
 

@@ -183,6 +183,48 @@ func TestImeCandidatesReturnsMetadataAndPagedRows(t *testing.T) {
 	}
 }
 
+func TestImeModeCanToggleSessionMode(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	session.Preview("nihao")
+	req := httptest.NewRequest(http.MethodPost, "/ime/mode", strings.NewReader(`{"toggle":true}`))
+	rec := httptest.NewRecorder()
+	state.imeMode(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got engine.State
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Mode != "en" {
+		t.Fatalf("mode = %q, want en", got.Mode)
+	}
+	if got.Buffer != "" || len(got.Candidates) != 0 {
+		t.Fatalf("toggle should clear composition, got %#v", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/ime/mode", nil)
+	rec = httptest.NewRecorder()
+	state.imeMode(rec, req)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Mode != "en" {
+		t.Fatalf("GET mode = %q, want en", got.Mode)
+	}
+	if state.config.Mode != "zh" {
+		t.Fatalf("session mode should not rewrite saved default config, got %q", state.config.Mode)
+	}
+}
+
 func TestAgentComposeReturnsStructuredCandidates(t *testing.T) {
 	got := composeAgentResponse("/rewrite", "这段话有点啰嗦")
 	if got.Context != "这段话有点啰嗦" {
