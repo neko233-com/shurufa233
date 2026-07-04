@@ -1786,6 +1786,12 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return S_OK;
     }
 
+    if (key == VK_HOME || key == VK_END) {
+      MoveSelectionTo(key == VK_HOME ? 0 : cachedCandidateCount_ - 1);
+      *eaten = TRUE;
+      return S_OK;
+    }
+
     if (IsPageKey(key) && cachedCandidateCount_ > kCandidatesPerPage) {
       MovePage(CandidatePageDeltaForKey(key));
       *eaten = TRUE;
@@ -1970,6 +1976,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB || key == VK_LEFT || key == VK_UP) {
       return cachedCandidateCount_ > 0;
     }
+    if (key == VK_HOME || key == VK_END) {
+      return cachedCandidateCount_ > 0;
+    }
     if (IsPageKey(key) && (!IsBracketPageKey(key) || cachedCandidateCount_ > kCandidatesPerPage)) {
       return cachedCandidateCount_ > kCandidatesPerPage;
     }
@@ -2143,6 +2152,15 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return;
     }
     selectedIndex_ = (selectedIndex_ + delta + count) % count;
+    UpdateCandidateWindow();
+  }
+
+  void MoveSelectionTo(int index) {
+    const int count = cachedCandidateCount_;
+    if (count <= 0) {
+      return;
+    }
+    selectedIndex_ = max(0, min(index, count - 1));
     UpdateCandidateWindow();
   }
 

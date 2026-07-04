@@ -168,7 +168,7 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 
 - `Shift` toggles Chinese/English mode only when no composition is active
 - `Ctrl`/`Alt` shortcuts are passed through to the host app
-- space, enter, main-row or numpad number keys, semicolon, apostrophe, brackets, page up/down, `-`, and `=` operate the visible candidate page
+- space, enter, main-row or numpad number keys, semicolon, apostrophe, brackets, page up/down, home/end, `-`, and `=` operate the visible candidate page
 - Chinese punctuation commits the selected candidate first, then inserts the punctuation
 - if a raw letter buffer has no candidates, space, enter, or Chinese punctuation commits the raw letters instead of dropping the buffer
 
@@ -255,5 +255,6 @@ Candidate interaction:
 - mouse click on the right-side page arrows: page candidates
 - `Right` / `Down` / `Tab`: move highlight to the next candidate
 - `Left` / `Up` / `Shift+Tab`: move highlight to the previous candidate
+- `Home` / `End`: jump to the first / last candidate
 - `PageDown` / `PageUp`, `=` / `-`, or `]` / `[`: page candidates
 - `Esc`: clear the active composition and hide the candidate window
