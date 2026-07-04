@@ -19,6 +19,11 @@ type Skin = {
   fontFamily: string;
   fontSize: number;
   accent: string;
+  surface: string;
+  text: string;
+  mutedText: string;
+  border: string;
+  highlightText: string;
   theme: string;
 };
 
@@ -67,6 +72,11 @@ const defaultConfig: Config = {
     fontFamily: "Microsoft YaHei UI",
     fontSize: 15,
     accent: "#2563eb",
+    surface: "#ffffff",
+    text: "#111827",
+    mutedText: "#64748b",
+    border: "#d1d5db",
+    highlightText: "#ffffff",
     theme: "system",
   },
   update: {
@@ -297,6 +307,38 @@ function App() {
                   onClick={() => setConfig({ ...config, skin: { ...config.skin, accent: color } })}
                 />
               ))}
+            </div>
+            <div className="colorGrid">
+              <label className="colorField">
+                <span>底色</span>
+                <input
+                  type="color"
+                  value={config.skin.surface}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, surface: event.target.value } })
+                  }
+                />
+              </label>
+              <label className="colorField">
+                <span>文字</span>
+                <input
+                  type="color"
+                  value={config.skin.text}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, text: event.target.value } })
+                  }
+                />
+              </label>
+              <label className="colorField">
+                <span>边框</span>
+                <input
+                  type="color"
+                  value={config.skin.border}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, border: event.target.value } })
+                  }
+                />
+              </label>
             </div>
           </section>
 

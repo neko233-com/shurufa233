@@ -117,6 +117,11 @@ Current skin fields come from the settings UI:
 - font family
 - font size
 - accent color
+- surface color
+- text color
+- muted text color
+- border color
+- highlight text color
 - theme mode
 
 The candidate window is local-only. It does not fetch remote UI assets or send input text to a cloud service.

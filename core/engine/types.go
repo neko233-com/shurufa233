@@ -13,10 +13,15 @@ type Config struct {
 }
 
 type Skin struct {
-	FontFamily string `json:"fontFamily"`
-	FontSize   int    `json:"fontSize"`
-	Accent     string `json:"accent"`
-	Theme      string `json:"theme"`
+	FontFamily    string `json:"fontFamily"`
+	FontSize      int    `json:"fontSize"`
+	Accent        string `json:"accent"`
+	Surface       string `json:"surface"`
+	Text          string `json:"text"`
+	MutedText     string `json:"mutedText"`
+	Border        string `json:"border"`
+	HighlightText string `json:"highlightText"`
+	Theme         string `json:"theme"`
 }
 
 type Candidate struct {

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -253,18 +254,25 @@ std::wstring Utf8ToWide(const char *value) {
 
 class CandidateWindow {
  public:
-  void Show(const std::wstring &text) {
-    if (text.empty()) {
+  struct CandidateView {
+    int index = 0;
+    std::wstring text;
+    std::wstring reading;
+    int score = 0;
+  };
+
+  void Show(const std::string &payload) {
+    candidates_ = ParseCandidates(payload);
+    if (candidates_.empty()) {
       Hide();
       return;
     }
     EnsureWindow();
     RefreshSkin();
-    text_ = text;
 
     POINT anchor = CaretAnchor();
-    const int width = max(280, min(720, 44 + static_cast<int>(text_.size()) * (fontSize_ + 2)));
-    const int height = max(42, fontSize_ + 28);
+    const int width = EstimateWidth();
+    const int height = max(46, fontSize_ + 32);
     SetWindowPos(hwnd_, HWND_TOPMOST, anchor.x, anchor.y + 8, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
     InvalidateRect(hwnd_, nullptr, TRUE);
@@ -335,12 +343,7 @@ class CandidateWindow {
     RECT rect{};
     GetClientRect(hwnd, &rect);
 
-    const bool dark = theme_ == "dark";
-    const COLORREF bgColor = dark ? RGB(17, 24, 39) : RGB(255, 255, 255);
-    const COLORREF borderColor = dark ? RGB(55, 65, 81) : RGB(210, 215, 224);
-    const COLORREF textColor = dark ? RGB(243, 244, 246) : RGB(17, 24, 39);
-
-    HBRUSH bg = CreateSolidBrush(bgColor);
+    HBRUSH bg = CreateSolidBrush(surface_);
     FillRect(dc, &rect, bg);
     DeleteObject(bg);
 
@@ -350,7 +353,7 @@ class CandidateWindow {
     FillRect(dc, &accentRect, accent);
     DeleteObject(accent);
 
-    HPEN border = CreatePen(PS_SOLID, 1, borderColor);
+    HPEN border = CreatePen(PS_SOLID, 1, border_);
     HGDIOBJ oldPen = SelectObject(dc, border);
     HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
     RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, 12, 12);
@@ -364,23 +367,35 @@ class CandidateWindow {
                              fontFamily_.c_str());
     HGDIOBJ oldFont = SelectObject(dc, font);
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, textColor);
-    RECT textRect = rect;
-    textRect.left += 14;
-    textRect.right -= 14;
-    DrawTextW(dc, text_.c_str(), static_cast<int>(text_.size()), &textRect,
-              DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
+    DrawCandidates(dc, rect);
     SelectObject(dc, oldFont);
     DeleteObject(font);
     EndPaint(hwnd, &ps);
   }
 
   HWND hwnd_ = nullptr;
-  std::wstring text_;
+  std::vector<CandidateView> candidates_;
   std::wstring fontFamily_ = L"Microsoft YaHei UI";
   int fontSize_ = 18;
   COLORREF accent_ = RGB(37, 99, 235);
+  COLORREF surface_ = RGB(255, 255, 255);
+  COLORREF text_ = RGB(17, 24, 39);
+  COLORREF mutedText_ = RGB(100, 116, 139);
+  COLORREF border_ = RGB(209, 213, 219);
+  COLORREF highlightText_ = RGB(255, 255, 255);
   std::string theme_ = "system";
+  DWORD lastSkinRefreshTick_ = 0;
+
+  int EstimateWidth() const {
+    int width = 30;
+    for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
+      width += 30 + static_cast<int>(candidates_[i].text.size()) * (fontSize_ + 8);
+      if (!candidates_[i].reading.empty() && i == 0) {
+        width += static_cast<int>(candidates_[i].reading.size()) * 7;
+      }
+    }
+    return max(300, min(780, width));
+  }
 
   static COLORREF ParseColor(const std::string &value) {
     if (value.size() != 7 || value[0] != '#') {
@@ -393,21 +408,113 @@ class CandidateWindow {
     return RGB((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff);
   }
 
+  std::vector<CandidateView> ParseCandidates(const std::string &payload) const {
+    std::vector<CandidateView> parsed;
+    size_t lineStart = 0;
+    while (lineStart < payload.size()) {
+      size_t lineEnd = payload.find('\n', lineStart);
+      if (lineEnd == std::string::npos) {
+        lineEnd = payload.size();
+      }
+      std::string line = payload.substr(lineStart, lineEnd - lineStart);
+      if (!line.empty()) {
+        size_t first = line.find('\t');
+        size_t second = first == std::string::npos ? std::string::npos : line.find('\t', first + 1);
+        size_t third = second == std::string::npos ? std::string::npos : line.find('\t', second + 1);
+        if (first != std::string::npos && second != std::string::npos && third != std::string::npos) {
+          CandidateView item;
+          item.index = atoi(line.substr(0, first).c_str());
+          item.text = Utf8ToWide(line.substr(first + 1, second - first - 1).c_str());
+          item.reading = Utf8ToWide(line.substr(second + 1, third - second - 1).c_str());
+          item.score = atoi(line.substr(third + 1).c_str());
+          parsed.push_back(item);
+        }
+      }
+      lineStart = lineEnd + 1;
+    }
+    return parsed;
+  }
+
+  void DrawCandidates(HDC dc, const RECT &rect) {
+    int x = rect.left + 14;
+    const int y = rect.top + 7;
+    const int itemHeight = max(32, fontSize_ + 16);
+    for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
+      const CandidateView &candidate = candidates_[i];
+      const int textWidth = 34 + static_cast<int>(candidate.text.size()) * (fontSize_ + 6);
+      const int readingWidth = i == 0 ? static_cast<int>(candidate.reading.size()) * 7 : 0;
+      const int itemWidth = max(58, min(210, textWidth + readingWidth));
+      RECT itemRect{x, y, x + itemWidth, y + itemHeight};
+
+      if (i == 0) {
+        HBRUSH selected = CreateSolidBrush(accent_);
+        HPEN selectedPen = CreatePen(PS_SOLID, 1, accent_);
+        HGDIOBJ oldBrush = SelectObject(dc, selected);
+        HGDIOBJ oldPen = SelectObject(dc, selectedPen);
+        RoundRect(dc, itemRect.left, itemRect.top, itemRect.right, itemRect.bottom, 10, 10);
+        SelectObject(dc, oldPen);
+        SelectObject(dc, oldBrush);
+        DeleteObject(selectedPen);
+        DeleteObject(selected);
+      }
+
+      wchar_t number[8]{};
+      StringCchPrintfW(number, ARRAYSIZE(number), L"%d", candidate.index);
+      SetTextColor(dc, i == 0 ? highlightText_ : mutedText_);
+      RECT numberRect{itemRect.left + 10, itemRect.top, itemRect.left + 28, itemRect.bottom};
+      DrawTextW(dc, number, -1, &numberRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
+
+      SetTextColor(dc, i == 0 ? highlightText_ : text_);
+      RECT textRect{itemRect.left + 28, itemRect.top, itemRect.right - 8, itemRect.bottom};
+      DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
+                DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
+
+      if (i == 0 && !candidate.reading.empty()) {
+        SetTextColor(dc, RGB(219, 234, 254));
+        RECT readingRect{max(itemRect.left + 72, itemRect.right - readingWidth - 8), itemRect.top,
+                         itemRect.right - 8, itemRect.bottom};
+        DrawTextW(dc, candidate.reading.c_str(), static_cast<int>(candidate.reading.size()),
+                  &readingRect, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_END_ELLIPSIS);
+      }
+      x += itemWidth + 6;
+      if (x > rect.right - 40) {
+        break;
+      }
+    }
+  }
+
   void RefreshSkin() {
+    const DWORD now = GetTickCount();
+    if (lastSkinRefreshTick_ != 0 && now - lastSkinRefreshTick_ < 2000) {
+      return;
+    }
     const std::string skin = HttpRequest(L"GET", L"/ime/skin");
     if (skin.empty()) {
       return;
     }
+    lastSkinRefreshTick_ = now;
     size_t first = skin.find('|');
     size_t second = first == std::string::npos ? std::string::npos : skin.find('|', first + 1);
     size_t third = second == std::string::npos ? std::string::npos : skin.find('|', second + 1);
-    if (first == std::string::npos || second == std::string::npos || third == std::string::npos) {
+    size_t fourth = third == std::string::npos ? std::string::npos : skin.find('|', third + 1);
+    size_t fifth = fourth == std::string::npos ? std::string::npos : skin.find('|', fourth + 1);
+    size_t sixth = fifth == std::string::npos ? std::string::npos : skin.find('|', fifth + 1);
+    size_t seventh = sixth == std::string::npos ? std::string::npos : skin.find('|', sixth + 1);
+    size_t eighth = seventh == std::string::npos ? std::string::npos : skin.find('|', seventh + 1);
+    if (first == std::string::npos || second == std::string::npos || third == std::string::npos ||
+        fourth == std::string::npos || fifth == std::string::npos || sixth == std::string::npos ||
+        seventh == std::string::npos || eighth == std::string::npos) {
       return;
     }
     fontFamily_ = Utf8ToWide(skin.substr(0, first).c_str());
     fontSize_ = max(13, min(28, atoi(skin.substr(first + 1, second - first - 1).c_str()) + 3));
     accent_ = ParseColor(skin.substr(second + 1, third - second - 1));
-    theme_ = skin.substr(third + 1);
+    surface_ = ParseColor(skin.substr(third + 1, fourth - third - 1));
+    text_ = ParseColor(skin.substr(fourth + 1, fifth - fourth - 1));
+    mutedText_ = ParseColor(skin.substr(fifth + 1, sixth - fifth - 1));
+    border_ = ParseColor(skin.substr(sixth + 1, seventh - sixth - 1));
+    highlightText_ = ParseColor(skin.substr(seventh + 1, eighth - seventh - 1));
+    theme_ = skin.substr(eighth + 1);
   }
 };
 
@@ -616,6 +723,13 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return S_OK;
     }
 
+    if (key == VK_ESCAPE) {
+      ClearSession();
+      candidateWindow_.Hide();
+      *eaten = TRUE;
+      return S_OK;
+    }
+
     if (key == VK_SPACE || key == VK_RETURN || (key >= L'1' && key <= L'9')) {
       CommitCandidate(context, CandidateIndexFromKey(key));
       candidateWindow_.Hide();
@@ -657,6 +771,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
     if (IsAsciiLetter(key) || key == VK_BACK) {
       return true;
+    }
+    if (key == VK_ESCAPE) {
+      return g_core.candidateCount(session_) > 0;
     }
     if (key == VK_SPACE || key == VK_RETURN) {
       return g_core.candidateCount(session_) > 0;
@@ -704,7 +821,13 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     wchar_t path[80]{};
     StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/candidates?session=%llu", session_);
     const std::string candidates = HttpRequest(L"GET", path);
-    candidateWindow_.Show(Utf8ToWide(candidates.c_str()));
+    candidateWindow_.Show(candidates);
+  }
+
+  void ClearSession() {
+    wchar_t path[80]{};
+    StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/clear?session=%llu", session_);
+    HttpRequest(L"POST", path);
   }
 
   long refCount_ = 1;

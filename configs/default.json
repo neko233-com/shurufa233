@@ -8,6 +8,11 @@
     "fontFamily": "Microsoft YaHei UI",
     "fontSize": 15,
     "accent": "#2563eb",
+    "surface": "#ffffff",
+    "text": "#111827",
+    "mutedText": "#64748b",
+    "border": "#d1d5db",
+    "highlightText": "#ffffff",
     "theme": "system"
   },
   "update": {

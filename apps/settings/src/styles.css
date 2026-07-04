@@ -282,6 +282,7 @@ h2 {
 .swatches {
   display: flex;
   gap: 10px;
+  margin-bottom: 14px;
 }
 
 .swatch {
@@ -295,6 +296,38 @@ h2 {
 
 .swatch.selected {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 65%);
+}
+
+.colorGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.colorField {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0 10px;
+}
+
+.colorField span {
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.colorField input {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .candidateBar {

@@ -92,6 +92,7 @@ func main() {
 	mux.HandleFunc("POST /updates/apply", state.withCORS(state.applyUpdates))
 	mux.HandleFunc("POST /ime/key", state.withCORS(state.imeKey))
 	mux.HandleFunc("POST /ime/backspace", state.withCORS(state.imeBackspace))
+	mux.HandleFunc("POST /ime/clear", state.withCORS(state.imeClear))
 	mux.HandleFunc("POST /ime/select", state.withCORS(state.imeSelect))
 	mux.HandleFunc("GET /ime/count", state.withCORS(state.imeCount))
 	mux.HandleFunc("GET /ime/candidates", state.withCORS(state.imeCandidates))
@@ -199,6 +200,12 @@ func (s *AppState) imeBackspace(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *AppState) imeClear(w http.ResponseWriter, r *http.Request) {
+	session := s.sessionForRequest(r)
+	session.Clear()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *AppState) imeSelect(w http.ResponseWriter, r *http.Request) {
 	index := 0
 	if raw := r.URL.Query().Get("index"); raw != "" {
@@ -225,20 +232,30 @@ func (s *AppState) imeCandidates(w http.ResponseWriter, r *http.Request) {
 	state := session.State()
 	parts := make([]string, 0, len(state.Candidates))
 	for i, candidate := range state.Candidates {
-		parts = append(parts, fmt.Sprintf("%d.%s", i+1, candidate.Text))
+		parts = append(parts, fmt.Sprintf("%d\t%s\t%s\t%d",
+			i+1,
+			candidate.Text,
+			candidate.Reading,
+			candidate.Weight+candidate.UserScore,
+		))
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(strings.Join(parts, "  ")))
+	_, _ = w.Write([]byte(strings.Join(parts, "\n")))
 }
 
 func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s",
+	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s|%s|%s|%s|%s|%s",
 		s.config.Skin.FontFamily,
 		s.config.Skin.FontSize,
 		s.config.Skin.Accent,
+		s.config.Skin.Surface,
+		s.config.Skin.Text,
+		s.config.Skin.MutedText,
+		s.config.Skin.Border,
+		s.config.Skin.HighlightText,
 		s.config.Skin.Theme,
 	)
 }
@@ -558,6 +575,21 @@ func normalizeConfig(config engine.Config) engine.Config {
 	}
 	if config.Skin.FontFamily == "" {
 		config.Skin = defaults.Skin
+	}
+	if config.Skin.Surface == "" {
+		config.Skin.Surface = defaults.Skin.Surface
+	}
+	if config.Skin.Text == "" {
+		config.Skin.Text = defaults.Skin.Text
+	}
+	if config.Skin.MutedText == "" {
+		config.Skin.MutedText = defaults.Skin.MutedText
+	}
+	if config.Skin.Border == "" {
+		config.Skin.Border = defaults.Skin.Border
+	}
+	if config.Skin.HighlightText == "" {
+		config.Skin.HighlightText = defaults.Skin.HighlightText
 	}
 	if config.Update.Channel == "" {
 		config.Update.Channel = defaults.Update.Channel
