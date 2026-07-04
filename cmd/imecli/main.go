@@ -240,6 +240,20 @@ type pinResponse struct {
 	UpdatedAt string        `json:"updatedAt"`
 }
 
+type profileBundle struct {
+	OK         bool           `json:"ok,omitempty"`
+	Version    int            `json:"version"`
+	Product    string         `json:"product"`
+	ExportedAt string         `json:"exportedAt"`
+	Config     map[string]any `json:"config,omitempty"`
+	UserScores map[string]int `json:"userScores,omitempty"`
+	Phrases    []phraseEntry  `json:"phrases,omitempty"`
+	Rejects    []phraseEntry  `json:"rejects,omitempty"`
+	Pins       []phraseEntry  `json:"pins,omitempty"`
+	Merge      bool           `json:"merge,omitempty"`
+	Counts     map[string]int `json:"counts,omitempty"`
+}
+
 type catalogResponse struct {
 	Kind      string        `json:"kind"`
 	Query     string        `json:"query,omitempty"`
@@ -316,6 +330,8 @@ func main() {
 		err = rejects(client, os.Args[2:])
 	case "pins", "pin":
 		err = pins(client, os.Args[2:])
+	case "profile":
+		err = profile(client, os.Args[2:])
 	case "catalog", "symbols", "symbol":
 		err = catalog(client, os.Args[2:])
 	case "reverse", "lookup", "fancha":
@@ -370,6 +386,8 @@ Usage:
   shurufa-imecli pins export
   shurufa-imecli pins delete "nihao|你好"
   shurufa-imecli pins clear
+  shurufa-imecli profile export [profile.json]
+  shurufa-imecli profile import profile.json [--replace]
   shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]
   shurufa-imecli reverse "你好" [--limit N]
   shurufa-imecli update-sources
@@ -1333,6 +1351,77 @@ func pinEntries(response pinResponse) []phraseEntry {
 		return response.Pins
 	}
 	return response.Entries
+}
+
+func profile(client *http.Client, args []string) error {
+	action := "export"
+	if len(args) > 0 {
+		action = strings.ToLower(strings.TrimSpace(args[0]))
+		args = args[1:]
+	}
+	switch action {
+	case "export", "backup":
+		var bundle profileBundle
+		if err := getJSON(client, "/profile", &bundle); err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(bundle, "", "  ")
+		if err != nil {
+			return err
+		}
+		if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
+			if err := os.WriteFile(args[0], data, 0o644); err != nil {
+				return err
+			}
+			fmt.Printf("exported=%s\n", args[0])
+			return nil
+		}
+		fmt.Println(string(data))
+		return nil
+	case "import", "restore":
+		if len(args) == 0 {
+			return fmt.Errorf("missing profile file")
+		}
+		bundle, err := readProfileFile(args[0])
+		if err != nil {
+			return err
+		}
+		bundle.Merge = true
+		if len(args) > 1 && args[1] == "--replace" {
+			bundle.Merge = false
+		}
+		var response profileBundle
+		if err := putJSON(client, "/profile", bundle, &response); err != nil {
+			return err
+		}
+		fmt.Printf("profile imported scores=%d phrases=%d rejects=%d pins=%d\n",
+			response.Counts["userScores"],
+			response.Counts["phrases"],
+			response.Counts["rejects"],
+			response.Counts["pins"],
+		)
+		return nil
+	default:
+		return fmt.Errorf("unknown profile action %q", action)
+	}
+}
+
+func readProfileFile(path string) (profileBundle, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return profileBundle{}, err
+	}
+	var wrapped struct {
+		Profile *profileBundle `json:"profile"`
+	}
+	if err := json.Unmarshal(data, &wrapped); err == nil && wrapped.Profile != nil {
+		return *wrapped.Profile, nil
+	}
+	var bundle profileBundle
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		return profileBundle{}, err
+	}
+	return bundle, nil
 }
 
 func catalog(client *http.Client, args []string) error {

@@ -241,6 +241,47 @@ func TestResolveAppContextEndpointReturnsGameDecision(t *testing.T) {
 	}
 }
 
+func TestProfileEndpointExportsAndImportsBundle(t *testing.T) {
+	config := engine.DefaultConfig()
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	state.sessions["default"] = state.engine
+	state.engine.ImportUserScores(map[string]int{"nihao|你好": 25})
+	state.engine.AddUserPhrases([]engine.Entry{{Reading: "msd", Text: "马上到", Weight: 60000}})
+
+	req := httptest.NewRequest(http.MethodGet, "/profile", nil)
+	rec := httptest.NewRecorder()
+	state.profile(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var exported profileBundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &exported); err != nil {
+		t.Fatal(err)
+	}
+	if exported.Config == nil || exported.Counts["userScores"] != 1 || exported.Counts["phrases"] != 1 {
+		t.Fatalf("exported profile = %#v", exported)
+	}
+
+	body := `{"merge":false,"userScores":{"ceshi|测试":50},"phrases":[{"reading":"yyds","text":"永远的神","weight":70000}]}`
+	req = httptest.NewRequest(http.MethodPut, "/profile", strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	state.profile(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if state.engine.UserScores()["ceshi|测试"] != 50 {
+		t.Fatalf("scores after profile import = %#v", state.engine.UserScores())
+	}
+	if len(state.engine.UserPhrases()) != 1 || state.engine.UserPhrases()[0].Reading != "yyds" {
+		t.Fatalf("phrases after profile import = %#v", state.engine.UserPhrases())
+	}
+}
+
 func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.CandidatePageSize = 5

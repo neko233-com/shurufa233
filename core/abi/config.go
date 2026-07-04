@@ -40,6 +40,33 @@ func loadConfig() engine.Config {
 	return normalizeConfig(config)
 }
 
+func persistConfig(config engine.Config) error {
+	path, err := configFile()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	config = normalizeConfig(config)
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(path)
+		if retryErr := os.Rename(tmp, path); retryErr != nil {
+			_ = os.Remove(tmp)
+			return retryErr
+		}
+	}
+	return nil
+}
+
 func normalizeConfig(config engine.Config) engine.Config {
 	if config.MaxCandidates <= 0 {
 		config.MaxCandidates = engine.DefaultConfig().MaxCandidates

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -385,6 +386,68 @@ func TestAppContextResolvePostsContext(t *testing.T) {
 	}
 	if posted.ProcessName != "WeGame.exe" || !posted.GameMode {
 		t.Fatalf("posted app context = %#v", posted)
+	}
+}
+
+func TestProfileExportWritesFile(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/profile" || r.Method != http.MethodGet {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(profileBundle{
+			OK:         true,
+			Version:    1,
+			Product:    "shurufa233",
+			UserScores: map[string]int{"nihao|你好": 25},
+			Counts:     map[string]int{"userScores": 1},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	path := filepath.Join(t.TempDir(), "profile.json")
+	if err := profile(server.Client(), []string{"export", path}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "nihao|你好") {
+		t.Fatalf("exported profile = %s", data)
+	}
+}
+
+func TestProfileImportPostsBundle(t *testing.T) {
+	var posted profileBundle
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/profile" || r.Method != http.MethodPut {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(profileBundle{
+			OK:     true,
+			Counts: map[string]int{"userScores": 1, "phrases": 1, "rejects": 0, "pins": 0},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	path := filepath.Join(t.TempDir(), "profile.json")
+	if err := os.WriteFile(path, []byte(`{"userScores":{"ceshi|测试":50},"phrases":[{"reading":"msd","text":"马上到"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := profile(server.Client(), []string{"import", path, "--replace"}); err != nil {
+		t.Fatal(err)
+	}
+	if posted.Merge || posted.UserScores["ceshi|测试"] != 50 || len(posted.Phrases) != 1 {
+		t.Fatalf("posted profile = %#v", posted)
 	}
 }
 

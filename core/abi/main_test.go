@@ -637,6 +637,33 @@ func TestExecuteExtensionCommandAppContextRules(t *testing.T) {
 	}
 }
 
+func TestExecuteExtensionCommandProfileBundle(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	session.ImportUserScores(map[string]int{"nihao|你好": 25})
+	session.AddUserPhrases([]engine.Entry{{Reading: "msd", Text: "马上到", Weight: 60000}})
+
+	got, handled := executeSessionExtensionCommand(session, "profile-json", `{}`)
+	if !handled {
+		t.Fatal("profile-json command was not handled")
+	}
+	profile, ok := got.(profileBundle)
+	if !ok || !profile.OK || profile.Counts["userScores"] != 1 || profile.Counts["phrases"] != 1 {
+		t.Fatalf("profile-json = %#v", got)
+	}
+
+	imported, handled := executeSessionExtensionCommand(session, "import-profile-json", `{"merge":false,"userScores":{"ceshi|测试":50},"phrases":[{"reading":"yyds","text":"永远的神","weight":70000}]}`)
+	if !handled {
+		t.Fatal("import-profile-json command was not handled")
+	}
+	result, ok := imported.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("import-profile-json = %#v", imported)
+	}
+	if session.UserScores()["ceshi|测试"] != 50 || len(session.UserPhrases()) != 1 || session.UserPhrases()[0].Reading != "yyds" {
+		t.Fatalf("profile import did not update session: scores=%#v phrases=%#v", session.UserScores(), session.UserPhrases())
+	}
+}
+
 func TestExecuteExtensionCommandCandidateActionCommitsCandidateChar(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	session.Preview("zhongwen")

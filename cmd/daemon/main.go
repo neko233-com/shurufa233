@@ -261,6 +261,20 @@ type pinRequest struct {
 	Merge   bool           `json:"merge,omitempty"`
 }
 
+type profileBundle struct {
+	OK         bool           `json:"ok,omitempty"`
+	Version    int            `json:"version"`
+	Product    string         `json:"product"`
+	ExportedAt time.Time      `json:"exportedAt"`
+	Config     *engine.Config `json:"config,omitempty"`
+	UserScores map[string]int `json:"userScores,omitempty"`
+	Phrases    []engine.Entry `json:"phrases,omitempty"`
+	Rejects    []engine.Entry `json:"rejects,omitempty"`
+	Pins       []engine.Entry `json:"pins,omitempty"`
+	Merge      bool           `json:"merge,omitempty"`
+	Counts     map[string]int `json:"counts,omitempty"`
+}
+
 func main() {
 	logFile, logPath, err := setupFileLogging()
 	if err != nil {
@@ -309,6 +323,8 @@ func main() {
 	mux.HandleFunc("GET /pins", state.withCORS(state.pins))
 	mux.HandleFunc("PUT /pins", state.withCORS(state.pins))
 	mux.HandleFunc("DELETE /pins", state.withCORS(state.pins))
+	mux.HandleFunc("GET /profile", state.withCORS(state.profile))
+	mux.HandleFunc("PUT /profile", state.withCORS(state.profile))
 	mux.HandleFunc("GET /catalog", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /symbols", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /updates/check", state.withCORS(state.checkUpdates))
@@ -891,6 +907,30 @@ func (s *AppState) pins(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, pinResponse(pins))
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *AppState) profile(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		writeJSON(w, s.profileBundleLocked())
+	case http.MethodPut:
+		var bundle profileBundle
+		if err := json.NewDecoder(r.Body).Decode(&bundle); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if err := s.applyProfileBundleLocked(bundle); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, s.profileBundleLocked())
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -1969,6 +2009,89 @@ func pinResponse(entries []engine.Entry) map[string]any {
 	}
 }
 
+func (s *AppState) profileBundleLocked() profileBundle {
+	scores := s.engine.UserScores()
+	phrases := s.engine.UserPhrases()
+	rejects := s.engine.UserRejects()
+	pins := s.engine.UserPins()
+	config := s.config
+	return profileBundle{
+		OK:         true,
+		Version:    1,
+		Product:    "shurufa233",
+		ExportedAt: time.Now().UTC(),
+		Config:     &config,
+		UserScores: scores,
+		Phrases:    phrases,
+		Rejects:    rejects,
+		Pins:       pins,
+		Counts: map[string]int{
+			"userScores": len(scores),
+			"phrases":    len(phrases),
+			"rejects":    len(rejects),
+			"pins":       len(pins),
+			"appRules":   len(config.AppRules),
+		},
+	}
+}
+
+func (s *AppState) applyProfileBundleLocked(bundle profileBundle) error {
+	if bundle.Config != nil {
+		next := normalizeConfig(*bundle.Config)
+		s.config = next
+		s.engine.Configure(next)
+		for _, session := range s.sessions {
+			if session != nil {
+				session.Configure(next)
+			}
+		}
+		if err := s.saveLocked(); err != nil {
+			return err
+		}
+	}
+	if bundle.UserScores != nil {
+		scores := bundle.UserScores
+		if bundle.Merge {
+			scores = s.mergeUserScoresLocked(scores)
+		}
+		s.replaceUserScoresLocked(scores)
+		if err := s.writeUserScores(s.engine.UserScores()); err != nil {
+			return err
+		}
+	}
+	if bundle.Phrases != nil {
+		entries := bundle.Phrases
+		if bundle.Merge {
+			entries = append(s.engine.UserPhrases(), entries...)
+		}
+		s.replaceUserPhrasesLocked(entries)
+		if err := s.writeUserPhrases(s.engine.UserPhrases()); err != nil {
+			return err
+		}
+	}
+	if bundle.Rejects != nil {
+		entries := bundle.Rejects
+		if bundle.Merge {
+			entries = append(s.engine.UserRejects(), entries...)
+		}
+		s.replaceUserRejectsLocked(entries)
+		if err := s.writeUserRejects(s.engine.UserRejects()); err != nil {
+			return err
+		}
+	}
+	if bundle.Pins != nil {
+		entries := bundle.Pins
+		if bundle.Merge {
+			entries = append(s.engine.UserPins(), entries...)
+		}
+		s.replaceUserPinsLocked(entries)
+		if err := s.writeUserPins(s.engine.UserPins()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *AppState) replaceUserScoresLocked(scores map[string]int) {
 	for _, session := range s.sessions {
 		if session != nil {
@@ -1999,6 +2122,16 @@ func (s *AppState) replaceUserPinsLocked(entries []engine.Entry) {
 			session.ReplaceUserPins(entries)
 		}
 	}
+}
+
+func (s *AppState) mergeUserScoresLocked(scores map[string]int) map[string]int {
+	merged := s.engine.UserScores()
+	for key, value := range scores {
+		if key != "" && value > 0 {
+			merged[key] = value
+		}
+	}
+	return merged
 }
 
 func (s *AppState) saveUserScores(scores map[string]int) error {

@@ -261,6 +261,20 @@ type PinResponse = {
   updatedAt: string;
 };
 
+type ProfileBundle = {
+  ok?: boolean;
+  version: number;
+  product: string;
+  exportedAt?: string;
+  config?: Config;
+  userScores?: Record<string, number>;
+  phrases?: PhraseEntry[];
+  rejects?: PhraseEntry[];
+  pins?: PhraseEntry[];
+  merge?: boolean;
+  counts?: Record<string, number>;
+};
+
 type CatalogResponse = {
   kind: string;
   query?: string;
@@ -721,6 +735,8 @@ function App() {
   const [pins, setPins] = useState<PhraseEntry[]>([]);
   const [pinDraft, setPinDraft] = useState("{\n  \"entries\": []\n}");
   const [pinText, setPinText] = useState("未读取");
+  const [profileDraft, setProfileDraft] = useState("{}");
+  const [profileText, setProfileText] = useState("未导出");
   const [catalogKind, setCatalogKind] = useState("all");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogEntries, setCatalogEntries] = useState<PhraseEntry[]>([]);
@@ -746,6 +762,7 @@ function App() {
     void loadPhrases();
     void loadRejects();
     void loadPins();
+    void loadProfile(false);
     void loadCatalog();
     void loadDictionarySources();
     void loadSchemas();
@@ -1597,6 +1614,75 @@ function App() {
     URL.revokeObjectURL(url);
   }
 
+  async function loadProfile(updateDraft = true) {
+    try {
+      const res = await fetch(`${apiBase}/profile`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as ProfileBundle;
+      const counts = data.counts ?? {};
+      if (updateDraft) {
+        setProfileDraft(JSON.stringify(data, null, 2));
+      }
+      setProfileText(
+        `配置 1 · 用户词 ${counts.userScores ?? Object.keys(data.userScores ?? {}).length} · 短语 ${
+          counts.phrases ?? data.phrases?.length ?? 0
+        }`,
+      );
+      setError("");
+      return data;
+    } catch (err) {
+      setProfileText("导出失败");
+      setError(err instanceof Error ? err.message : "profile export failed");
+      return null;
+    }
+  }
+
+  async function exportProfileFile() {
+    const data = await loadProfile(true);
+    if (!data) return;
+    const stamp = new Date().toISOString().replaceAll(":", "-").replace(/\.\d+Z$/, "Z");
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `shurufa233-profile-${stamp}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importProfile(merge: boolean) {
+    try {
+      const parsed = JSON.parse(profileDraft) as ProfileBundle | { profile?: ProfileBundle };
+      const bundle = "profile" in parsed ? parsed.profile ?? parsed : parsed;
+      const res = await fetch(`${apiBase}/profile`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...bundle, merge }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as ProfileBundle;
+      const counts = data.counts ?? {};
+      setProfileDraft(JSON.stringify(data, null, 2));
+      setProfileText(
+        `${merge ? "已合并" : "已替换"} · 用户词 ${counts.userScores ?? Object.keys(data.userScores ?? {}).length} · 短语 ${
+          counts.phrases ?? data.phrases?.length ?? 0
+        }`,
+      );
+      if (data.config) {
+        setConfig(hydrateConfig(data.config));
+      }
+      void loadWordbook();
+      void loadPhrases();
+      void loadRejects();
+      void loadPins();
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setProfileText("导入失败");
+      setError(err instanceof Error ? err.message : "profile import failed");
+    }
+  }
+
   async function loadCatalog() {
     try {
       const query = new URLSearchParams({
@@ -2216,6 +2302,40 @@ function App() {
               <button className="secondary" disabled={updateBusy !== "idle"} onClick={applyUpdates}>
                 <Download size={18} />
                 {updateBusy === "applying" ? "更新中" : "应用更新"}
+              </button>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panelHeader">
+              <h2>资料同步</h2>
+              <span>{profileText}</span>
+            </div>
+            <label className="field">
+              <span>迁移包 JSON</span>
+              <textarea
+                className="wordbookDraft phraseDraft"
+                spellCheck={false}
+                value={profileDraft}
+                onChange={(event) => setProfileDraft(event.target.value)}
+              />
+            </label>
+            <div className="rowControls">
+              <button className="secondary" onClick={() => void loadProfile(true)}>
+                <RotateCcw size={18} />
+                刷新
+              </button>
+              <button className="secondary" onClick={() => void exportProfileFile()}>
+                <FileDown size={18} />
+                导出资料
+              </button>
+              <button className="secondary" onClick={() => void importProfile(true)}>
+                <FileUp size={18} />
+                合并导入
+              </button>
+              <button className="secondary danger" onClick={() => void importProfile(false)}>
+                <Trash2 size={18} />
+                替换导入
               </button>
             </div>
           </section>

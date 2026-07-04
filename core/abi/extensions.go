@@ -203,6 +203,20 @@ func ShurufaResolveAppContextJSON(id C.uint64_t, payload *C.char) *C.char {
 	return jsonCString(engine.ResolveAppContext(getSession(uint64(id)).Config(), context))
 }
 
+//export ShurufaProfileJSON
+func ShurufaProfileJSON(id C.uint64_t) *C.char {
+	return jsonCString(buildProfileBundle(getSession(uint64(id))))
+}
+
+//export ShurufaImportProfileJSON
+func ShurufaImportProfileJSON(id C.uint64_t, payload *C.char) *C.char {
+	bundle, err := decodeProfileBundle(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(importProfileBundle(getSession(uint64(id)), bundle))
+}
+
 //export ShurufaReloadConfig
 func ShurufaReloadConfig() *C.char {
 	config := loadConfig()
@@ -230,9 +244,17 @@ func configEnvelope() map[string]any {
 func applyConfigEnvelope(config engine.Config) map[string]any {
 	config = normalizeConfig(config)
 	updated := configureActiveSessions(config)
+	persisted := true
+	var persistError string
+	if err := persistConfig(config); err != nil {
+		persisted = false
+		persistError = err.Error()
+	}
 	return map[string]any{
 		"ok":              true,
 		"config":          config,
+		"persisted":       persisted,
+		"persistError":    persistError,
 		"sessionsUpdated": updated,
 		"updatedAt":       time.Now().UTC(),
 	}

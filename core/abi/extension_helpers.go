@@ -43,6 +43,7 @@ var abiFeatureList = []string{
 	"key-behavior-config",
 	"rime-switches-json",
 	"app-context-rules-json",
+	"profile-bundle-json",
 }
 
 type abiEnvelope struct {
@@ -103,6 +104,20 @@ type candidateActionResult struct {
 	UpdatedAt  time.Time          `json:"updatedAt"`
 }
 
+type profileBundle struct {
+	OK         bool           `json:"ok,omitempty"`
+	Version    int            `json:"version"`
+	Product    string         `json:"product"`
+	ExportedAt time.Time      `json:"exportedAt"`
+	Config     *engine.Config `json:"config,omitempty"`
+	UserScores map[string]int `json:"userScores,omitempty"`
+	Phrases    []engine.Entry `json:"phrases,omitempty"`
+	Rejects    []engine.Entry `json:"rejects,omitempty"`
+	Pins       []engine.Entry `json:"pins,omitempty"`
+	Merge      bool           `json:"merge,omitempty"`
+	Counts     map[string]int `json:"counts,omitempty"`
+}
+
 type extensionCommandPayload struct {
 	Input        string             `json:"input,omitempty"`
 	Context      string             `json:"context,omitempty"`
@@ -134,6 +149,94 @@ type extensionCommandPayload struct {
 	Pins         []engine.Entry     `json:"pins,omitempty"`
 	Merge        bool               `json:"merge,omitempty"`
 	Raw          *json.RawMessage   `json:"raw,omitempty"`
+}
+
+func buildProfileBundle(session *engine.Engine) profileBundle {
+	config := session.Config()
+	scores := session.UserScores()
+	phrases := session.UserPhrases()
+	rejects := session.UserRejects()
+	pins := session.UserPins()
+	return profileBundle{
+		OK:         true,
+		Version:    1,
+		Product:    "shurufa233",
+		ExportedAt: time.Now().UTC(),
+		Config:     &config,
+		UserScores: scores,
+		Phrases:    phrases,
+		Rejects:    rejects,
+		Pins:       pins,
+		Counts: map[string]int{
+			"userScores": len(scores),
+			"phrases":    len(phrases),
+			"rejects":    len(rejects),
+			"pins":       len(pins),
+			"appRules":   len(config.AppRules),
+		},
+	}
+}
+
+func decodeProfileBundle(payload string) (profileBundle, error) {
+	var wrapped struct {
+		Profile *profileBundle `json:"profile"`
+	}
+	if err := json.Unmarshal([]byte(payload), &wrapped); err == nil && wrapped.Profile != nil {
+		return *wrapped.Profile, nil
+	}
+	var bundle profileBundle
+	if err := json.Unmarshal([]byte(payload), &bundle); err != nil {
+		return profileBundle{}, err
+	}
+	return bundle, nil
+}
+
+func importProfileBundle(session *engine.Engine, bundle profileBundle) map[string]any {
+	if bundle.Config != nil {
+		config := normalizeConfig(*bundle.Config)
+		session.Configure(config)
+		_ = persistConfig(config)
+	}
+	if bundle.UserScores != nil {
+		if bundle.Merge {
+			session.ImportUserScores(bundle.UserScores)
+		} else {
+			session.ReplaceUserScores(bundle.UserScores)
+		}
+		persistUserScores(session.UserScores())
+	}
+	if bundle.Phrases != nil {
+		entries := bundle.Phrases
+		if bundle.Merge {
+			entries = append(session.UserPhrases(), entries...)
+		}
+		session.ReplaceUserPhrases(entries)
+		persistUserPhrases(session.UserPhrases())
+	}
+	if bundle.Rejects != nil {
+		entries := bundle.Rejects
+		if bundle.Merge {
+			entries = append(session.UserRejects(), entries...)
+		}
+		session.ReplaceUserRejects(entries)
+		persistUserRejects(session.UserRejects())
+	}
+	if bundle.Pins != nil {
+		entries := bundle.Pins
+		if bundle.Merge {
+			entries = append(session.UserPins(), entries...)
+		}
+		session.ReplaceUserPins(entries)
+		persistUserPins(session.UserPins())
+	}
+	result := buildProfileBundle(session)
+	return map[string]any{
+		"ok":        true,
+		"imported":  true,
+		"profile":   result,
+		"counts":    result.Counts,
+		"updatedAt": time.Now().UTC(),
+	}
 }
 
 func buildCandidatePayloadV2(session *engine.Engine, start int, limit int) candidatePayloadV2 {
@@ -529,6 +632,14 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			}
 		}
 		return engine.ResolveAppContext(session.Config(), context), true
+	case "profile-json", "profile-bundle-json", "export-profile-json", "user-profile-json":
+		return buildProfileBundle(session), true
+	case "import-profile-json", "restore-profile-json":
+		bundle, err := decodeProfileBundle(payload)
+		if err != nil {
+			return errorEnvelope(err.Error()), true
+		}
+		return importProfileBundle(session, bundle), true
 	case "candidate-action", "candidate-action-json":
 		return executeCandidateAction(session, req), true
 	case "catalog", "catalog-json", "symbols", "symbols-json":

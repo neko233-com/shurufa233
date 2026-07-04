@@ -128,6 +128,8 @@ char* ShurufaUserRejectsJSON(uint64_t session);
 char* ShurufaImportUserRejectsJSON(uint64_t session, char* json);
 char* ShurufaUserPinsJSON(uint64_t session);
 char* ShurufaImportUserPinsJSON(uint64_t session, char* json);
+char* ShurufaProfileJSON(uint64_t session);
+char* ShurufaImportProfileJSON(uint64_t session, char* json);
 char* ShurufaCommitText(uint64_t session, char* reading, char* text);
 char* ShurufaAgentCompose(char* input, char* context);
 char* ShurufaSelectCandidateChar(uint64_t session, int index, const char* side);
@@ -153,7 +155,7 @@ C++ export on developer machines that only consume packaged builds.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `user-pins-json`, `commit-text`, `agent-compose`,
+`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -220,6 +222,8 @@ delete-user-reject      {"reading":"ceshi","text":"错词"}
 user-pins-json
 import-user-pins-json   {"entries":[{"reading":"nihao","text":"你好"}],"merge":true}
 delete-user-pin         {"reading":"nihao","text":"你好"}
+profile-json
+import-profile-json     {"config":{...},"userScores":{...},"phrases":[...],"merge":true}
 commit-text             {"reading":"nihao","text":"你好"}
 agent-compose           {"input":"/rewrite","context":"optional text"}
 ```
@@ -363,6 +367,25 @@ Go core filters them before ranking:
 
 ```json
 { "entries": [{ "reading": "ceshi", "text": "错词", "comment": "已屏蔽" }], "merge": true }
+```
+
+`ShurufaProfileJSON`, `ShurufaImportProfileJSON`, `profile-json`, and
+`import-profile-json` reserve a single user-profile migration surface. The
+bundle contains normalized config, learned `userScores`, fixed `phrases`, hidden
+`rejects`, pinned `pins`, and `counts`. Import merges by default and replaces
+local profile sections when `merge=false`:
+
+```json
+{
+  "version": 1,
+  "product": "shurufa233",
+  "config": { "...": "engine.Config" },
+  "userScores": { "nihao|你好": 25 },
+  "phrases": [{ "reading": "msd", "text": "马上到！", "weight": 60000 }],
+  "rejects": [{ "reading": "ceshi", "text": "错词" }],
+  "pins": [{ "reading": "nihao", "text": "你好" }],
+  "merge": true
+}
 ```
 
 `ShurufaAgentCompose` is the native bridge for agent-style input actions. It

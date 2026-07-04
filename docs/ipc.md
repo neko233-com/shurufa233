@@ -21,6 +21,8 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /pins`
 - `PUT /pins`
 - `DELETE /pins`
+- `GET /profile`
+- `PUT /profile`
 - `GET /catalog`
 - `GET /symbols`
 - `GET /updates/check`
@@ -145,6 +147,15 @@ accepts `{"entries":[{"reading":"nihao","text":"你好"}],"merge":true}` or a
 single `reading`/`text` pair. `DELETE /pins?key=nihao%7C你好` cancels one pin;
 `DELETE /pins` cancels all pins. The CLI mirrors this through
 `shurufa-imecli pins list|add|import|export|delete|clear`.
+
+`GET /profile` exports a migration bundle containing shared config, learned
+`userScores`, fixed `phrases`, hidden `rejects`, pinned `pins`, and per-section
+`counts`. `PUT /profile` accepts the same bundle and applies it with
+`merge=true` by default; set `merge=false` for a full local replacement. This is
+the daemon-level contract for Rime-style user data backup, cross-device restore,
+and later cloud sync. The CLI mirrors it through
+`shurufa-imecli profile export [profile.json]` and
+`shurufa-imecli profile import profile.json [--replace]`.
 
 `GET /catalog` returns the shared emoji, kaomoji, symbol, and agent resource
 catalog. Query parameters are `kind=all|emoji|kaomoji|symbol|agent`,
