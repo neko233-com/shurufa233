@@ -1344,11 +1344,24 @@ int CandidateQuickSelectIndexFromKey(WPARAM key) {
 }
 
 bool IsPageKey(WPARAM key) {
+  if (!IsShiftPressed() && (key == VK_OEM_4 || key == L'[' || key == VK_OEM_6 || key == L']')) {
+    return true;
+  }
   return key == VK_NEXT || key == VK_PRIOR || key == VK_OEM_MINUS || key == VK_OEM_PLUS ||
          key == L'-' || key == L'=';
 }
 
+bool IsBracketPageKey(WPARAM key) {
+  return !IsShiftPressed() && (key == VK_OEM_4 || key == L'[' || key == VK_OEM_6 || key == L']');
+}
+
 int CandidatePageDeltaForKey(WPARAM key) {
+  if (!IsShiftPressed() && (key == VK_OEM_4 || key == L'[')) {
+    return -1;
+  }
+  if (!IsShiftPressed() && (key == VK_OEM_6 || key == L']')) {
+    return 1;
+  }
   if (key == VK_PRIOR || key == VK_OEM_MINUS || key == L'-') {
     return -1;
   }
@@ -1612,7 +1625,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return S_OK;
     }
 
-    if (IsPageKey(key)) {
+    if (IsPageKey(key) && cachedCandidateCount_ > kCandidatesPerPage) {
       MovePage(CandidatePageDeltaForKey(key));
       *eaten = TRUE;
       return S_OK;
@@ -1784,12 +1797,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (key == VK_ESCAPE) {
       return cachedCandidateCount_ > 0 || compositionLength_ > 0;
     }
-    if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB || key == VK_LEFT || key == VK_UP ||
-        IsPageKey(key)) {
-      if (IsPageKey(key)) {
-        return cachedCandidateCount_ > kCandidatesPerPage;
-      }
+    if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB || key == VK_LEFT || key == VK_UP) {
       return cachedCandidateCount_ > 0;
+    }
+    if (IsPageKey(key) && (!IsBracketPageKey(key) || cachedCandidateCount_ > kCandidatesPerPage)) {
+      return cachedCandidateCount_ > kCandidatesPerPage;
     }
     if (key == VK_SPACE || key == VK_RETURN) {
       return cachedCandidateCount_ > 0;
