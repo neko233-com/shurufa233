@@ -12,11 +12,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/neko233-com/shurufa233/core/engine"
 )
 
 const customPhraseWeightBase = 50000
+const rimeSymbolWeightBase = 48000
 
 func main() {
 	language := flag.String("language", "zh-CN", "dictionary language")
@@ -218,6 +220,10 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 				}
 				importList = false
 			}
+			if symbolEntries, ok := parseRimeSymbolLine(line, source); ok {
+				entries = append(entries, symbolEntries...)
+				continue
+			}
 			if sawYAMLHeader {
 				continue
 			}
@@ -234,6 +240,165 @@ func parseRimeDocument(reader io.Reader, source string) ([]engine.Entry, []strin
 		}
 	}
 	return entries, imports, scanner.Err()
+}
+
+func parseRimeSymbolLine(line string, source string) ([]engine.Entry, bool) {
+	key, value, ok := splitYAMLKeyValue(line)
+	if !ok {
+		return nil, false
+	}
+	key = strings.TrimSpace(strings.Trim(key, `"'`))
+	if !strings.HasPrefix(key, "/") {
+		return nil, false
+	}
+	reading := normalizeRimeReading(strings.TrimPrefix(key, "/"))
+	if reading == "" {
+		return nil, false
+	}
+	values := parseYAMLFlowValues(value)
+	if len(values) == 0 {
+		return nil, false
+	}
+	entries := make([]engine.Entry, 0, len(values))
+	for index, text := range values {
+		text = cleanYAMLScalar(text)
+		if text == "" {
+			continue
+		}
+		entries = append(entries, engine.Entry{
+			Reading: reading,
+			Text:    text,
+			Kind:    symbolKind(text),
+			Source:  source,
+			Weight:  rimeSymbolWeightBase - index,
+		})
+	}
+	return entries, len(entries) > 0
+}
+
+func splitYAMLKeyValue(line string) (string, string, bool) {
+	var quote rune
+	for index, r := range line {
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+			}
+			continue
+		}
+		if r == '\'' || r == '"' {
+			quote = r
+			continue
+		}
+		if r == ':' {
+			return strings.TrimSpace(line[:index]), strings.TrimSpace(line[index+len(":"):]), true
+		}
+	}
+	return "", "", false
+}
+
+func parseYAMLFlowValues(value string) []string {
+	value = stripYAMLInlineComment(value)
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
+		value = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "["), "]"))
+	}
+	if value == "" {
+		return nil
+	}
+	var values []string
+	var builder strings.Builder
+	var quote rune
+	escaped := false
+	for _, r := range value {
+		if escaped {
+			builder.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			if r == '\\' {
+				escaped = true
+				continue
+			}
+			if r == quote {
+				quote = 0
+				builder.WriteRune(r)
+				continue
+			}
+			builder.WriteRune(r)
+			continue
+		}
+		switch r {
+		case '\'', '"':
+			quote = r
+			builder.WriteRune(r)
+		case ',':
+			if item := strings.TrimSpace(builder.String()); item != "" {
+				values = append(values, item)
+			}
+			builder.Reset()
+		default:
+			builder.WriteRune(r)
+		}
+	}
+	if item := strings.TrimSpace(builder.String()); item != "" {
+		values = append(values, item)
+	}
+	return values
+}
+
+func stripYAMLInlineComment(value string) string {
+	var quote rune
+	for index, r := range value {
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+			}
+			continue
+		}
+		if r == '\'' || r == '"' {
+			quote = r
+			continue
+		}
+		if r == '#' {
+			return strings.TrimSpace(value[:index])
+		}
+	}
+	return value
+}
+
+func cleanYAMLScalar(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) >= 2 {
+		left, leftSize := utf8.DecodeRuneInString(value)
+		right, _ := utf8.DecodeLastRuneInString(value)
+		if (left == '\'' && right == '\'') || (left == '"' && right == '"') {
+			value = value[leftSize : len(value)-leftSize]
+		}
+	}
+	value = strings.ReplaceAll(value, `\"`, `"`)
+	value = strings.ReplaceAll(value, `\'`, `'`)
+	value = strings.ReplaceAll(value, `\\`, `\`)
+	return strings.TrimSpace(value)
+}
+
+func symbolKind(text string) string {
+	for _, r := range text {
+		if isEmojiRune(r) {
+			return "emoji"
+		}
+	}
+	if strings.ContainsAny(text, "()[]{}<>/\\|_=^;:-~") && len([]rune(text)) >= 3 {
+		return "kaomoji"
+	}
+	return "symbol"
+}
+
+func isEmojiRune(r rune) bool {
+	return r >= 0x1F000 && r <= 0x1FAFF || r >= 0x2600 && r <= 0x27BF
 }
 
 func parseImportTablesLine(line string) ([]string, bool) {

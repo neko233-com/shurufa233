@@ -180,6 +180,57 @@ func TestCustomPhraseImportRanksAboveOrdinaryDictionary(t *testing.T) {
 	}
 }
 
+func TestParseRimeSymbolsYAML(t *testing.T) {
+	input := `# Rime symbols.yaml
+patch:
+  punctuator/symbols/+:
+    '/fs': [℃, ℉, °]
+    '/xh': ['※', "★", ☆] # stars
+    '/yx': [🙂, 😂]
+    '/yw': ['(╯°□°）╯︵ ┻━┻', "=_="]
+`
+	entries, imports, err := parseRimeDocument(strings.NewReader(input), "rime-symbols")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(imports) != 0 {
+		t.Fatalf("imports = %#v, want none", imports)
+	}
+	got := map[string][]engine.Entry{}
+	for _, entry := range entries {
+		got[entry.Reading] = append(got[entry.Reading], entry)
+	}
+	if len(got["fs"]) != 3 || got["fs"][0].Text != "℃" || got["fs"][0].Kind != "symbol" {
+		t.Fatalf("fs symbols = %#v", got["fs"])
+	}
+	if len(got["xh"]) != 3 || got["xh"][1].Text != "★" {
+		t.Fatalf("xh symbols = %#v", got["xh"])
+	}
+	if len(got["yx"]) != 2 || got["yx"][0].Kind != "emoji" {
+		t.Fatalf("yx emoji = %#v", got["yx"])
+	}
+	if len(got["yw"]) != 2 || got["yw"][0].Kind != "kaomoji" {
+		t.Fatalf("yw kaomoji = %#v", got["yw"])
+	}
+}
+
+func TestRimeSymbolsImportIntoEngine(t *testing.T) {
+	input := `patch:
+  punctuator/symbols/+:
+    '/fs': [℃, ℉, °]
+`
+	entries, err := parseRimeDictionary(strings.NewReader(input), "rime-symbols")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := engine.New(engine.DefaultConfig())
+	e.AddEntries(entries)
+	state := e.Preview("fs")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "℃" || state.Candidates[0].Kind != "symbol" {
+		t.Fatalf("expected imported Rime symbol candidate, got %#v", state.Candidates)
+	}
+}
+
 func TestParseRimeYAMLHeaderIsNotImportedAsCustomPhrase(t *testing.T) {
 	input := `---
 name: rime_ice

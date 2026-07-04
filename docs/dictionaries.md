@@ -60,6 +60,32 @@ go run ./cmd/dictimport `
   path\to\custom_phrase.txt
 ```
 
+Convert Rime symbol tables such as `symbols.yaml` or `symbols.custom.yaml`:
+
+```powershell
+go run ./cmd/dictimport `
+  -language zh-CN `
+  -version rime-symbols-2026-07-05 `
+  -source rime-symbols `
+  -out data\dictionaries\zh-CN.rime-symbols.json `
+  path\to\symbols.yaml
+```
+
+The importer recognizes common `punctuator/symbols` and
+`punctuator/symbols/+` flow-list rows such as:
+
+```yaml
+patch:
+  punctuator/symbols/+:
+    '/fs': [℃, ℉, °]
+    '/xh': ['※', '★', '☆']
+```
+
+Rime's leading slash is dropped for the shurufa233 reading, so `/fs` becomes
+the `fs` candidate code. Imported rows are tagged as `symbol`, `emoji`, or
+`kaomoji` where possible so native and React candidate strips can keep showing
+the same readable badges.
+
 By default, `shurufa-dictimport` resolves Rime `import_tables` recursively, so
 an entry dictionary such as Rime Ice's `rime_ice.dict.yaml` can pull concrete
 tables from folders like `cn_dicts/` automatically:
