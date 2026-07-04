@@ -17,6 +17,18 @@ const GUID kProfileGuid = {
     0x491c,
     {0xa6, 0x24, 0x97, 0x84, 0x41, 0x64, 0x8e, 0x20}};
 
+const CLSID kMicrosoftPinyinClsid = {
+    0x81d4e9c9,
+    0x1d3b,
+    0x41bc,
+    {0x9e, 0x6c, 0x4b, 0x40, 0xbf, 0x79, 0xe3, 0x5e}};
+
+const GUID kMicrosoftPinyinProfile = {
+    0xfa550b04,
+    0x5ad7,
+    0x411f,
+    {0xa5, 0xac, 0xca, 0x03, 0x8e, 0xc5, 0x15, 0xd7}};
+
 constexpr LANGID kLanguage = MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
 
 int PrintResult(const char *action, HRESULT hr) {
@@ -30,6 +42,73 @@ void PrintGuid(const char *name, REFGUID guid) {
   std::wprintf(L"%hs=%ls\n", name, value);
 }
 
+bool ToWide(const char *value, wchar_t *out, int outCount) {
+  if (!value || !out || outCount <= 0) {
+    return false;
+  }
+  const int written = MultiByteToWideChar(CP_UTF8, 0, value, -1, out, outCount);
+  return written > 0 && written < outCount;
+}
+
+HRESULT ParseGuidArg(const char *value, GUID *guid) {
+  wchar_t wide[80]{};
+  if (!ToWide(value, wide, ARRAYSIZE(wide))) {
+    return E_INVALIDARG;
+  }
+  return CLSIDFromString(wide, guid);
+}
+
+bool ParseLangIdArg(const char *value, LANGID *langid) {
+  if (!value || !langid) {
+    return false;
+  }
+  wchar_t wide[16]{};
+  if (!ToWide(value, wide, ARRAYSIZE(wide))) {
+    return false;
+  }
+  wchar_t *end = nullptr;
+  unsigned long parsed = wcstoul(wide, &end, 0);
+  if (end == wide || parsed > 0xffff) {
+    return false;
+  }
+  *langid = static_cast<LANGID>(parsed);
+  return true;
+}
+
+HRESULT ActivateTip(LANGID langid, REFCLSID clsid, REFGUID profileGuid) {
+  HRESULT hr = S_OK;
+
+  ITfInputProcessorProfiles *profiles = nullptr;
+  hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                        IID_ITfInputProcessorProfiles,
+                        reinterpret_cast<void **>(&profiles));
+  if (SUCCEEDED(hr) && profiles) {
+    profiles->EnableLanguageProfile(clsid, langid, profileGuid, TRUE);
+    profiles->ChangeCurrentLanguage(langid);
+    profiles->ActivateLanguageProfile(clsid, langid, profileGuid);
+    profiles->Release();
+  }
+
+  ITfInputProcessorProfileMgr *mgr = nullptr;
+  hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                        IID_ITfInputProcessorProfileMgr,
+                        reinterpret_cast<void **>(&mgr));
+  if (SUCCEEDED(hr) && mgr) {
+    DWORD flags = TF_IPPMF_FORSESSION | TF_IPPMF_ENABLEPROFILE;
+#ifdef TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE
+    flags |= TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE;
+#endif
+    hr = mgr->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, langid, clsid,
+                              profileGuid, nullptr, flags);
+    if (FAILED(hr)) {
+      hr = mgr->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, langid, clsid,
+                                profileGuid, nullptr, TF_IPPMF_FORSESSION);
+    }
+    mgr->Release();
+  }
+  return hr;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -41,40 +120,39 @@ int main(int argc, char **argv) {
   }
 
   if (_stricmp(command, "activate") == 0) {
-    ITfInputProcessorProfiles *profiles = nullptr;
-    hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
-                          IID_ITfInputProcessorProfiles,
-                          reinterpret_cast<void **>(&profiles));
-    if (SUCCEEDED(hr) && profiles) {
-      profiles->EnableLanguageProfile(kClsidTextService, kLanguage, kProfileGuid, TRUE);
-      profiles->ChangeCurrentLanguage(kLanguage);
-      profiles->ActivateLanguageProfile(kClsidTextService, kLanguage, kProfileGuid);
-      profiles->Release();
-    }
-
-    ITfInputProcessorProfileMgr *mgr = nullptr;
-    hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
-                          IID_ITfInputProcessorProfileMgr,
-                          reinterpret_cast<void **>(&mgr));
-    if (SUCCEEDED(hr) && mgr) {
-      DWORD flags = TF_IPPMF_FORSESSION | TF_IPPMF_ENABLEPROFILE;
-#ifdef TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE
-      flags |= TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE;
-#endif
-      hr = mgr->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, kLanguage,
-                                kClsidTextService, kProfileGuid, nullptr,
-                                flags);
-      if (FAILED(hr)) {
-        hr = mgr->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, kLanguage,
-                                  kClsidTextService, kProfileGuid, nullptr,
-                                  TF_IPPMF_FORSESSION);
-      }
-      mgr->Release();
-    }
+    hr = ActivateTip(kLanguage, kClsidTextService, kProfileGuid);
     if (didCoInit) {
       CoUninitialize();
     }
     return PrintResult("activate", hr);
+  }
+
+  if (_stricmp(command, "activate-microsoft") == 0) {
+    hr = ActivateTip(kLanguage, kMicrosoftPinyinClsid, kMicrosoftPinyinProfile);
+    if (didCoInit) {
+      CoUninitialize();
+    }
+    return PrintResult("activate-microsoft", hr);
+  }
+
+  if (_stricmp(command, "activate-tip") == 0) {
+    LANGID langid = 0;
+    GUID clsid{};
+    GUID profileGuid{};
+    if (argc < 5 || !ParseLangIdArg(argv[2], &langid) ||
+        FAILED(ParseGuidArg(argv[3], &clsid)) ||
+        FAILED(ParseGuidArg(argv[4], &profileGuid))) {
+      if (didCoInit) {
+        CoUninitialize();
+      }
+      std::fprintf(stderr, "usage: Shurufa233ProfileCtl.exe activate-tip <langid> <clsid> <profile>\n");
+      return 2;
+    }
+    hr = ActivateTip(langid, clsid, profileGuid);
+    if (didCoInit) {
+      CoUninitialize();
+    }
+    return PrintResult("activate-tip", hr);
   }
 
   if (_stricmp(command, "enable") == 0) {
@@ -129,7 +207,7 @@ int main(int argc, char **argv) {
     return PrintResult("current", hr);
   }
 
-  std::fprintf(stderr, "usage: Shurufa233ProfileCtl.exe [enable|activate|current|probe]\n");
+  std::fprintf(stderr, "usage: Shurufa233ProfileCtl.exe [enable|activate|activate-microsoft|activate-tip <langid> <clsid> <profile>|current|probe]\n");
   if (didCoInit) {
     CoUninitialize();
   }

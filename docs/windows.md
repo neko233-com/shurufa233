@@ -146,12 +146,15 @@ shurufa-imecli agent "/rewrite hello world"
 ```powershell
 Shurufa233ProfileCtl.exe enable
 Shurufa233ProfileCtl.exe activate
+Shurufa233ProfileCtl.exe activate-microsoft
+Shurufa233ProfileCtl.exe activate-tip 0x0804 "{81D4E9C9-1D3B-41BC-9E6C-4B40BF79E35E}" "{FA550B04-5AD7-411F-A5AC-CA038EC515D7}"
 Shurufa233ProfileCtl.exe current
 Shurufa233ProfileCtl.exe probe
 ```
 
 Running `Shurufa233ProfileCtl.exe` without arguments only enables the profile. Use `activate` explicitly when you need to switch the current session to shurufa233.
 `current` prints the active keyboard TIP, which is useful when verifying `Ctrl+Shift` coexistence with Microsoft IME.
+`activate-microsoft` switches the current session back to Windows Microsoft Pinyin for safe local validation. `activate-tip` is the generic restore path: save `current` output before a test, then pass its `langid`, `clsid`, and `profile` back to restore that exact TIP.
 
 `probe` creates the TSF COM object directly and is useful when checking whether Windows is loading the registered DLL.
 
