@@ -439,6 +439,7 @@ class CandidateWindow {
     const int width = MeasureWindowWidth();
     const int height = CandidateWindowHeight();
     const POINT origin = FitToWorkArea(anchor, width, height);
+    ArmHoverGuard();
     SetWindowPos(hwnd_, HWND_TOPMOST, origin.x, origin.y, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
     InvalidateRect(hwnd_, nullptr, TRUE);
@@ -452,6 +453,7 @@ class CandidateWindow {
     composing_.clear();
     candidateHits_.clear();
     pageHits_.clear();
+    hoverGuardArmed_ = false;
   }
 
   void ShowStatus(const wchar_t *text) {
@@ -505,6 +507,9 @@ class CandidateWindow {
     }
     if (self && message == WM_MOUSEMOVE) {
       const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+      if (self->ShouldIgnoreHoverMove(point)) {
+        return 0;
+      }
       const int absoluteIndex = self->HitTestCandidate(point);
       if (absoluteIndex >= 0) {
         self->SelectCandidate(absoluteIndex);
@@ -655,6 +660,8 @@ class CandidateWindow {
   int selectedIndex_ = 0;
   int pageStart_ = 0;
   int totalCount_ = 0;
+  POINT hoverGuardScreenPoint_{};
+  bool hoverGuardArmed_ = false;
   std::wstring fontFamily_ = L"Microsoft YaHei UI";
   int fontSize_ = 18;
   COLORREF accent_ = RGB(37, 99, 235);
@@ -1184,6 +1191,25 @@ class CandidateWindow {
       }
     }
     return 0;
+  }
+
+  void ArmHoverGuard() {
+    hoverGuardArmed_ = GetCursorPos(&hoverGuardScreenPoint_) != FALSE;
+  }
+
+  bool ShouldIgnoreHoverMove(POINT clientPoint) {
+    if (!hoverGuardArmed_ || !hwnd_) {
+      return false;
+    }
+    POINT screenPoint = clientPoint;
+    ClientToScreen(hwnd_, &screenPoint);
+    const int dx = abs(screenPoint.x - hoverGuardScreenPoint_.x);
+    const int dy = abs(screenPoint.y - hoverGuardScreenPoint_.y);
+    if (dx <= 2 && dy <= 2) {
+      return true;
+    }
+    hoverGuardArmed_ = false;
+    return false;
   }
 
   void SelectCandidate(int absoluteIndex) {
