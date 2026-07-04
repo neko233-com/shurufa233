@@ -106,6 +106,7 @@ http://127.0.0.1:23333/settings/
 The settings panel is served by the local daemon from the installed static bundle, so it does not require a Vite development server after installation.
 After installation, it is also available from Start Menu > `shurufa233` > `Settings`.
 The settings panel can check configured GitHub/mirror dictionary manifests and apply dictionary updates through the daemon without leaving the UI.
+It can also manage learned user words: refresh, export JSON, merge-import JSON, delete individual rows, or clear the local learning store.
 
 For focused development testing only, pass `-ActivateProfile`:
 

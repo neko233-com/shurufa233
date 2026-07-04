@@ -54,6 +54,9 @@ func TestWithCORSPreflightAllowsLoopbackVite(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://127.0.0.1:5173" {
 		t.Fatalf("Access-Control-Allow-Origin = %q", got)
 	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, "DELETE") {
+		t.Fatalf("Access-Control-Allow-Methods = %q, want DELETE", got)
+	}
 }
 
 func TestPutConfigNormalizesCandidatePool(t *testing.T) {
@@ -279,6 +282,54 @@ func TestImeModeAcceptsQueryParametersForNativeFallback(t *testing.T) {
 	}
 	if got.Mode != "zh" {
 		t.Fatalf("mode after query set = %q, want zh", got.Mode)
+	}
+}
+
+func TestWordbookPutAndDeleteManageUserScores(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{
+		{Reading: "ceshi", Text: "测试", Weight: 100},
+		{Reading: "ceshi", Text: "侧室", Weight: 90},
+	})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	body := strings.NewReader(`{"userScores":{"ceshi|侧室":1000}}`)
+	req := httptest.NewRequest(http.MethodPut, "/wordbook", body)
+	rec := httptest.NewRecorder()
+	state.wordbook(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := session.Preview("ceshi"); len(got.Candidates) == 0 || got.Candidates[0].Text != "侧室" {
+		t.Fatalf("expected imported user word to rerank candidates, got %#v", got.Candidates)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/wordbook?key=ceshi%7C%E4%BE%A7%E5%AE%A4", nil)
+	rec = httptest.NewRecorder()
+	state.wordbook(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := session.Preview("ceshi"); len(got.Candidates) == 0 || got.Candidates[0].Text != "测试" {
+		t.Fatalf("expected deleted user word to restore static ranking, got %#v", got.Candidates)
+	}
+
+	var stored userScoreStore
+	data, err := os.ReadFile(state.userScoresPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Scores) != 0 {
+		t.Fatalf("stored scores = %#v, want empty", stored.Scores)
 	}
 }
 

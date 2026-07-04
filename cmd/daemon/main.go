@@ -98,6 +98,12 @@ type userScoreStore struct {
 	Scores    map[string]int `json:"scores"`
 }
 
+type wordbookRequest struct {
+	UserScores map[string]int `json:"userScores,omitempty"`
+	Scores     map[string]int `json:"scores,omitempty"`
+	Merge      bool           `json:"merge,omitempty"`
+}
+
 func main() {
 	logFile, logPath, err := setupFileLogging()
 	if err != nil {
@@ -132,6 +138,8 @@ func main() {
 	mux.HandleFunc("PUT /config", state.withCORS(state.putConfig))
 	mux.HandleFunc("POST /engine/preview", state.withCORS(state.preview))
 	mux.HandleFunc("GET /wordbook", state.withCORS(state.wordbook))
+	mux.HandleFunc("PUT /wordbook", state.withCORS(state.wordbook))
+	mux.HandleFunc("DELETE /wordbook", state.withCORS(state.wordbook))
 	mux.HandleFunc("GET /updates/check", state.withCORS(state.checkUpdates))
 	mux.HandleFunc("POST /updates/apply", state.withCORS(state.applyUpdates))
 	mux.HandleFunc("POST /ime/key", state.withCORS(state.imeKey))
@@ -266,12 +274,61 @@ func (s *AppState) preview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.engine.Preview(req.Input))
 }
 
-func (s *AppState) wordbook(w http.ResponseWriter, _ *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	writeJSON(w, map[string]any{
-		"userScores": s.engine.UserScores(),
-	})
+func (s *AppState) wordbook(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		writeJSON(w, wordbookResponse(s.engine.UserScores()))
+	case http.MethodPut:
+		var req wordbookRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		next := req.UserScores
+		if next == nil {
+			next = req.Scores
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if req.Merge {
+			merged := s.engine.UserScores()
+			for key, value := range next {
+				if value > 0 {
+					merged[key] = value
+				}
+			}
+			next = merged
+		}
+		s.replaceUserScoresLocked(next)
+		if err := s.writeUserScores(next); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, wordbookResponse(s.engine.UserScores()))
+	case http.MethodDelete:
+		key := strings.TrimSpace(r.URL.Query().Get("key"))
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if key == "" {
+			s.replaceUserScoresLocked(nil)
+		} else {
+			for _, session := range s.sessions {
+				if session != nil {
+					session.DeleteUserScore(key)
+				}
+			}
+		}
+		scores := s.engine.UserScores()
+		if err := s.writeUserScores(scores); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, wordbookResponse(scores))
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *AppState) imeKey(w http.ResponseWriter, r *http.Request) {
@@ -828,14 +885,30 @@ func (s *AppState) loadUserScores() map[string]int {
 	return store.Scores
 }
 
+func wordbookResponse(scores map[string]int) map[string]any {
+	if scores == nil {
+		scores = map[string]int{}
+	}
+	return map[string]any{
+		"userScores": scores,
+		"count":      len(scores),
+		"updatedAt":  time.Now().UTC(),
+	}
+}
+
+func (s *AppState) replaceUserScoresLocked(scores map[string]int) {
+	for _, session := range s.sessions {
+		if session != nil {
+			session.ReplaceUserScores(scores)
+		}
+	}
+}
+
 func (s *AppState) saveUserScores(scores map[string]int) error {
 	if len(scores) == 0 {
 		return nil
 	}
 	path := s.userScoresPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	merged := make(map[string]int, len(scores))
 	for key, value := range scores {
 		merged[key] = value
@@ -850,10 +923,25 @@ func (s *AppState) saveUserScores(scores map[string]int) error {
 			}
 		}
 	}
+	return s.writeUserScores(merged)
+}
+
+func (s *AppState) writeUserScores(scores map[string]int) error {
+	path := s.userScoresPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	normalized := make(map[string]int, len(scores))
+	for key, value := range scores {
+		if key == "" || value <= 0 {
+			continue
+		}
+		normalized[key] = value
+	}
 	store := userScoreStore{
 		Version:   1,
 		UpdatedAt: time.Now().UTC(),
-		Scores:    merged,
+		Scores:    normalized,
 	}
 	data, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
@@ -879,7 +967,7 @@ func (s *AppState) withCORS(next http.HandlerFunc) http.HandlerFunc {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "content-type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

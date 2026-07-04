@@ -260,6 +260,24 @@ func (e *Engine) ImportUserScores(scores map[string]int) {
 	}
 }
 
+func (e *Engine) ReplaceUserScores(scores map[string]int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.user = make(map[string]int, len(scores))
+	for key, value := range scores {
+		if key == "" || value <= 0 {
+			continue
+		}
+		e.user[key] = value
+	}
+}
+
+func (e *Engine) DeleteUserScore(key string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.user, key)
+}
+
 func (e *Engine) stateLocked(committed string) State {
 	return State{
 		Buffer:     e.buffer,

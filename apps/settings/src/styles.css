@@ -281,6 +281,23 @@ h2 {
   padding: 0 12px;
 }
 
+.secondary.danger {
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.smallButton {
+  min-height: 30px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7f7;
+  color: #991b1b;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 10px;
+}
+
 .toggle {
   display: flex;
   align-items: center;
@@ -403,6 +420,75 @@ h2 {
   padding: 0;
   background: transparent;
   cursor: pointer;
+}
+
+.wordbookList {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.wordbookRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 8px 10px;
+}
+
+.wordbookRow div {
+  min-width: 0;
+}
+
+.wordbookRow strong,
+.wordbookRow span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wordbookRow strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.wordbookRow span,
+.emptyWordbook {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.emptyWordbook {
+  min-height: 48px;
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 15px 10px;
+}
+
+.wordbookDraft {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 10px;
+}
+
+.wordbookDraft:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent), transparent 72%);
+  border-color: var(--accent);
 }
 
 .candidatePreviewShell {

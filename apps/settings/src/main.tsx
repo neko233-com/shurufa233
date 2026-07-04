@@ -5,6 +5,8 @@ import {
   Check,
   CircleAlert,
   Download,
+  FileDown,
+  FileUp,
   Keyboard,
   Palette,
   RotateCcw,
@@ -62,6 +64,19 @@ type UpdateApplyResult = {
   manifestUrl: string;
   version: string;
   applied: string[];
+};
+
+type WordbookResponse = {
+  userScores: Record<string, number>;
+  count: number;
+  updatedAt: string;
+};
+
+type WordbookEntry = {
+  key: string;
+  reading: string;
+  text: string;
+  score: number;
 };
 
 type Candidate = {
@@ -256,6 +271,20 @@ function countTypingErrors(input: string, target: string) {
   return errors;
 }
 
+function wordbookEntries(scores: Record<string, number>): WordbookEntry[] {
+  return Object.entries(scores)
+    .map(([key, score]) => {
+      const splitAt = key.indexOf("|");
+      return {
+        key,
+        reading: splitAt >= 0 ? key.slice(0, splitAt) : key,
+        text: splitAt >= 0 ? key.slice(splitAt + 1) : "",
+        score,
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.key.localeCompare(right.key));
+}
+
 function App() {
   const [config, setConfig] = useState<Config>(defaultConfig);
   const [preview, setPreview] = useState("nihao");
@@ -263,6 +292,9 @@ function App() {
   const [status, setStatus] = useState<"loading" | "ready" | "offline" | "saved">("loading");
   const [updateText, setUpdateText] = useState("未检查");
   const [updateBusy, setUpdateBusy] = useState<"idle" | "checking" | "applying">("idle");
+  const [wordbook, setWordbook] = useState<WordbookEntry[]>([]);
+  const [wordbookDraft, setWordbookDraft] = useState("{}");
+  const [wordbookText, setWordbookText] = useState("未读取");
   const [error, setError] = useState("");
   const [typingPromptId, setTypingPromptId] = useState(typingPrompts[0].id);
   const [typingText, setTypingText] = useState("");
@@ -271,6 +303,7 @@ function App() {
 
   useEffect(() => {
     void loadConfig();
+    void loadWordbook();
   }, []);
 
   useEffect(() => {
@@ -474,6 +507,89 @@ function App() {
     } finally {
       setUpdateBusy("idle");
     }
+  }
+
+  async function loadWordbook() {
+    try {
+      const res = await fetch(`${apiBase}/wordbook`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as WordbookResponse;
+      const scores = data.userScores ?? {};
+      setWordbook(wordbookEntries(scores));
+      setWordbookDraft(JSON.stringify(scores, null, 2));
+      setWordbookText(`${data.count ?? Object.keys(scores).length} 条用户词`);
+      setError("");
+    } catch (err) {
+      setWordbookText("读取失败");
+      setError(err instanceof Error ? err.message : "wordbook load failed");
+    }
+  }
+
+  async function importWordbook(merge: boolean) {
+    try {
+      const parsed = JSON.parse(wordbookDraft) as Record<string, number> | { userScores?: Record<string, number>; scores?: Record<string, number> };
+      const userScores = "userScores" in parsed || "scores" in parsed ? parsed.userScores ?? parsed.scores ?? {} : parsed;
+      const res = await fetch(`${apiBase}/wordbook`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userScores, merge }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as WordbookResponse;
+      const scores = data.userScores ?? {};
+      setWordbook(wordbookEntries(scores));
+      setWordbookDraft(JSON.stringify(scores, null, 2));
+      setWordbookText(`已导入 ${data.count ?? Object.keys(scores).length} 条`);
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setWordbookText("导入失败");
+      setError(err instanceof Error ? err.message : "wordbook import failed");
+    }
+  }
+
+  async function deleteWordbookEntry(key: string) {
+    try {
+      const res = await fetch(`${apiBase}/wordbook?key=${encodeURIComponent(key)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as WordbookResponse;
+      const scores = data.userScores ?? {};
+      setWordbook(wordbookEntries(scores));
+      setWordbookDraft(JSON.stringify(scores, null, 2));
+      setWordbookText(`剩余 ${data.count ?? Object.keys(scores).length} 条`);
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setWordbookText("删除失败");
+      setError(err instanceof Error ? err.message : "wordbook delete failed");
+    }
+  }
+
+  async function clearWordbook() {
+    if (!window.confirm("清空所有用户词学习记录？")) return;
+    try {
+      const res = await fetch(`${apiBase}/wordbook`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      setWordbook([]);
+      setWordbookDraft("{}");
+      setWordbookText("已清空");
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setWordbookText("清空失败");
+      setError(err instanceof Error ? err.message : "wordbook clear failed");
+    }
+  }
+
+  function exportWordbook() {
+    const scores = Object.fromEntries(wordbook.map((entry) => [entry.key, entry.score]));
+    const blob = new Blob([JSON.stringify({ userScores: scores }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "shurufa233-user-wordbook.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -767,6 +883,53 @@ function App() {
               <button className="secondary" disabled={updateBusy !== "idle"} onClick={applyUpdates}>
                 <Download size={18} />
                 {updateBusy === "applying" ? "更新中" : "应用更新"}
+              </button>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panelHeader">
+              <h2>用户词库</h2>
+              <span>{wordbookText}</span>
+            </div>
+            <div className="wordbookList">
+              {wordbook.slice(0, 8).map((entry) => (
+                <div className="wordbookRow" key={entry.key}>
+                  <div>
+                    <strong>{entry.text || entry.key}</strong>
+                    <span>{entry.reading} · {entry.score}</span>
+                  </div>
+                  <button className="smallButton" onClick={() => deleteWordbookEntry(entry.key)}>
+                    删除
+                  </button>
+                </div>
+              ))}
+              {wordbook.length === 0 && <div className="emptyWordbook">暂无用户词学习记录</div>}
+            </div>
+            <label className="field">
+              <span>导入 / 编辑 JSON</span>
+              <textarea
+                className="wordbookDraft"
+                spellCheck={false}
+                value={wordbookDraft}
+                onChange={(event) => setWordbookDraft(event.target.value)}
+              />
+            </label>
+            <div className="rowControls">
+              <button className="secondary" onClick={loadWordbook}>
+                <RotateCcw size={18} />
+                刷新
+              </button>
+              <button className="secondary" onClick={exportWordbook}>
+                <FileDown size={18} />
+                导出
+              </button>
+              <button className="secondary" onClick={() => importWordbook(true)}>
+                <FileUp size={18} />
+                合并导入
+              </button>
+              <button className="secondary danger" onClick={clearWordbook}>
+                清空
               </button>
             </div>
           </section>

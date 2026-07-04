@@ -9,6 +9,8 @@ The background daemon listens on `127.0.0.1:23333`.
 - `PUT /config`
 - `POST /engine/preview`
 - `GET /wordbook`
+- `PUT /wordbook`
+- `DELETE /wordbook`
 - `GET /updates/check`
 - `POST /updates/apply`
 - `GET /ime/mode`
@@ -27,6 +29,12 @@ The settings UI uses this IPC directly in development. A Wails v3 shell can host
 `full` or `half`. `full` is the default Chinese punctuation mode; `half` keeps
 ASCII punctuation while preserving candidate-first commit behavior during active
 composition.
+
+`GET /wordbook` returns learned user word scores. `PUT /wordbook` accepts
+`{"userScores":{"reading|text":1000},"merge":true}` for JSON import or
+replacement when `merge` is false. `DELETE /wordbook?key=reading%7Ctext` removes
+one learned row; `DELETE /wordbook` clears all learned user words and persists
+the empty wordbook.
 
 `GET /updates/check` returns the current and latest dictionary manifest version.
 `POST /updates/apply` downloads the matching language dictionary from configured
