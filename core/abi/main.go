@@ -229,9 +229,55 @@ func ShurufaSelectCandidateChar(id C.uint64_t, index C.int, side *C.char) *C.cha
 	return jsonCString(state)
 }
 
+//export ShurufaExecuteCommand
+func ShurufaExecuteCommand(id C.uint64_t, command *C.char, payload *C.char) *C.char {
+	return jsonCString(executeExtensionCommand(uint64(id), C.GoString(command), C.GoString(payload)))
+}
+
 //export ShurufaFree
 func ShurufaFree(value *C.char) {
 	C.free(unsafe.Pointer(value))
+}
+
+func executeExtensionCommand(id uint64, command string, payload string) any {
+	command = strings.ToLower(strings.TrimSpace(command))
+	req, err := decodeExtensionCommandPayload(payload)
+	if err != nil {
+		return errorEnvelope(err.Error())
+	}
+	session := getSession(id)
+	if result, ok := executeSessionExtensionCommand(session, command, payload); ok {
+		return result
+	}
+	switch command {
+	case "config-json", "config":
+		return configEnvelope()
+	case "apply-config-json", "apply-config":
+		config, err := configFromCommandPayload(req, payload)
+		if err != nil {
+			return errorEnvelope(err.Error())
+		}
+		return applyConfigEnvelope(config)
+	case "reload-config":
+		return applyConfigEnvelope(loadConfig())
+	case "reload-dictionaries":
+		return reloadDictionariesEnvelope()
+	case "dictionary-manifest-json", "dictionary-manifest":
+		return dictionaryManifestEnvelope()
+	default:
+		return errorEnvelope("unknown extension command: " + command)
+	}
+}
+
+func configFromCommandPayload(req extensionCommandPayload, payload string) (engine.Config, error) {
+	if req.Config != nil {
+		return normalizeConfig(*req.Config), nil
+	}
+	config := engine.Config{}
+	if err := json.Unmarshal([]byte(payload), &config); err != nil {
+		return config, err
+	}
+	return normalizeConfig(config), nil
 }
 
 func commitCandidateChar(id uint64, index int, side string) (string, error) {

@@ -65,6 +65,7 @@ using ApplyConfigJsonFn = char *(*)(char *);
 using ImportUserScoresJsonFn = char *(*)(uint64_t, char *);
 using CommitTextFn = char *(*)(uint64_t, char *, char *);
 using AgentComposeFn = char *(*)(char *, char *);
+using ExecuteCommandFn = char *(*)(uint64_t, const char *, const char *);
 
 struct CoreApi {
   bool initialized = false;
@@ -99,6 +100,7 @@ struct CoreApi {
   ImportUserScoresJsonFn importUserScoresJson = nullptr;
   CommitTextFn commitText = nullptr;
   AgentComposeFn agentCompose = nullptr;
+  ExecuteCommandFn executeCommand = nullptr;
 
   bool Ready() const {
     return initialized && createSession && destroySession && inputKeyFast &&
@@ -414,6 +416,7 @@ bool TryLoadInProcessCore() {
       LoadCoreProc<ImportUserScoresJsonFn>(module, "ShurufaImportUserScoresJSON");
   api.commitText = LoadCoreProc<CommitTextFn>(module, "ShurufaCommitText");
   api.agentCompose = LoadCoreProc<AgentComposeFn>(module, "ShurufaAgentCompose");
+  api.executeCommand = LoadCoreProc<ExecuteCommandFn>(module, "ShurufaExecuteCommand");
   if (!api.Ready()) {
     LogLine(L"In-process core missing required exports; falling back to daemon IPC");
     FreeLibrary(module);
@@ -462,6 +465,7 @@ void UseHttpCoreFallback() {
   g_core.importUserScoresJson = nullptr;
   g_core.commitText = nullptr;
   g_core.agentCompose = nullptr;
+  g_core.executeCommand = nullptr;
 }
 
 bool EnsureCoreLoaded() {

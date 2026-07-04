@@ -95,6 +95,7 @@ char* ShurufaImportUserScoresJSON(uint64_t session, char* json);
 char* ShurufaCommitText(uint64_t session, char* reading, char* text);
 char* ShurufaAgentCompose(char* input, char* context);
 char* ShurufaSelectCandidateChar(uint64_t session, int index, const char* side);
+char* ShurufaExecuteCommand(uint64_t session, const char* command, const char* json);
 ```
 
 All returned strings are UTF-8 and must be released with `ShurufaFree`.
@@ -107,7 +108,39 @@ returns JSON with an `ok` field and `updatedAt`.
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `emoji-kaomoji-symbol-candidates`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
-`candidate-comments`.
+`candidate-comments`, and `extension-command-json`.
+
+`ShurufaExecuteCommand` is the reserved forward-compatible command bus for
+future native glue. The first argument is the session id, the second is a stable
+command name, and the third is a UTF-8 JSON payload. It returns UTF-8 JSON and
+must be released with `ShurufaFree`. Windows TSF loads this optional export once
+but keeps the current per-key hot path on compact APIs. New platform features
+should prefer adding a Go-side command here before adding another C++ callback.
+
+Current commands include:
+
+```text
+state
+preview                 {"input":"zan"}
+input-key               {"input":"z"}
+backspace
+clear
+mode
+set-mode                {"mode":"en"} or {"toggle":true}
+toggle-mode
+candidate-payload-v2    {"start":0,"limit":7}
+select                  {"index":0}
+select-candidate-char   {"index":0,"side":"first"}
+config-json
+apply-config-json       { ...engine.Config } or {"config":{...}}
+reload-config
+reload-dictionaries
+dictionary-manifest-json
+user-scores-json
+import-user-scores-json {"userScores":{"nihao|你好":25}}
+commit-text             {"reading":"nihao","text":"你好"}
+agent-compose           {"input":"/rewrite","context":"optional text"}
+```
 
 `ShurufaCandidatePayloadV2` is the future rich candidate contract for native
 renderers, React/Wails diagnostics, esports typing labs, and mouse/skin

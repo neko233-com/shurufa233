@@ -224,6 +224,57 @@ func TestCapabilitiesIncludeCandidateComments(t *testing.T) {
 	t.Fatalf("capabilities missing candidate-comments: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeExtensionCommandJSON(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "extension-command-json" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing extension-command-json: %#v", abiFeatureList)
+}
+
+func TestExecuteExtensionCommandPreviewAndCandidatePayload(t *testing.T) {
+	t.Setenv("SHURUFA233_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	t.Setenv("SHURUFA233_DICTIONARY_DIR", t.TempDir())
+	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(t.TempDir(), "user-scores.json"))
+
+	session := engine.New(engine.DefaultConfig())
+	preview, handled := executeSessionExtensionCommand(session, "preview", `{"input":"zan"}`)
+	if !handled {
+		t.Fatal("preview command was not handled")
+	}
+	state, ok := preview.(engine.State)
+	if !ok || len(state.Candidates) == 0 || state.Candidates[0].Text != "👍" {
+		t.Fatalf("preview command = %#v", preview)
+	}
+
+	payload, handled := executeSessionExtensionCommand(session, "candidate-payload-v2", `{"start":0,"limit":3}`)
+	if !handled {
+		t.Fatal("candidate-payload-v2 command was not handled")
+	}
+	candidates, ok := payload.(candidatePayloadV2)
+	if !ok || !candidates.OK || len(candidates.Items) == 0 {
+		t.Fatalf("candidate payload command = %#v", payload)
+	}
+	if candidates.Items[0].Comment == "" {
+		t.Fatalf("expected candidate comment through extension command, got %#v", candidates.Items[0])
+	}
+}
+
+func TestExecuteExtensionCommandAgentCompose(t *testing.T) {
+	got, handled := executeSessionExtensionCommand(engine.New(engine.DefaultConfig()), "agent-compose", `{"input":"/rewrite","context":"保留上下文"}`)
+	if !handled {
+		t.Fatal("agent-compose command was not handled")
+	}
+	result, ok := got.(agentComposeResult)
+	if !ok || !result.OK || len(result.Items) == 0 {
+		t.Fatalf("agent-compose command = %#v", got)
+	}
+	if result.Items[0].Intent != "rewrite" || !strings.Contains(result.Items[0].Text, "保留上下文") {
+		t.Fatalf("unexpected agent-compose command result: %#v", result.Items[0])
+	}
+}
+
 func TestDecodeUserScoresPayloadAcceptsWrappedAndRawScores(t *testing.T) {
 	wrapped, err := decodeUserScoresPayload(`{"userScores":{"nihao|你好":25}}`)
 	if err != nil {

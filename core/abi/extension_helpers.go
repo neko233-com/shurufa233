@@ -27,6 +27,7 @@ var abiFeatureList = []string{
 	"dynamic-datetime-candidates",
 	"candidate-char-commit",
 	"candidate-comments",
+	"extension-command-json",
 }
 
 type abiEnvelope struct {
@@ -70,6 +71,23 @@ type agentCandidate struct {
 	Action string `json:"action"`
 	Text   string `json:"text"`
 	Source string `json:"source"`
+}
+
+type extensionCommandPayload struct {
+	Input      string           `json:"input,omitempty"`
+	Context    string           `json:"context,omitempty"`
+	Mode       string           `json:"mode,omitempty"`
+	Toggle     bool             `json:"toggle,omitempty"`
+	Index      int              `json:"index,omitempty"`
+	Start      int              `json:"start,omitempty"`
+	Limit      int              `json:"limit,omitempty"`
+	Side       string           `json:"side,omitempty"`
+	Reading    string           `json:"reading,omitempty"`
+	Text       string           `json:"text,omitempty"`
+	Config     *engine.Config   `json:"config,omitempty"`
+	UserScores map[string]int   `json:"userScores,omitempty"`
+	Scores     map[string]int   `json:"scores,omitempty"`
+	Raw        *json.RawMessage `json:"raw,omitempty"`
 }
 
 func buildCandidatePayloadV2(session *engine.Engine, start int, limit int) candidatePayloadV2 {
@@ -178,6 +196,129 @@ func composeAgentABI(input string, context string) agentComposeResult {
 		add("compose", "agent.compose", prefix+input)
 	}
 	return result
+}
+
+func decodeExtensionCommandPayload(payload string) (extensionCommandPayload, error) {
+	var out extensionCommandPayload
+	payload = strings.TrimSpace(payload)
+	if payload == "" {
+		return out, nil
+	}
+	if err := json.Unmarshal([]byte(payload), &out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func executeSessionExtensionCommand(session *engine.Engine, command string, payload string) (any, bool) {
+	command = strings.ToLower(strings.TrimSpace(command))
+	req, err := decodeExtensionCommandPayload(payload)
+	if err != nil {
+		return errorEnvelope(err.Error()), true
+	}
+	switch command {
+	case "state", "state-json":
+		return session.State(), true
+	case "preview":
+		return session.Preview(req.Input), true
+	case "input-key":
+		runes := []rune(req.Input)
+		if len(runes) == 0 {
+			return errorEnvelope("input is required"), true
+		}
+		return session.InputKey(runes[0]), true
+	case "backspace":
+		return session.Backspace(), true
+	case "clear":
+		return session.Clear(), true
+	case "mode":
+		state := session.State()
+		return map[string]any{
+			"ok":        true,
+			"mode":      state.Mode,
+			"state":     state,
+			"updatedAt": state.UpdatedAt,
+		}, true
+	case "set-mode":
+		if req.Toggle {
+			return session.ToggleMode(), true
+		}
+		return session.SetMode(req.Mode), true
+	case "toggle-mode":
+		return session.ToggleMode(), true
+	case "candidate-payload-v2":
+		return buildCandidatePayloadV2(session, req.Start, req.Limit), true
+	case "select", "commit-candidate":
+		state, err := session.Select(req.Index)
+		if err != nil {
+			return errorEnvelope(err.Error()), true
+		}
+		persistUserScores(session.UserScores())
+		return map[string]any{
+			"ok":        true,
+			"committed": state.Committed,
+			"state":     state,
+			"updatedAt": state.UpdatedAt,
+		}, true
+	case "select-candidate-char", "commit-candidate-char":
+		state, err := session.SelectChar(req.Index, req.Side)
+		if err != nil {
+			return errorEnvelope(err.Error()), true
+		}
+		return map[string]any{
+			"ok":        true,
+			"committed": state.Committed,
+			"state":     state,
+			"updatedAt": state.UpdatedAt,
+		}, true
+	case "user-scores-json", "user-scores":
+		scores := session.UserScores()
+		return map[string]any{
+			"ok":         true,
+			"userScores": scores,
+			"count":      len(scores),
+			"updatedAt":  session.State().UpdatedAt,
+		}, true
+	case "import-user-scores-json", "import-user-scores":
+		scores := req.UserScores
+		if scores == nil {
+			scores = req.Scores
+		}
+		if scores == nil {
+			var err error
+			scores, err = decodeUserScoresPayload(payload)
+			if err != nil {
+				return errorEnvelope(err.Error()), true
+			}
+		}
+		session.ImportUserScores(scores)
+		persistUserScores(session.UserScores())
+		return map[string]any{
+			"ok":        true,
+			"imported":  len(scores),
+			"total":     len(session.UserScores()),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "commit-text":
+		reading := normalizeABIReading(req.Reading)
+		text := strings.TrimSpace(req.Text)
+		if reading == "" || text == "" {
+			return errorEnvelope("reading and text are required"), true
+		}
+		key := reading + "|" + text
+		session.ImportUserScores(map[string]int{key: 25})
+		persistUserScores(session.UserScores())
+		return map[string]any{
+			"ok":        true,
+			"learned":   key,
+			"state":     session.State(),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "agent-compose":
+		return composeAgentABI(req.Input, req.Context), true
+	default:
+		return nil, false
+	}
 }
 
 func errorEnvelope(message string) abiEnvelope {

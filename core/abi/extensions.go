@@ -43,11 +43,7 @@ func ShurufaCandidatePayloadV2(id C.uint64_t, start C.int, limit C.int) *C.char 
 
 //export ShurufaConfigJSON
 func ShurufaConfigJSON() *C.char {
-	return jsonCString(map[string]any{
-		"ok":        true,
-		"config":    loadConfig(),
-		"updatedAt": time.Now().UTC(),
-	})
+	return jsonCString(configEnvelope())
 }
 
 //export ShurufaApplyConfigJSON
@@ -57,29 +53,45 @@ func ShurufaApplyConfigJSON(payload *C.char) *C.char {
 		return jsonCString(errorEnvelope(err.Error()))
 	}
 	config = normalizeConfig(config)
-	updated := configureActiveSessions(config)
-	return jsonCString(map[string]any{
-		"ok":              true,
-		"config":          config,
-		"sessionsUpdated": updated,
-		"updatedAt":       time.Now().UTC(),
-	})
+	return jsonCString(applyConfigEnvelope(config))
 }
 
 //export ShurufaReloadConfig
 func ShurufaReloadConfig() *C.char {
 	config := loadConfig()
-	updated := configureActiveSessions(config)
-	return jsonCString(map[string]any{
-		"ok":              true,
-		"config":          config,
-		"sessionsUpdated": updated,
-		"updatedAt":       time.Now().UTC(),
-	})
+	return jsonCString(applyConfigEnvelope(config))
 }
 
 //export ShurufaReloadDictionaries
 func ShurufaReloadDictionaries() *C.char {
+	return jsonCString(reloadDictionariesEnvelope())
+}
+
+//export ShurufaDictionaryManifestJSON
+func ShurufaDictionaryManifestJSON() *C.char {
+	return jsonCString(dictionaryManifestEnvelope())
+}
+
+func configEnvelope() map[string]any {
+	return map[string]any{
+		"ok":        true,
+		"config":    loadConfig(),
+		"updatedAt": time.Now().UTC(),
+	}
+}
+
+func applyConfigEnvelope(config engine.Config) map[string]any {
+	config = normalizeConfig(config)
+	updated := configureActiveSessions(config)
+	return map[string]any{
+		"ok":              true,
+		"config":          config,
+		"sessionsUpdated": updated,
+		"updatedAt":       time.Now().UTC(),
+	}
+}
+
+func reloadDictionariesEnvelope() map[string]any {
 	groups := loadLocalDictionaryEntries()
 	sessions := activeSessions()
 	entryCount := 0
@@ -91,20 +103,23 @@ func ShurufaReloadDictionaries() *C.char {
 			session.AddEntries(group)
 		}
 	}
-	return jsonCString(map[string]any{
+	return map[string]any{
 		"ok":               true,
 		"dictionaryGroups": len(groups),
 		"entries":          entryCount,
 		"sessionsUpdated":  len(sessions),
 		"updatedAt":        time.Now().UTC(),
-	})
+	}
 }
 
-//export ShurufaDictionaryManifestJSON
-func ShurufaDictionaryManifestJSON() *C.char {
+func dictionaryManifestEnvelope() map[string]any {
 	dir, err := dictionaryDir()
 	if err != nil {
-		return jsonCString(errorEnvelope(err.Error()))
+		return map[string]any{
+			"ok":        false,
+			"error":     err.Error(),
+			"updatedAt": time.Now().UTC(),
+		}
 	}
 	for _, name := range []string{"manifest.json", "dictionary-manifest.json"} {
 		path := filepath.Join(dir, name)
@@ -114,21 +129,25 @@ func ShurufaDictionaryManifestJSON() *C.char {
 		}
 		var manifest any
 		if err := json.Unmarshal(data, &manifest); err != nil {
-			return jsonCString(errorEnvelope(err.Error()))
+			return map[string]any{
+				"ok":        false,
+				"error":     err.Error(),
+				"updatedAt": time.Now().UTC(),
+			}
 		}
-		return jsonCString(map[string]any{
+		return map[string]any{
 			"ok":        true,
 			"path":      path,
 			"manifest":  manifest,
 			"updatedAt": time.Now().UTC(),
-		})
+		}
 	}
-	return jsonCString(map[string]any{
+	return map[string]any{
 		"ok":        true,
 		"path":      "",
 		"manifest":  nil,
 		"updatedAt": time.Now().UTC(),
-	})
+	}
 }
 
 //export ShurufaUserScoresJSON
