@@ -60,6 +60,12 @@ type EngineState = {
   updatedAt: string;
 };
 
+type SkinPreset = {
+  id: string;
+  name: string;
+  skin: Skin;
+};
+
 const apiBase = "http://127.0.0.1:23333";
 
 const defaultConfig: Config = {
@@ -89,6 +95,65 @@ const defaultConfig: Config = {
   },
 };
 
+const skinPresets: SkinPreset[] = [
+  {
+    id: "wechat-clean",
+    name: "清透白",
+    skin: {
+      ...defaultConfig.skin,
+      accent: "#16a34a",
+      surface: "#ffffff",
+      text: "#111827",
+      mutedText: "#64748b",
+      border: "#d7dee8",
+      highlightText: "#ffffff",
+      theme: "wechat-clean",
+    },
+  },
+  {
+    id: "ink",
+    name: "墨色",
+    skin: {
+      ...defaultConfig.skin,
+      accent: "#38bdf8",
+      surface: "#111827",
+      text: "#f8fafc",
+      mutedText: "#94a3b8",
+      border: "#334155",
+      highlightText: "#ffffff",
+      theme: "ink",
+    },
+  },
+  {
+    id: "bamboo",
+    name: "竹青",
+    skin: {
+      ...defaultConfig.skin,
+      accent: "#0f766e",
+      surface: "#f8fffc",
+      text: "#10201d",
+      mutedText: "#52756f",
+      border: "#b9d8d0",
+      highlightText: "#ffffff",
+      theme: "bamboo",
+    },
+  },
+  {
+    id: "berry",
+    name: "莓果",
+    skin: {
+      ...defaultConfig.skin,
+      accent: "#db2777",
+      surface: "#fff7fb",
+      text: "#26111c",
+      mutedText: "#8b5d72",
+      border: "#f0bfd4",
+      highlightText: "#ffffff",
+      theme: "berry",
+    },
+  },
+];
+
 function App() {
   const [config, setConfig] = useState<Config>(defaultConfig);
   const [preview, setPreview] = useState("nihao");
@@ -108,6 +173,18 @@ function App() {
 
   const candidateCount = state?.candidates?.length ?? 0;
   const accentStyle = useMemo(() => ({ "--accent": config.skin.accent }) as React.CSSProperties, [config.skin.accent]);
+  const candidateBarStyle = useMemo(
+    () =>
+      ({
+        fontFamily: config.skin.fontFamily,
+        fontSize: config.skin.fontSize,
+        background: config.skin.surface,
+        borderColor: config.skin.border,
+        color: config.skin.text,
+        "--candidate-muted": config.skin.mutedText,
+      }) as React.CSSProperties,
+    [config.skin],
+  );
 
   async function loadConfig() {
     try {
@@ -276,6 +353,21 @@ function App() {
               <h2>候选栏外观</h2>
               <span>TSF/IMKit 原生窗口读取</span>
             </div>
+            <div className="skinPresetGrid">
+              {skinPresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  className={config.skin.theme === preset.id ? "skinPreset selected" : "skinPreset"}
+                  onClick={() => setConfig({ ...config, skin: { ...preset.skin, fontFamily: config.skin.fontFamily } })}
+                >
+                  <span className="skinPreview" style={{ background: preset.skin.surface, borderColor: preset.skin.border }}>
+                    <i style={{ background: preset.skin.accent }} />
+                    <b style={{ color: preset.skin.text }}>你</b>
+                  </span>
+                  <span>{preset.name}</span>
+                </button>
+              ))}
+            </div>
             <label className="field">
               <span>字体</span>
               <input
@@ -298,13 +390,13 @@ function App() {
               />
             </label>
             <div className="swatches">
-              {["#2563eb", "#16a34a", "#dc2626", "#7c3aed", "#0f766e"].map((color) => (
+              {["#2563eb", "#16a34a", "#dc2626", "#db2777", "#0f766e"].map((color) => (
                 <button
                   key={color}
                   className={color === config.skin.accent ? "swatch selected" : "swatch"}
                   style={{ backgroundColor: color }}
                   title={color}
-                  onClick={() => setConfig({ ...config, skin: { ...config.skin, accent: color } })}
+                  onClick={() => setConfig({ ...config, skin: { ...config.skin, accent: color, theme: "custom" } })}
                 />
               ))}
             </div>
@@ -315,7 +407,7 @@ function App() {
                   type="color"
                   value={config.skin.surface}
                   onChange={(event) =>
-                    setConfig({ ...config, skin: { ...config.skin, surface: event.target.value } })
+                    setConfig({ ...config, skin: { ...config.skin, surface: event.target.value, theme: "custom" } })
                   }
                 />
               </label>
@@ -325,7 +417,7 @@ function App() {
                   type="color"
                   value={config.skin.text}
                   onChange={(event) =>
-                    setConfig({ ...config, skin: { ...config.skin, text: event.target.value } })
+                    setConfig({ ...config, skin: { ...config.skin, text: event.target.value, theme: "custom" } })
                   }
                 />
               </label>
@@ -335,7 +427,7 @@ function App() {
                   type="color"
                   value={config.skin.border}
                   onChange={(event) =>
-                    setConfig({ ...config, skin: { ...config.skin, border: event.target.value } })
+                    setConfig({ ...config, skin: { ...config.skin, border: event.target.value, theme: "custom" } })
                   }
                 />
               </label>
@@ -410,7 +502,7 @@ function App() {
               <span>输入串</span>
               <input value={preview} onChange={(event) => setPreview(event.target.value)} />
             </label>
-            <div className="candidateBar" style={{ fontFamily: config.skin.fontFamily, fontSize: config.skin.fontSize }}>
+            <div className="candidateBar" style={candidateBarStyle}>
               <span className="buffer">{state?.buffer || "..."}</span>
               {(state?.candidates ?? []).map((candidate, index) => (
                 <button key={`${candidate.reading}-${candidate.text}`}>

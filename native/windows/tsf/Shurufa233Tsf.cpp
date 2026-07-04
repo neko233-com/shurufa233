@@ -384,6 +384,10 @@ class CandidateWindow {
     int score = 0;
   };
 
+  ~CandidateWindow() {
+    ResetFont();
+  }
+
   void Show(const std::string &payload, int selectedIndex) {
     candidates_ = ParseCandidates(payload);
     if (candidates_.empty()) {
@@ -398,9 +402,10 @@ class CandidateWindow {
     RefreshSkin();
 
     POINT anchor = CaretAnchor();
-    const int width = EstimateWidth();
-    const int height = max(46, fontSize_ + 32);
-    SetWindowPos(hwnd_, HWND_TOPMOST, anchor.x, anchor.y + 8, width, height,
+    const int width = MeasureWindowWidth();
+    const int height = CandidateWindowHeight();
+    const POINT origin = FitToWorkArea(anchor, width, height);
+    SetWindowPos(hwnd_, HWND_TOPMOST, origin.x, origin.y, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
     InvalidateRect(hwnd_, nullptr, TRUE);
   }
@@ -418,7 +423,10 @@ class CandidateWindow {
     statusText_ = text ? text : L"";
     candidates_.clear();
     POINT anchor = CaretAnchor();
-    SetWindowPos(hwnd_, HWND_TOPMOST, anchor.x, anchor.y + 8, 96, max(42, fontSize_ + 28),
+    const int width = MeasureStatusWidth();
+    const int height = max(42, fontSize_ + 28);
+    const POINT origin = FitToWorkArea(anchor, width, height);
+    SetWindowPos(hwnd_, HWND_TOPMOST, origin.x, origin.y, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
     SetTimer(hwnd_, kStatusTimerId, 850, nullptr);
     InvalidateRect(hwnd_, nullptr, TRUE);
@@ -453,6 +461,7 @@ class CandidateWindow {
     static bool registered = false;
     if (!registered) {
       WNDCLASSW wc{};
+      wc.style = CS_DROPSHADOW;
       wc.lpfnWndProc = CandidateWindow::WindowProc;
       wc.hInstance = g_instance;
       wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
@@ -487,19 +496,27 @@ class CandidateWindow {
 
   void Paint(HWND hwnd) {
     PAINTSTRUCT ps{};
-    HDC dc = BeginPaint(hwnd, &ps);
+    HDC paintDc = BeginPaint(hwnd, &ps);
     RECT rect{};
     GetClientRect(hwnd, &rect);
+    const int width = max(1, rect.right - rect.left);
+    const int height = max(1, rect.bottom - rect.top);
+
+    HDC dc = CreateCompatibleDC(paintDc);
+    HBITMAP bitmap = dc ? CreateCompatibleBitmap(paintDc, width, height) : nullptr;
+    HGDIOBJ oldBitmap = nullptr;
+    if (dc && bitmap) {
+      oldBitmap = SelectObject(dc, bitmap);
+    } else {
+      if (dc) {
+        DeleteDC(dc);
+      }
+      dc = paintDc;
+    }
 
     HBRUSH bg = CreateSolidBrush(surface_);
     FillRect(dc, &rect, bg);
     DeleteObject(bg);
-
-    RECT accentRect = rect;
-    accentRect.right = accentRect.left + 4;
-    HBRUSH accent = CreateSolidBrush(accent_);
-    FillRect(dc, &accentRect, accent);
-    DeleteObject(accent);
 
     HPEN border = CreatePen(PS_SOLID, 1, border_);
     HGDIOBJ oldPen = SelectObject(dc, border);
@@ -509,10 +526,7 @@ class CandidateWindow {
     SelectObject(dc, oldPen);
     DeleteObject(border);
 
-    HFONT font = CreateFontW(-fontSize_, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-                             fontFamily_.c_str());
+    HFONT font = EnsureFont();
     HGDIOBJ oldFont = SelectObject(dc, font);
     SetBkMode(dc, TRANSPARENT);
     if (!statusText_.empty()) {
@@ -521,7 +535,12 @@ class CandidateWindow {
       DrawCandidates(dc, rect);
     }
     SelectObject(dc, oldFont);
-    DeleteObject(font);
+    if (dc != paintDc) {
+      BitBlt(paintDc, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+      SelectObject(dc, oldBitmap);
+      DeleteObject(bitmap);
+      DeleteDC(dc);
+    }
     EndPaint(hwnd, &ps);
   }
 
@@ -540,16 +559,102 @@ class CandidateWindow {
   COLORREF highlightText_ = RGB(255, 255, 255);
   std::string theme_ = "system";
   DWORD lastSkinRefreshTick_ = 0;
+  HFONT font_ = nullptr;
+  std::wstring fontFamilyKey_;
+  int fontSizeKey_ = 0;
 
-  int EstimateWidth() const {
-    int width = 30;
-    for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
-      width += 30 + static_cast<int>(candidates_[i].text.size()) * (fontSize_ + 8);
-      if (!candidates_[i].reading.empty() && static_cast<int>(i) == selectedIndex_) {
-        width += static_cast<int>(candidates_[i].reading.size()) * 7;
-      }
+  int CandidateWindowHeight() const {
+    return max(48, fontSize_ + 34);
+  }
+
+  HFONT EnsureFont() {
+    if (font_ && fontFamilyKey_ == fontFamily_ && fontSizeKey_ == fontSize_) {
+      return font_;
     }
-    return max(300, min(780, width));
+    ResetFont();
+    fontFamilyKey_ = fontFamily_;
+    fontSizeKey_ = fontSize_;
+    font_ = CreateFontW(-fontSize_, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+                        fontFamily_.c_str());
+    return font_;
+  }
+
+  void ResetFont() {
+    if (font_) {
+      DeleteObject(font_);
+      font_ = nullptr;
+    }
+    fontFamilyKey_.clear();
+    fontSizeKey_ = 0;
+  }
+
+  int TextWidth(HDC dc, const std::wstring &value) const {
+    if (value.empty()) {
+      return 0;
+    }
+    SIZE size{};
+    if (!GetTextExtentPoint32W(dc, value.c_str(), static_cast<int>(value.size()), &size)) {
+      return static_cast<int>(value.size()) * fontSize_;
+    }
+    return size.cx;
+  }
+
+  int CandidateItemWidth(HDC dc, const CandidateView &candidate, bool selected) const {
+    const int textWidth = TextWidth(dc, candidate.text);
+    const int readingWidth = selected ? TextWidth(dc, candidate.reading) : 0;
+    const int padding = selected && readingWidth > 0 ? 58 : 44;
+    return max(62, min(260, padding + textWidth + readingWidth));
+  }
+
+  int MeasureWindowWidth() {
+    HDC dc = GetDC(hwnd_);
+    HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
+    int width = 20;
+    for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
+      width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + 6;
+    }
+    SelectObject(dc, oldFont);
+    ReleaseDC(hwnd_, dc);
+    return max(180, min(780, width));
+  }
+
+  int MeasureStatusWidth() {
+    HDC dc = GetDC(hwnd_);
+    HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
+    const int width = max(92, min(180, TextWidth(dc, statusText_) + 40));
+    SelectObject(dc, oldFont);
+    ReleaseDC(hwnd_, dc);
+    return width;
+  }
+
+  POINT FitToWorkArea(POINT anchor, int width, int height) const {
+    RECT work{};
+    HMONITOR monitor = MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    if (monitor && GetMonitorInfoW(monitor, &info)) {
+      work = info.rcWork;
+    } else {
+      SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+    }
+    POINT origin{anchor.x, anchor.y + 8};
+    origin.x = max(work.left + 8, min(origin.x, work.right - width - 8));
+    if (origin.y + height > work.bottom - 8) {
+      origin.y = anchor.y - height - 8;
+    }
+    origin.y = max(work.top + 8, min(origin.y, work.bottom - height - 8));
+    return origin;
+  }
+
+  static COLORREF MixColor(COLORREF left, COLORREF right, int rightPercent) {
+    rightPercent = max(0, min(100, rightPercent));
+    const int leftPercent = 100 - rightPercent;
+    const int red = (GetRValue(left) * leftPercent + GetRValue(right) * rightPercent) / 100;
+    const int green = (GetGValue(left) * leftPercent + GetGValue(right) * rightPercent) / 100;
+    const int blue = (GetBValue(left) * leftPercent + GetBValue(right) * rightPercent) / 100;
+    return RGB(red, green, blue);
   }
 
   static COLORREF ParseColor(const std::string &value) {
@@ -593,14 +698,13 @@ class CandidateWindow {
   void DrawCandidates(HDC dc, const RECT &rect) {
     statusText_.clear();
     int x = rect.left + 14;
-    const int y = rect.top + 7;
-    const int itemHeight = max(32, fontSize_ + 16);
+    const int y = rect.top + 8;
+    const int itemHeight = max(32, fontSize_ + 18);
     for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
       const CandidateView &candidate = candidates_[i];
-      const int textWidth = 34 + static_cast<int>(candidate.text.size()) * (fontSize_ + 6);
       const bool selected = static_cast<int>(i) == selectedIndex_;
-      const int readingWidth = selected ? static_cast<int>(candidate.reading.size()) * 7 : 0;
-      const int itemWidth = max(58, min(210, textWidth + readingWidth));
+      const int readingWidth = selected ? TextWidth(dc, candidate.reading) : 0;
+      const int itemWidth = CandidateItemWidth(dc, candidate, selected);
       RECT itemRect{x, y, x + itemWidth, y + itemHeight};
 
       if (selected) {
@@ -623,11 +727,14 @@ class CandidateWindow {
 
       SetTextColor(dc, selected ? highlightText_ : text_);
       RECT textRect{itemRect.left + 28, itemRect.top, itemRect.right - 8, itemRect.bottom};
+      if (selected && readingWidth > 0) {
+        textRect.right = max(textRect.left + 24, itemRect.right - readingWidth - 14);
+      }
       DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
                 DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
 
       if (selected && !candidate.reading.empty()) {
-        SetTextColor(dc, RGB(219, 234, 254));
+        SetTextColor(dc, MixColor(highlightText_, accent_, 22));
         RECT readingRect{max(itemRect.left + 72, itemRect.right - readingWidth - 8), itemRect.top,
                          itemRect.right - 8, itemRect.bottom};
         DrawTextW(dc, candidate.reading.c_str(), static_cast<int>(candidate.reading.size()),
@@ -662,11 +769,11 @@ class CandidateWindow {
     if (lastSkinRefreshTick_ != 0 && now - lastSkinRefreshTick_ < 2000) {
       return;
     }
+    lastSkinRefreshTick_ = now;
     const std::string skin = HttpRequest(L"GET", L"/ime/skin");
     if (skin.empty()) {
       return;
     }
-    lastSkinRefreshTick_ = now;
     size_t first = skin.find('|');
     size_t second = first == std::string::npos ? std::string::npos : skin.find('|', first + 1);
     size_t third = second == std::string::npos ? std::string::npos : skin.find('|', second + 1);
@@ -680,8 +787,16 @@ class CandidateWindow {
         seventh == std::string::npos || eighth == std::string::npos) {
       return;
     }
-    fontFamily_ = Utf8ToWide(skin.substr(0, first).c_str());
-    fontSize_ = max(13, min(28, atoi(skin.substr(first + 1, second - first - 1).c_str()) + 3));
+    std::wstring nextFontFamily = Utf8ToWide(skin.substr(0, first).c_str());
+    if (nextFontFamily.empty()) {
+      nextFontFamily = L"Microsoft YaHei UI";
+    }
+    const int nextFontSize = max(13, min(28, atoi(skin.substr(first + 1, second - first - 1).c_str()) + 3));
+    if (nextFontFamily != fontFamily_ || nextFontSize != fontSize_) {
+      fontFamily_ = nextFontFamily;
+      fontSize_ = nextFontSize;
+      ResetFont();
+    }
     accent_ = ParseColor(skin.substr(second + 1, third - second - 1));
     surface_ = ParseColor(skin.substr(third + 1, fourth - third - 1));
     text_ = ParseColor(skin.substr(fourth + 1, fifth - fourth - 1));

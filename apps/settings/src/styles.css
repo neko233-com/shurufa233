@@ -285,6 +285,65 @@ h2 {
   margin-bottom: 14px;
 }
 
+.skinPresetGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.skinPreset {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 46px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f2937;
+  cursor: pointer;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.skinPreset.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 82%);
+}
+
+.skinPreset > span:last-child {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skinPreview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 34px;
+  height: 28px;
+  border: 1px solid;
+  border-radius: 7px;
+}
+
+.skinPreview i {
+  position: absolute;
+  inset: 5px 14px 5px 5px;
+  border-radius: 5px;
+}
+
+.skinPreview b {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+}
+
 .swatch {
   width: 34px;
   height: 34px;
@@ -363,7 +422,7 @@ h2 {
 }
 
 .candidateBar b {
-  color: #64748b;
+  color: var(--candidate-muted, #64748b);
   font-size: 12px;
 }
 
