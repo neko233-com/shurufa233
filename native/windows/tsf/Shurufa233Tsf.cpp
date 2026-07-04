@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <windowsx.h>
 #include <dwmapi.h>
 #include <msctf.h>
 #include <strsafe.h>
@@ -386,6 +387,8 @@ std::wstring Utf8ToWide(const char *value) {
 
 class CandidateWindow {
  public:
+  using CandidateClickHandler = void (*)(void *, int);
+
   struct CandidateView {
     int index = 0;
     std::wstring text;
@@ -397,6 +400,11 @@ class CandidateWindow {
 
   ~CandidateWindow() {
     ResetFont();
+  }
+
+  void SetClickHandler(void *owner, CandidateClickHandler handler) {
+    clickOwner_ = owner;
+    clickHandler_ = handler;
   }
 
   void Show(const std::string &payload, int selectedIndex, int pageStart, int totalCount) {
@@ -430,6 +438,7 @@ class CandidateWindow {
       ShowWindow(hwnd_, SW_HIDE);
     }
     composing_.clear();
+    candidateHits_.clear();
   }
 
   void ShowStatus(const wchar_t *text) {
@@ -437,6 +446,7 @@ class CandidateWindow {
     RefreshSkin();
     statusText_ = text ? text : L"";
     candidates_.clear();
+    candidateHits_.clear();
     composing_.clear();
     pageStart_ = 0;
     totalCount_ = 0;
@@ -465,6 +475,23 @@ class CandidateWindow {
     if (self && message == WM_TIMER && wparam == kStatusTimerId) {
       self->Hide();
       return 0;
+    }
+    if (self && message == WM_LBUTTONDOWN) {
+      const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+      const int absoluteIndex = self->HitTestCandidate(point);
+      if (absoluteIndex >= 0 && self->clickHandler_) {
+        self->clickHandler_(self->clickOwner_, absoluteIndex);
+      }
+      return 0;
+    }
+    if (self && message == WM_SETCURSOR) {
+      POINT cursor{};
+      GetCursorPos(&cursor);
+      ScreenToClient(hwnd, &cursor);
+      if (self->HitTestCandidate(cursor) >= 0) {
+        SetCursor(LoadCursorW(nullptr, IDC_HAND));
+        return TRUE;
+      }
     }
     if (message == WM_ERASEBKGND) {
       return 1;
@@ -577,8 +604,13 @@ class CandidateWindow {
   }
 
   HWND hwnd_ = nullptr;
+  struct CandidateHit {
+    RECT rect{};
+    int absoluteIndex = -1;
+  };
   static constexpr UINT_PTR kStatusTimerId = 1;
   std::vector<CandidateView> candidates_;
+  std::vector<CandidateHit> candidateHits_;
   std::wstring composing_;
   std::wstring statusText_;
   int selectedIndex_ = 0;
@@ -599,6 +631,8 @@ class CandidateWindow {
   HFONT font_ = nullptr;
   std::wstring fontFamilyKey_;
   int fontSizeKey_ = 0;
+  void *clickOwner_ = nullptr;
+  CandidateClickHandler clickHandler_ = nullptr;
 
   int CandidateWindowHeight() const {
     return max(82, fontSize_ * 2 + 56);
@@ -993,6 +1027,7 @@ class CandidateWindow {
 
   void DrawCandidates(HDC dc, const RECT &rect) {
     statusText_.clear();
+    candidateHits_.clear();
     DrawComposition(dc, rect);
     int x = rect.left + 15;
     const int y = CandidateBandTop() + 8;
@@ -1002,6 +1037,7 @@ class CandidateWindow {
       const bool selected = static_cast<int>(i) == selectedIndex_;
       const int itemWidth = CandidateItemWidth(dc, candidate, selected);
       RECT itemRect{x, y, x + itemWidth, y + itemHeight};
+      candidateHits_.push_back(CandidateHit{itemRect, pageStart_ + static_cast<int>(i)});
 
       if (selected) {
         RECT shadowRect{itemRect.left + 1, itemRect.top + 2, itemRect.right + 1, itemRect.bottom + 2};
@@ -1045,6 +1081,15 @@ class CandidateWindow {
       }
     }
     DrawPageIndicator(dc, rect);
+  }
+
+  int HitTestCandidate(POINT point) const {
+    for (const CandidateHit &hit : candidateHits_) {
+      if (hit.absoluteIndex >= 0 && PtInRect(&hit.rect, point)) {
+        return hit.absoluteIndex;
+      }
+    }
+    return -1;
   }
 
   void DrawPageIndicator(HDC dc, const RECT &rect) {
@@ -1241,6 +1286,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
  public:
   TextService() {
     AddDllRef();
+    candidateWindow_.SetClickHandler(this, &TextService::OnCandidateClickedThunk);
   }
 
   ~TextService() {
@@ -1326,6 +1372,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       threadMgr_->Release();
       threadMgr_ = nullptr;
     }
+    ForgetLastContext();
     clientId_ = TF_CLIENTID_NULL;
     return S_OK;
   }
@@ -1360,6 +1407,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (!session_ || !ShouldEatKey(key)) {
       return S_OK;
     }
+    RememberContext(context);
 
     if (IsShiftKey(key)) {
       if (!shiftDown_) {
@@ -1495,6 +1543,42 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
  private:
+  static void OnCandidateClickedThunk(void *owner, int absoluteIndex) {
+    if (!owner) {
+      return;
+    }
+    static_cast<TextService *>(owner)->OnCandidateClicked(absoluteIndex);
+  }
+
+  void OnCandidateClicked(int absoluteIndex) {
+    if (!lastContext_ || !session_ || absoluteIndex < 0 ||
+        absoluteIndex >= cachedCandidateCount_) {
+      return;
+    }
+    CommitCandidate(lastContext_, absoluteIndex);
+    selectedIndex_ = 0;
+    pageOffset_ = 0;
+    candidateWindow_.Hide();
+    cachedCandidateCount_ = 0;
+    compositionLength_ = 0;
+  }
+
+  void RememberContext(ITfContext *context) {
+    if (!context || context == lastContext_) {
+      return;
+    }
+    context->AddRef();
+    ForgetLastContext();
+    lastContext_ = context;
+  }
+
+  void ForgetLastContext() {
+    if (lastContext_) {
+      lastContext_->Release();
+      lastContext_ = nullptr;
+    }
+  }
+
   bool ShouldEatKey(WPARAM key) const {
     if (!session_) {
       return false;
@@ -1728,6 +1812,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   bool asciiMode_ = false;
   bool shiftDown_ = false;
   bool shiftToggleCandidate_ = false;
+  ITfContext *lastContext_ = nullptr;
   CandidateWindow candidateWindow_;
 };
 
