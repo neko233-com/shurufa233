@@ -272,6 +272,21 @@ func (e *Engine) Select(index int) (State, error) {
 	return e.stateLocked(selected.Text), nil
 }
 
+func (e *Engine) SelectChar(index int, side string) (State, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	candidates := e.candidatesLocked()
+	if index < 0 || index >= len(candidates) {
+		return e.stateLocked(""), errors.New("candidate index out of range")
+	}
+	text, err := candidateChar(candidates[index].Text, side)
+	if err != nil {
+		return e.stateLocked(""), err
+	}
+	e.buffer = ""
+	return e.stateLocked(text), nil
+}
+
 func (e *Engine) State() State {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -536,6 +551,21 @@ func chineseWeekday(day time.Weekday) string {
 		return "六"
 	default:
 		return "日"
+	}
+}
+
+func candidateChar(text string, side string) (string, error) {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return "", errors.New("candidate text is empty")
+	}
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "first", "head", "left":
+		return string(runes[0]), nil
+	case "last", "tail", "right":
+		return string(runes[len(runes)-1]), nil
+	default:
+		return "", errors.New("candidate char side must be first or last")
 	}
 }
 

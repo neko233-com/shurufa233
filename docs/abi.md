@@ -54,10 +54,12 @@ int ShurufaCandidateCount(uint64_t session);
 char* ShurufaCandidatePayload(uint64_t session, int limit);
 char* ShurufaCandidatePayloadRange(uint64_t session, int start, int limit);
 char* ShurufaCommitCandidate(uint64_t session, int index);
+char* ShurufaCommitCandidateChar(uint64_t session, int index, const char* side);
 ```
 
 `ShurufaCandidatePayload` returns up to `limit` UTF-8 rows separated by `\n` from the first candidate.
 `ShurufaCandidatePayloadRange` returns a paged slice beginning at `start`; Windows uses it for Microsoft IME-style candidate paging.
+`ShurufaCommitCandidateChar` commits `side=first` or `side=last` from the selected candidate and clears the active composition. It is reserved for Rime-style first/last-character actions without baking that behavior into platform glue.
 Each row is:
 
 ```text
@@ -92,6 +94,7 @@ char* ShurufaUserScoresJSON(uint64_t session);
 char* ShurufaImportUserScoresJSON(uint64_t session, char* json);
 char* ShurufaCommitText(uint64_t session, char* reading, char* text);
 char* ShurufaAgentCompose(char* input, char* context);
+char* ShurufaSelectCandidateChar(uint64_t session, int index, const char* side);
 ```
 
 All returned strings are UTF-8 and must be released with `ShurufaFree`.
@@ -103,7 +106,7 @@ returns JSON with an `ok` field and `updatedAt`.
 `user-scores-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `emoji-kaomoji-symbol-candidates`, and
-`dynamic-datetime-candidates`.
+`dynamic-datetime-candidates`, and `candidate-char-commit`.
 
 `ShurufaCandidatePayloadV2` is the future rich candidate contract for native
 renderers, React/Wails diagnostics, esports typing labs, and mouse/skin

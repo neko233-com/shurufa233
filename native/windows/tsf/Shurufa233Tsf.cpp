@@ -56,6 +56,7 @@ using SetModeFn = char *(*)(uint64_t, const char *);
 using ToggleModeFn = char *(*)(uint64_t);
 using ModeFn = char *(*)(uint64_t);
 using CommitCandidateFn = char *(*)(uint64_t, int);
+using CommitCandidateCharFn = char *(*)(uint64_t, int, const char *);
 using FreeFn = void (*)(char *);
 using CoreStringFn = char *(*)();
 using SessionStringFn = char *(*)(uint64_t);
@@ -83,6 +84,7 @@ struct CoreApi {
   ToggleModeFn toggleMode = nullptr;
   ModeFn mode = nullptr;
   CommitCandidateFn commitCandidate = nullptr;
+  CommitCandidateCharFn commitCandidateChar = nullptr;
   FreeFn freeValue = nullptr;
   CoreStringFn abiVersion = nullptr;
   CoreStringFn capabilities = nullptr;
@@ -394,6 +396,8 @@ bool TryLoadInProcessCore() {
   api.toggleMode = LoadCoreProc<ToggleModeFn>(module, "ShurufaToggleMode");
   api.mode = LoadCoreProc<ModeFn>(module, "ShurufaMode");
   api.commitCandidate = LoadCoreProc<CommitCandidateFn>(module, "ShurufaCommitCandidate");
+  api.commitCandidateChar =
+      LoadCoreProc<CommitCandidateCharFn>(module, "ShurufaCommitCandidateChar");
   api.freeValue = LoadCoreProc<FreeFn>(module, "ShurufaFree");
   api.abiVersion = LoadCoreProc<CoreStringFn>(module, "ShurufaAbiVersion");
   api.capabilities = LoadCoreProc<CoreStringFn>(module, "ShurufaCapabilities");
@@ -443,6 +447,7 @@ void UseHttpCoreFallback() {
   g_core.toggleMode = HttpToggleModeValue;
   g_core.mode = HttpModeValue;
   g_core.commitCandidate = HttpCommitCandidate;
+  g_core.commitCandidateChar = nullptr;
   g_core.freeValue = HttpFree;
   g_core.abiVersion = nullptr;
   g_core.capabilities = nullptr;

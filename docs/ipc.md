@@ -15,6 +15,7 @@ The background daemon listens on `127.0.0.1:23333`.
 - `POST /updates/apply`
 - `GET /ime/mode`
 - `POST /ime/mode`
+- `POST /ime/select-char`
 - `POST /agent/compose`
 
 `POST /engine/preview` body:
@@ -65,6 +66,11 @@ or:
 Mode is session-scoped (`zh` or `en`) and switching mode clears the active
 composition buffer. This mirrors the native Shift toggle without rewriting the
 saved default input mode in `config.json`.
+
+`POST /ime/select-char?index=0&side=first` commits the first character of a
+candidate, while `side=last` commits the last character. This mirrors Rime's
+common first/last-character candidate action without forcing the Windows TSF
+layer to sacrifice its current bracket paging shortcut.
 
 `POST /agent/compose` body:
 

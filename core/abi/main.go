@@ -197,6 +197,15 @@ func ShurufaCommitCandidate(id C.uint64_t, index C.int) *C.char {
 	return C.CString(state.Committed)
 }
 
+//export ShurufaCommitCandidateChar
+func ShurufaCommitCandidateChar(id C.uint64_t, index C.int, side *C.char) *C.char {
+	committed, err := commitCandidateChar(uint64(id), int(index), C.GoString(side))
+	if err != nil {
+		return C.CString("")
+	}
+	return C.CString(committed)
+}
+
 //export ShurufaSelect
 func ShurufaSelect(id C.uint64_t, index C.int) *C.char {
 	session := getSession(uint64(id))
@@ -208,9 +217,28 @@ func ShurufaSelect(id C.uint64_t, index C.int) *C.char {
 	return jsonCString(state)
 }
 
+//export ShurufaSelectCandidateChar
+func ShurufaSelectCandidateChar(id C.uint64_t, index C.int, side *C.char) *C.char {
+	session := getSession(uint64(id))
+	state, err := session.SelectChar(int(index), C.GoString(side))
+	if err != nil {
+		return C.CString(`{"error":"candidate char selection failed"}`)
+	}
+	return jsonCString(state)
+}
+
 //export ShurufaFree
 func ShurufaFree(value *C.char) {
 	C.free(unsafe.Pointer(value))
+}
+
+func commitCandidateChar(id uint64, index int, side string) (string, error) {
+	session := getSession(id)
+	state, err := session.SelectChar(index, side)
+	if err != nil {
+		return "", err
+	}
+	return state.Committed, nil
 }
 
 func getSession(id uint64) *engine.Engine {

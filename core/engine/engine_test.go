@@ -32,6 +32,40 @@ func TestCandidatesAndLearning(t *testing.T) {
 	}
 }
 
+func TestSelectCandidateFirstAndLastChar(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{{Reading: "houxuan", Text: "候选", Weight: 20000}})
+
+	state := e.Preview("houxuan")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "候选" {
+		t.Fatalf("expected 候选 candidate, got %#v", state.Candidates)
+	}
+	committed, err := e.SelectChar(0, "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.Committed != "候" || committed.Buffer != "" {
+		t.Fatalf("first char commit = %#v", committed)
+	}
+
+	e.Preview("houxuan")
+	committed, err = e.SelectChar(0, "last")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.Committed != "选" || committed.Buffer != "" {
+		t.Fatalf("last char commit = %#v", committed)
+	}
+}
+
+func TestSelectCandidateCharRejectsInvalidSide(t *testing.T) {
+	e := New(DefaultConfig())
+	e.Preview("nihao")
+	if _, err := e.SelectChar(0, "middle"); err == nil {
+		t.Fatal("expected invalid side error")
+	}
+}
+
 func TestGreedySegmentation(t *testing.T) {
 	e := New(DefaultConfig())
 	state := e.Preview("womende")

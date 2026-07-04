@@ -150,6 +150,7 @@ func main() {
 	mux.HandleFunc("POST /ime/backspace", state.withCORS(state.imeBackspace))
 	mux.HandleFunc("POST /ime/clear", state.withCORS(state.imeClear))
 	mux.HandleFunc("POST /ime/select", state.withCORS(state.imeSelect))
+	mux.HandleFunc("POST /ime/select-char", state.withCORS(state.imeSelectChar))
 	mux.HandleFunc("GET /ime/count", state.withCORS(state.imeCount))
 	mux.HandleFunc("GET /ime/candidates", state.withCORS(state.imeCandidates))
 	mux.HandleFunc("GET /ime/skin", state.withCORS(state.imeSkin))
@@ -371,6 +372,25 @@ func (s *AppState) imeSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.saveUserScores(session.UserScores()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(state.Committed))
+}
+
+func (s *AppState) imeSelectChar(w http.ResponseWriter, r *http.Request) {
+	index := 0
+	if raw := r.URL.Query().Get("index"); raw != "" {
+		_, _ = fmt.Sscanf(raw, "%d", &index)
+	}
+	side := strings.TrimSpace(r.URL.Query().Get("side"))
+	if side == "" {
+		side = "first"
+	}
+	session := s.sessionForRequest(r)
+	state, err := session.SelectChar(index, side)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

@@ -233,6 +233,33 @@ func TestImeCandidatesReturnsMetadataAndPagedRows(t *testing.T) {
 	}
 }
 
+func TestImeSelectCharCommitsCandidateCharacter(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{{Reading: "houxuan", Text: "候选", Weight: 20000}})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	session.Preview("houxuan")
+	req := httptest.NewRequest(http.MethodPost, "/ime/select-char?index=0&side=last", nil)
+	rec := httptest.NewRecorder()
+	state.imeSelectChar(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "选" {
+		t.Fatalf("committed char = %q, want 选", got)
+	}
+	if state := session.State(); state.Buffer != "" || len(state.Candidates) != 0 {
+		t.Fatalf("selection should clear composition, got %#v", state)
+	}
+}
+
 func TestImeModeCanToggleSessionMode(t *testing.T) {
 	config := engine.DefaultConfig()
 	session := engine.New(config)

@@ -203,6 +203,15 @@ func TestBuildCandidatePayloadV2IncludesMetadata(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesIncludeCandidateCharCommit(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "candidate-char-commit" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing candidate-char-commit: %#v", abiFeatureList)
+}
+
 func TestDecodeUserScoresPayloadAcceptsWrappedAndRawScores(t *testing.T) {
 	wrapped, err := decodeUserScoresPayload(`{"userScores":{"nihao|你好":25}}`)
 	if err != nil {
