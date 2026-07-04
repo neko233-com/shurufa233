@@ -96,6 +96,8 @@ can use either an absolute `index` or page-relative `displayIndex` plus `start`.
 The response includes `state`, optional `committed`, and a rich `candidates`
 page with metadata. This keeps React/Wails previews, daemon fallback clients,
 and native C++ glue aligned on the same candidate event model.
+The CLI mirrors this endpoint through `shurufa-imecli candidates <input>
+[action]`, which first previews the input and then posts the action payload.
 
 `GET /ime/candidates?start=0&limit=7` returns tab-separated candidate rows:
 `display_index`, `text`, `reading`, `score`, `kind`, `source`, and `comment`.

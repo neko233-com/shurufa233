@@ -9,11 +9,12 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const apiBase = "http://127.0.0.1:23333"
+var apiBase = "http://127.0.0.1:23333"
 
 type candidate struct {
 	Text      string `json:"text"`
@@ -25,11 +26,54 @@ type candidate struct {
 	UserScore int    `json:"userScore"`
 }
 
+type candidatePageItem struct {
+	Index        int    `json:"index"`
+	DisplayIndex int    `json:"displayIndex"`
+	Text         string `json:"text"`
+	Reading      string `json:"reading"`
+	Kind         string `json:"kind,omitempty"`
+	Source       string `json:"source,omitempty"`
+	Comment      string `json:"comment,omitempty"`
+	Weight       int    `json:"weight"`
+	UserScore    int    `json:"userScore"`
+	Score        int    `json:"score"`
+}
+
 type engineState struct {
 	Buffer     string      `json:"buffer"`
 	Mode       string      `json:"mode"`
 	Candidates []candidate `json:"candidates"`
 	Committed  string      `json:"committed,omitempty"`
+}
+
+type candidateActionRequest struct {
+	Action       string `json:"action,omitempty"`
+	Index        int    `json:"index,omitempty"`
+	DisplayIndex int    `json:"displayIndex,omitempty"`
+	Start        int    `json:"start,omitempty"`
+	Limit        int    `json:"limit,omitempty"`
+	PageSize     int    `json:"pageSize,omitempty"`
+	Delta        int    `json:"delta,omitempty"`
+	Side         string `json:"side,omitempty"`
+}
+
+type candidateActionResponse struct {
+	OK         bool        `json:"ok"`
+	Action     string      `json:"action"`
+	Start      int         `json:"start"`
+	Limit      int         `json:"limit"`
+	Total      int         `json:"total"`
+	Committed  string      `json:"committed,omitempty"`
+	State      engineState `json:"state"`
+	Candidates struct {
+		OK        bool                `json:"ok"`
+		Start     int                 `json:"start"`
+		Limit     int                 `json:"limit"`
+		Total     int                 `json:"total"`
+		Items     []candidatePageItem `json:"items"`
+		UpdatedAt string              `json:"updatedAt"`
+	} `json:"candidates"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 type updateCheck struct {
@@ -84,6 +128,8 @@ func main() {
 		err = wordbook(client, os.Args[2:])
 	case "agent":
 		err = agent(client, os.Args[2:])
+	case "candidates", "candidate-action":
+		err = candidateAction(client, os.Args[2:])
 	case "repl":
 		err = repl(client)
 	default:
@@ -110,6 +156,7 @@ Usage:
   shurufa-imecli wordbook clear
   shurufa-imecli update-check
   shurufa-imecli update-apply
+  shurufa-imecli candidates nihao [view|next-page|prev-page|select|first-char|last-char] [--start N] [--limit N] [--display-index N] [--index N]
   shurufa-imecli agent "/rewrite hello"
   shurufa-imecli agent --context "selected text" "/rewrite"
   shurufa-imecli repl`)
@@ -147,6 +194,133 @@ func preview(client *http.Client, input string) error {
 		fmt.Printf("%d. %s [%s] score=%d%s\n", i+1, item.Text, item.Reading, item.Weight+item.UserScore, meta)
 	}
 	return nil
+}
+
+func candidateAction(client *http.Client, args []string) error {
+	input, request, err := parseCandidateActionArgs(args)
+	if err != nil {
+		return err
+	}
+	var previewState engineState
+	if err := postJSON(client, "/engine/preview", map[string]string{"input": input}, &previewState); err != nil {
+		return err
+	}
+	var response candidateActionResponse
+	if err := postJSON(client, "/ime/candidate-action", request, &response); err != nil {
+		return err
+	}
+	printCandidateAction(response)
+	return nil
+}
+
+func printCandidateAction(response candidateActionResponse) {
+	if response.Committed != "" {
+		fmt.Printf("committed: %s\n", response.Committed)
+	}
+	fmt.Printf("action=%s range=%d-%d/%d\n", response.Action, response.Start+1, response.Start+len(response.Candidates.Items), response.Total)
+	for _, item := range response.Candidates.Items {
+		meta := ""
+		if item.Kind != "" {
+			meta = " kind=" + item.Kind
+			if item.Source != "" {
+				meta += " source=" + item.Source
+			}
+		}
+		if item.Comment != "" {
+			meta += " comment=" + item.Comment
+		}
+		fmt.Printf("%d. %s [%s] score=%d index=%d%s\n", item.DisplayIndex, item.Text, item.Reading, item.Score, item.Index, meta)
+	}
+}
+
+func parseCandidateActionArgs(args []string) (string, candidateActionRequest, error) {
+	var input []string
+	request := candidateActionRequest{Action: "view"}
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		if arg == "" {
+			continue
+		}
+		if strings.HasPrefix(arg, "--") {
+			value := ""
+			if split := strings.IndexByte(arg, '='); split >= 0 {
+				value = arg[split+1:]
+				arg = arg[:split]
+			} else if i+1 < len(args) {
+				value = args[i+1]
+				i++
+			}
+			if err := applyCandidateActionOption(&request, arg, value); err != nil {
+				return "", request, err
+			}
+			continue
+		}
+		if isCandidateActionName(arg) {
+			request.Action = strings.ToLower(arg)
+			continue
+		}
+		input = append(input, arg)
+	}
+	joined := strings.TrimSpace(strings.Join(input, " "))
+	if joined == "" {
+		return "", request, fmt.Errorf("missing candidate input")
+	}
+	return joined, request, nil
+}
+
+func applyCandidateActionOption(request *candidateActionRequest, option string, value string) error {
+	option = strings.TrimSpace(strings.ToLower(option))
+	value = strings.TrimSpace(value)
+	switch option {
+	case "--side":
+		request.Side = value
+		return nil
+	case "--action":
+		if !isCandidateActionName(value) {
+			return fmt.Errorf("unknown candidate action %q", value)
+		}
+		request.Action = strings.ToLower(value)
+		return nil
+	case "--index":
+		return setCandidateActionInt(value, &request.Index)
+	case "--display-index", "--display":
+		return setCandidateActionInt(value, &request.DisplayIndex)
+	case "--start":
+		return setCandidateActionInt(value, &request.Start)
+	case "--limit":
+		return setCandidateActionInt(value, &request.Limit)
+	case "--page-size":
+		return setCandidateActionInt(value, &request.PageSize)
+	case "--delta":
+		return setCandidateActionInt(value, &request.Delta)
+	default:
+		return fmt.Errorf("unknown candidate option %s", option)
+	}
+}
+
+func setCandidateActionInt(value string, target *int) error {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("invalid integer %q", value)
+	}
+	*target = parsed
+	return nil
+}
+
+func isCandidateActionName(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "view", "page", "candidates", "candidate-page",
+		"next", "next-page", "page-next",
+		"prev", "previous", "previous-page", "prev-page", "page-prev",
+		"home", "first-page", "end", "last-page",
+		"select", "commit", "commit-candidate",
+		"first-char", "commit-first-char",
+		"last-char", "commit-last-char",
+		"select-char", "commit-char", "commit-candidate-char":
+		return true
+	default:
+		return false
+	}
 }
 
 func updateCheckCmd(client *http.Client) error {

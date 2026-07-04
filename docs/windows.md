@@ -151,6 +151,9 @@ Current input method tip:
 ```powershell
 shurufa-imecli status
 shurufa-imecli preview nihao
+shurufa-imecli candidates nihao
+shurufa-imecli candidates nihao next-page --limit 7
+shurufa-imecli candidates nihao select --display-index 1
 shurufa-imecli wordbook list
 shurufa-imecli wordbook import .\user-wordbook.json
 shurufa-imecli update-check
