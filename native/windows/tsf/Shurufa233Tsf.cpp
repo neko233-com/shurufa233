@@ -444,7 +444,11 @@ class CandidateWindow {
     GUITHREADINFO info{};
     info.cbSize = sizeof(info);
     if (GetGUIThreadInfo(0, &info) && !IsRectEmpty(&info.rcCaret)) {
-      return POINT{info.rcCaret.left, info.rcCaret.bottom};
+      POINT anchor{info.rcCaret.left, info.rcCaret.bottom};
+      if (info.hwndCaret && ClientToScreen(info.hwndCaret, &anchor)) {
+        return anchor;
+      }
+      return anchor;
     }
     POINT cursor{};
     GetCursorPos(&cursor);
@@ -848,10 +852,6 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (!session_ || !ShouldEatKey(key)) {
       return S_OK;
     }
-    wchar_t message[128]{};
-    StringCchPrintfW(message, ARRAYSIZE(message), L"OnKeyDown key=0x%04X session=%llu",
-                     static_cast<unsigned int>(key), session_);
-    LogLine(message);
 
     if (IsShiftKey(key)) {
       if (!shiftDown_) {

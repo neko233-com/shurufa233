@@ -109,6 +109,17 @@ if (-not (Test-IsAdmin)) {
     $args += @("-CoreDllPath", "`"$LocalCoreDll`"")
   }
   Start-Process -FilePath "powershell.exe" -ArgumentList $args -Verb RunAs -Wait
+  $ExpectedRegisteredTsfDll = Join-Path $NativeInstallDir (Split-Path $TsfDll -Leaf)
+  $RegisteredComPath = (Get-ItemProperty "HKLM:\Software\Classes\CLSID\{3D7B8D06-9872-4C31-B77D-3B87327CBF64}\InprocServer32")."(default)"
+  if ($RegisteredComPath -ne $ExpectedRegisteredTsfDll) {
+    if (Test-Path $ExpectedRegisteredTsfDll) {
+      Start-Process -FilePath "regsvr32.exe" -ArgumentList @("/s", "`"$ExpectedRegisteredTsfDll`"") -Verb RunAs -Wait
+      $RegisteredComPath = (Get-ItemProperty "HKLM:\Software\Classes\CLSID\{3D7B8D06-9872-4C31-B77D-3B87327CBF64}\InprocServer32")."(default)"
+    }
+    if ($RegisteredComPath -ne $ExpectedRegisteredTsfDll) {
+      throw "TSF registration did not update HKLM. Expected $ExpectedRegisteredTsfDll but found $RegisteredComPath"
+    }
+  }
 } else {
   New-Item -ItemType Directory -Force $NativeInstallDir | Out-Null
   $RegisteredTsfDll = Join-Path $NativeInstallDir (Split-Path $TsfDll -Leaf)
@@ -119,6 +130,10 @@ if (-not (Test-IsAdmin)) {
     Remove-Item -Force (Join-Path $NativeInstallDir "shurufa_core.dll") -ErrorAction SilentlyContinue
   }
   regsvr32.exe /s $RegisteredTsfDll
+  $RegisteredComPath = (Get-ItemProperty "HKLM:\Software\Classes\CLSID\{3D7B8D06-9872-4C31-B77D-3B87327CBF64}\InprocServer32")."(default)"
+  if ($RegisteredComPath -ne $RegisteredTsfDll) {
+    throw "TSF registration did not update HKLM. Expected $RegisteredTsfDll but found $RegisteredComPath"
+  }
 }
 
 if (-not $RegisterOnly) {
