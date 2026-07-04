@@ -24,6 +24,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-windows-buildtools.ps
 Required Visual Studio components:
 
 - `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`
+- `Microsoft.VisualStudio.Component.VC.14.44.17.14.ARM64`
 - `Microsoft.VisualStudio.Component.VC.Tools.ARM64`
 - `Microsoft.VisualStudio.Component.VC.Tools.ARM64EC`
 - `Microsoft.VisualStudio.Component.Windows11SDK.26100`
@@ -45,12 +46,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 The installer:
 
 - copies daemon, CLI, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
+- copies `Shurufa233ProfileCtl.exe` for current-session enable/activate/probe operations
 - registers the TSF DLL through UAC because TSF profiles live under HKLM
 - enables the profile for the current user
 - adds the input method tip to `zh-Hans-CN`
 - sets it as the default input method override
 - starts `ctfmon.exe`
 - registers a versioned TSF DLL path so loaded DLLs do not block updates
+- activates the profile for the current session with `ITfInputProcessorProfileMgr::ActivateProfile`
 
 Current input method tip:
 
@@ -66,6 +69,22 @@ shurufa-imecli preview nihao
 shurufa-imecli update-check
 shurufa-imecli update-apply
 shurufa-imecli agent "/rewrite hello world"
+```
+
+## Native Profile Tool
+
+```powershell
+Shurufa233ProfileCtl.exe enable
+Shurufa233ProfileCtl.exe activate
+Shurufa233ProfileCtl.exe probe
+```
+
+`probe` creates the TSF COM object directly and is useful when checking whether Windows is loading the registered DLL.
+
+Local TSF diagnostics are written to:
+
+```text
+%LOCALAPPDATA%\shurufa233-tsf.log
 ```
 
 ## Agent Input Mode

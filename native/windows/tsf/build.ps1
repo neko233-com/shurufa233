@@ -47,6 +47,7 @@ function Get-VcTarget {
 $VcVarsAll = Get-VcVarsAll
 $Source = Join-Path $PSScriptRoot "Shurufa233Tsf.cpp"
 $Def = Join-Path $PSScriptRoot "Shurufa233Tsf.def"
+$ProfileCtlSource = Join-Path $PSScriptRoot "..\profilectl\Shurufa233ProfileCtl.cpp"
 
 foreach ($TargetArch in $Arch) {
   $Out = Join-Path $Root "build\windows\$TargetArch"
@@ -56,7 +57,10 @@ foreach ($TargetArch in $Arch) {
 
   $Dll = Join-Path $Out "Shurufa233Tsf.dll"
   $Obj = Join-Path $ObjDir "Shurufa233Tsf.obj"
+  $ProfileCtl = Join-Path $Out "Shurufa233ProfileCtl.exe"
+  $ProfileCtlObj = Join-Path $ObjDir "Shurufa233ProfileCtl.obj"
   Remove-Item -Force $Dll -ErrorAction SilentlyContinue
+  Remove-Item -Force $ProfileCtl -ErrorAction SilentlyContinue
   $compile = @(
     "cl.exe",
     "/nologo",
@@ -81,6 +85,7 @@ foreach ($TargetArch in $Arch) {
     "winhttp.lib",
     "user32.lib",
     "gdi32.lib",
+    "dwmapi.lib",
     "/OPT:REF",
     "/OPT:ICF",
     "/LTCG"
@@ -91,4 +96,33 @@ foreach ($TargetArch in $Arch) {
     throw "Native build failed: $Dll was not created."
   }
   Write-Host "Built $Dll"
+
+  $profileCompile = @(
+    "cl.exe",
+    "/nologo",
+    "/std:c++20",
+    "/EHsc",
+    "/O2",
+    "/GL",
+    "/guard:cf",
+    "/MD",
+    "/DNDEBUG",
+    "/DUNICODE",
+    "/D_UNICODE",
+    "`"$ProfileCtlSource`"",
+    "/Fo`"$ProfileCtlObj`"",
+    "/Fe:`"$ProfileCtl`"",
+    "/link",
+    "ole32.lib",
+    "uuid.lib",
+    "/OPT:REF",
+    "/OPT:ICF",
+    "/LTCG"
+  ) -join " "
+
+  Invoke-VcBuild -VcVarsAll $VcVarsAll -TargetArch (Get-VcTarget $TargetArch) -Command $profileCompile
+  if (-not (Test-Path $ProfileCtl)) {
+    throw "Native build failed: $ProfileCtl was not created."
+  }
+  Write-Host "Built $ProfileCtl"
 }

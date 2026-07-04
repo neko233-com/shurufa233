@@ -20,11 +20,12 @@ import (
 const listenAddr = "127.0.0.1:23333"
 
 type AppState struct {
-	mu     sync.RWMutex
-	config engine.Config
-	engine *engine.Engine
-	path   string
-	client *http.Client
+	mu       sync.RWMutex
+	config   engine.Config
+	engine   *engine.Engine
+	sessions map[string]*engine.Engine
+	path     string
+	client   *http.Client
 }
 
 type previewRequest struct {
@@ -71,7 +72,8 @@ func main() {
 	}
 
 	state := &AppState{
-		path: configPath,
+		sessions: make(map[string]*engine.Engine),
+		path:     configPath,
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -119,6 +121,7 @@ func (s *AppState) load() error {
 	config = normalizeConfig(config)
 	s.config = config
 	s.engine = engine.New(config)
+	s.sessions["default"] = s.engine
 	if err := s.loadLocalDictionariesLocked(); err != nil {
 		return err
 	}
@@ -150,6 +153,9 @@ func (s *AppState) putConfig(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	s.config = next
 	s.engine.Configure(next)
+	for _, session := range s.sessions {
+		session.Configure(next)
+	}
 	if err := s.saveLocked(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -182,16 +188,14 @@ func (s *AppState) imeKey(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing key", http.StatusBadRequest)
 		return
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	s.engine.InputKey([]rune(key)[0])
+	session := s.sessionForRequest(r)
+	session.InputKey([]rune(key)[0])
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *AppState) imeBackspace(w http.ResponseWriter, _ *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	s.engine.Backspace()
+func (s *AppState) imeBackspace(w http.ResponseWriter, r *http.Request) {
+	session := s.sessionForRequest(r)
+	session.Backspace()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -200,9 +204,8 @@ func (s *AppState) imeSelect(w http.ResponseWriter, r *http.Request) {
 	if raw := r.URL.Query().Get("index"); raw != "" {
 		_, _ = fmt.Sscanf(raw, "%d", &index)
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	state, err := s.engine.Select(index)
+	session := s.sessionForRequest(r)
+	state, err := session.Select(index)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -211,17 +214,15 @@ func (s *AppState) imeSelect(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(state.Committed))
 }
 
-func (s *AppState) imeCount(w http.ResponseWriter, _ *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *AppState) imeCount(w http.ResponseWriter, r *http.Request) {
+	session := s.sessionForRequest(r)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "%d", len(s.engine.State().Candidates))
+	_, _ = fmt.Fprintf(w, "%d", len(session.State().Candidates))
 }
 
-func (s *AppState) imeCandidates(w http.ResponseWriter, _ *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	state := s.engine.State()
+func (s *AppState) imeCandidates(w http.ResponseWriter, r *http.Request) {
+	session := s.sessionForRequest(r)
+	state := session.State()
 	parts := make([]string, 0, len(state.Candidates))
 	for i, candidate := range state.Candidates {
 		parts = append(parts, fmt.Sprintf("%d.%s", i+1, candidate.Text))
@@ -240,6 +241,23 @@ func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 		s.config.Skin.Accent,
 		s.config.Skin.Theme,
 	)
+}
+
+func (s *AppState) sessionForRequest(r *http.Request) *engine.Engine {
+	id := "default"
+	if r != nil {
+		if raw := strings.TrimSpace(r.URL.Query().Get("session")); raw != "" {
+			id = raw
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session := s.sessions[id]
+	if session == nil {
+		session = engine.New(s.config)
+		s.sessions[id] = session
+	}
+	return session
 }
 
 func (s *AppState) agentCompose(w http.ResponseWriter, r *http.Request) {

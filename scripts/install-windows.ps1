@@ -44,9 +44,10 @@ if (-not $SkipBuild -and -not $RegisterOnly) {
 $DaemonSource = Join-Path $Root "build\windows\go-$GoArch\shurufa-daemon.exe"
 $CliSource = Join-Path $Root "build\windows\go-$GoArch\shurufa-imecli.exe"
 $TsfSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233Tsf.dll"
+$ProfileCtlSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233ProfileCtl.exe"
 
 if (-not $RegisterOnly) {
-  foreach ($Path in @($DaemonSource, $CliSource, $TsfSource)) {
+  foreach ($Path in @($DaemonSource, $CliSource, $TsfSource, $ProfileCtlSource)) {
     if (-not (Test-Path $Path)) {
       throw "Missing artifact: $Path"
     }
@@ -57,9 +58,14 @@ if (-not $RegisterOnly) {
 
 if (-not $RegisterOnly) {
   New-Item -ItemType Directory -Force $InstallDir | Out-Null
-  Stop-Process -Name shurufa-daemon -ErrorAction SilentlyContinue
+  Get-Process -Name shurufa-daemon -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  for ($i = 0; $i -lt 20; $i++) {
+    if (-not (Get-Process -Name shurufa-daemon -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 250
+  }
   Copy-Item -Force $DaemonSource (Join-Path $InstallDir "shurufa-daemon.exe")
   Copy-Item -Force $CliSource (Join-Path $InstallDir "shurufa-imecli.exe")
+  Copy-Item -Force $ProfileCtlSource (Join-Path $InstallDir "Shurufa233ProfileCtl.exe")
   $stamp = Get-Date -Format "yyyyMMddHHmmss"
   $TsfDll = Join-Path $InstallDir "Shurufa233Tsf-$NativeArch-$stamp.dll"
   Copy-Item -Force $TsfSource $TsfDll
@@ -112,6 +118,12 @@ if ($zh.InputMethodTips -notcontains $Tip) {
 Set-WinDefaultInputMethodOverride -InputTip $Tip
 
 Start-Process ctfmon.exe -WindowStyle Hidden -ErrorAction SilentlyContinue
+
+$ProfileCtl = Join-Path $InstallDir "Shurufa233ProfileCtl.exe"
+if (Test-Path $ProfileCtl) {
+  & $ProfileCtl enable | Write-Host
+  & $ProfileCtl activate | Write-Host
+}
 
 Write-Host "Installed shurufa233 to $InstallDir"
 Write-Host "Registered $NativeArch TSF DLL for the current user."

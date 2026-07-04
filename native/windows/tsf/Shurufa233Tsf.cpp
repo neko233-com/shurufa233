@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <dwmapi.h>
 #include <msctf.h>
 #include <strsafe.h>
 #include <winhttp.h>
@@ -29,6 +30,7 @@ constexpr LANGID kLanguage = MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
 
 long g_dllRefCount = 0;
 HINSTANCE g_instance = nullptr;
+volatile LONG64 g_nextSessionId = 1000;
 
 using CreateSessionFn = uint64_t (*)();
 using DestroySessionFn = void (*)(uint64_t);
@@ -62,6 +64,35 @@ HINTERNET g_httpSession = nullptr;
 HINTERNET g_httpConnect = nullptr;
 CRITICAL_SECTION g_httpLock;
 bool g_httpLockReady = false;
+
+void LogLine(const wchar_t *message) {
+  wchar_t path[MAX_PATH]{};
+  if (!GetEnvironmentVariableW(L"LOCALAPPDATA", path, ARRAYSIZE(path))) {
+    GetTempPathW(ARRAYSIZE(path), path);
+  }
+  StringCchCatW(path, ARRAYSIZE(path), L"\\shurufa233-tsf.log");
+
+  HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return;
+  }
+
+  SYSTEMTIME st{};
+  GetLocalTime(&st);
+  wchar_t line[1024]{};
+  StringCchPrintfW(line, ARRAYSIZE(line),
+                   L"%04u-%02u-%02u %02u:%02u:%02u.%03u %s\r\n",
+                   st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
+                   st.wMilliseconds, message);
+  char utf8[2048]{};
+  const int len = WideCharToMultiByte(CP_UTF8, 0, line, -1, utf8, sizeof(utf8), nullptr, nullptr);
+  DWORD bytes = 0;
+  if (len > 1) {
+    WriteFile(file, utf8, static_cast<DWORD>(len - 1), &bytes, nullptr);
+  }
+  CloseHandle(file);
+}
 
 void AddDllRef() {
   InterlockedIncrement(&g_dllRefCount);
@@ -150,25 +181,30 @@ char *AllocCString(const std::string &value) {
 }
 
 uint64_t HttpCreateSession() {
-  return 1;
+  return static_cast<uint64_t>(InterlockedIncrement64(&g_nextSessionId));
 }
 
 void HttpDestroySession(uint64_t) {}
 
-int HttpInputKeyFast(uint64_t, char key) {
+int HttpInputKeyFast(uint64_t session, char key) {
   wchar_t path[64]{};
-  StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/key?key=%c", static_cast<wchar_t>(key));
+  StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/key?key=%c&session=%llu",
+                   static_cast<wchar_t>(key), session);
   HttpRequest(L"POST", path);
   return 0;
 }
 
-int HttpBackspaceFast(uint64_t) {
-  HttpRequest(L"POST", L"/ime/backspace");
+int HttpBackspaceFast(uint64_t session) {
+  wchar_t path[64]{};
+  StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/backspace?session=%llu", session);
+  HttpRequest(L"POST", path);
   return 0;
 }
 
-int HttpCandidateCount(uint64_t) {
-  std::string value = HttpRequest(L"GET", L"/ime/count");
+int HttpCandidateCount(uint64_t session) {
+  wchar_t path[64]{};
+  StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/count?session=%llu", session);
+  std::string value = HttpRequest(L"GET", path);
   return value.empty() ? 0 : atoi(value.c_str());
 }
 
@@ -176,9 +212,9 @@ char *HttpCandidateText(uint64_t, int) {
   return AllocCString("");
 }
 
-char *HttpCommitCandidate(uint64_t, int index) {
+char *HttpCommitCandidate(uint64_t session, int index) {
   wchar_t path[64]{};
-  StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/select?index=%d", index);
+  StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/select?index=%d&session=%llu", index, session);
   return AllocCString(HttpRequest(L"POST", path));
 }
 
@@ -276,6 +312,10 @@ class CandidateWindow {
                             L"Shurufa233CandidateWindow", L"", WS_POPUP,
                             CW_USEDEFAULT, CW_USEDEFAULT, 320, 42, nullptr, nullptr,
                             g_instance, this);
+    if (hwnd_) {
+      DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
+      DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
+    }
   }
 
   POINT CaretAnchor() const {
@@ -295,7 +335,12 @@ class CandidateWindow {
     RECT rect{};
     GetClientRect(hwnd, &rect);
 
-    HBRUSH bg = CreateSolidBrush(RGB(255, 255, 255));
+    const bool dark = theme_ == "dark";
+    const COLORREF bgColor = dark ? RGB(17, 24, 39) : RGB(255, 255, 255);
+    const COLORREF borderColor = dark ? RGB(55, 65, 81) : RGB(210, 215, 224);
+    const COLORREF textColor = dark ? RGB(243, 244, 246) : RGB(17, 24, 39);
+
+    HBRUSH bg = CreateSolidBrush(bgColor);
     FillRect(dc, &rect, bg);
     DeleteObject(bg);
 
@@ -305,10 +350,10 @@ class CandidateWindow {
     FillRect(dc, &accentRect, accent);
     DeleteObject(accent);
 
-    HPEN border = CreatePen(PS_SOLID, 1, RGB(210, 215, 224));
+    HPEN border = CreatePen(PS_SOLID, 1, borderColor);
     HGDIOBJ oldPen = SelectObject(dc, border);
     HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
-    Rectangle(dc, rect.left, rect.top, rect.right, rect.bottom);
+    RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, 12, 12);
     SelectObject(dc, oldBrush);
     SelectObject(dc, oldPen);
     DeleteObject(border);
@@ -319,7 +364,7 @@ class CandidateWindow {
                              fontFamily_.c_str());
     HGDIOBJ oldFont = SelectObject(dc, font);
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(17, 24, 39));
+    SetTextColor(dc, textColor);
     RECT textRect = rect;
     textRect.left += 14;
     textRect.right -= 14;
@@ -335,6 +380,7 @@ class CandidateWindow {
   std::wstring fontFamily_ = L"Microsoft YaHei UI";
   int fontSize_ = 18;
   COLORREF accent_ = RGB(37, 99, 235);
+  std::string theme_ = "system";
 
   static COLORREF ParseColor(const std::string &value) {
     if (value.size() != 7 || value[0] != '#') {
@@ -361,6 +407,7 @@ class CandidateWindow {
     fontFamily_ = Utf8ToWide(skin.substr(0, first).c_str());
     fontSize_ = max(13, min(28, atoi(skin.substr(first + 1, second - first - 1).c_str()) + 3));
     accent_ = ParseColor(skin.substr(second + 1, third - second - 1));
+    theme_ = skin.substr(third + 1);
   }
 };
 
@@ -489,7 +536,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
   STDMETHODIMP ActivateEx(ITfThreadMgr *threadMgr, TfClientId clientId, DWORD) override {
+    LogLine(L"ActivateEx called");
     if (!threadMgr || !EnsureCoreLoaded()) {
+      LogLine(L"ActivateEx failed: threadMgr/core unavailable");
       return E_FAIL;
     }
     threadMgr_ = threadMgr;
@@ -501,10 +550,15 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (SUCCEEDED(hr) && keyMgr_) {
       hr = keyMgr_->AdviseKeyEventSink(clientId_, static_cast<ITfKeyEventSink *>(this), TRUE);
     }
+    wchar_t message[160]{};
+    StringCchPrintfW(message, ARRAYSIZE(message), L"ActivateEx session=%llu advise_hr=0x%08X",
+                     session_, static_cast<unsigned int>(hr));
+    LogLine(message);
     return hr;
   }
 
   STDMETHODIMP Deactivate() override {
+    LogLine(L"Deactivate called");
     candidateWindow_.Hide();
     if (keyMgr_) {
       keyMgr_->UnadviseKeyEventSink(clientId_);
@@ -539,6 +593,10 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (!session_ || !ShouldEatKey(key)) {
       return S_OK;
     }
+    wchar_t message[128]{};
+    StringCchPrintfW(message, ARRAYSIZE(message), L"OnKeyDown key=0x%04X session=%llu",
+                     static_cast<unsigned int>(key), session_);
+    LogLine(message);
 
     if (IsAsciiLetter(key)) {
       char ch = static_cast<char>(key);
@@ -611,6 +669,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
 
   void CommitCandidate(ITfContext *context, int index) {
     if (!context || !session_) {
+      LogLine(L"CommitCandidate skipped: no context/session");
       return;
     }
     char *committed = g_core.commitCandidate(session_, index);
@@ -619,6 +678,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       g_core.freeValue(committed);
     }
     if (text.empty()) {
+      LogLine(L"CommitCandidate skipped: empty committed text");
       return;
     }
 
@@ -627,6 +687,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     HRESULT hr = context->RequestEditSession(
         clientId_, session, TF_ES_READWRITE | TF_ES_SYNC, &editResult);
     session->Release();
+    wchar_t message[192]{};
+    StringCchPrintfW(message, ARRAYSIZE(message),
+                     L"CommitCandidate text_len=%zu request_hr=0x%08X edit_hr=0x%08X",
+                     text.size(), static_cast<unsigned int>(hr), static_cast<unsigned int>(editResult));
+    LogLine(message);
     if (hr == TF_E_SYNCHRONOUS || FAILED(hr)) {
       EditSession *asyncSession = new EditSession(context, text);
       HRESULT ignored = E_FAIL;
@@ -636,7 +701,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
   void UpdateCandidateWindow() {
-    const std::string candidates = HttpRequest(L"GET", L"/ime/candidates");
+    wchar_t path[80]{};
+    StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/candidates?session=%llu", session_);
+    const std::string candidates = HttpRequest(L"GET", path);
     candidateWindow_.Show(Utf8ToWide(candidates.c_str()));
   }
 
@@ -684,6 +751,7 @@ class ClassFactory final : public IClassFactory {
   }
 
   STDMETHODIMP CreateInstance(IUnknown *outer, REFIID riid, void **out) override {
+    LogLine(L"ClassFactory CreateInstance called");
     if (outer) {
       return CLASS_E_NOAGGREGATION;
     }
@@ -747,11 +815,15 @@ HRESULT WriteComRegistration(HKEY root) {
 }
 
 HRESULT RegisterComServer() {
-  HRESULT hr = WriteComRegistration(HKEY_LOCAL_MACHINE);
-  if (hr == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED)) {
-    hr = WriteComRegistration(HKEY_CURRENT_USER);
+  HRESULT userHr = WriteComRegistration(HKEY_CURRENT_USER);
+  HRESULT machineHr = WriteComRegistration(HKEY_LOCAL_MACHINE);
+  if (SUCCEEDED(machineHr)) {
+    return SUCCEEDED(userHr) ? S_OK : userHr;
   }
-  return hr;
+  if (machineHr == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED)) {
+    return userHr;
+  }
+  return machineHr;
 }
 
 HRESULT UnregisterComServer() {
@@ -840,7 +912,9 @@ BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
   if (reason == DLL_PROCESS_ATTACH) {
     g_instance = instance;
     DisableThreadLibraryCalls(instance);
+    LogLine(L"DllMain PROCESS_ATTACH");
   } else if (reason == DLL_PROCESS_DETACH) {
+    LogLine(L"DllMain PROCESS_DETACH");
     if (g_httpConnect) {
       WinHttpCloseHandle(g_httpConnect);
       g_httpConnect = nullptr;
@@ -863,7 +937,9 @@ STDAPI DllCanUnloadNow() {
 }
 
 STDAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void **out) {
+  LogLine(L"DllGetClassObject called");
   if (clsid != kClsidTextService) {
+    LogLine(L"DllGetClassObject class not available");
     return CLASS_E_CLASSNOTAVAILABLE;
   }
   ClassFactory *factory = new ClassFactory();
