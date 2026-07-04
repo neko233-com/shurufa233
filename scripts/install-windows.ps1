@@ -108,6 +108,41 @@ function Write-DaemonDiagnostics {
   }
 }
 
+function ConvertTo-PowerShellLiteral {
+  param([string]$Value)
+  return "'" + ($Value -replace "'", "''") + "'"
+}
+
+function New-ElevatedRegisterArguments {
+  $scriptPath = ConvertTo-PowerShellLiteral $PSCommandPath
+  $tsfPath = ConvertTo-PowerShellLiteral $TsfDll
+  $command = @"
+`$ErrorActionPreference = 'Stop'
+try {
+  & $scriptPath -SkipBuild -RegisterOnly -TsfDllPath $tsfPath
+  exit 0
+} catch {
+  Write-Error `$_
+  exit 1
+}
+"@
+  if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
+    $corePath = ConvertTo-PowerShellLiteral $LocalCoreDll
+    $command = @"
+`$ErrorActionPreference = 'Stop'
+try {
+  & $scriptPath -SkipBuild -RegisterOnly -TsfDllPath $tsfPath -CoreDllPath $corePath
+  exit 0
+} catch {
+  Write-Error `$_
+  exit 1
+}
+"@
+  }
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+  return @("-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded)
+}
+
 function Start-DaemonAndWait {
   param([string]$DaemonPath)
 
@@ -156,8 +191,11 @@ if (-not $RegisterOnly) {
 if (-not $RegisterOnly) {
   New-Item -ItemType Directory -Force $InstallDir | Out-Null
   Get-Process -Name shurufa-daemon -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Get-Process -Name Shurufa233SmokeEdit -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   for ($i = 0; $i -lt 20; $i++) {
-    if (-not (Get-Process -Name shurufa-daemon -ErrorAction SilentlyContinue)) { break }
+    $daemonRunning = Get-Process -Name shurufa-daemon -ErrorAction SilentlyContinue
+    $smokeRunning = Get-Process -Name Shurufa233SmokeEdit -ErrorAction SilentlyContinue
+    if (-not $daemonRunning -and -not $smokeRunning) { break }
     Start-Sleep -Milliseconds 250
   }
   Copy-Item -Force $DaemonSource (Join-Path $InstallDir "shurufa-daemon.exe")
@@ -199,21 +237,9 @@ if (-not $RegisterOnly) {
 }
 
 if (-not (Test-IsAdmin)) {
-  $args = @(
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", "`"$PSCommandPath`"",
-    "-SkipBuild",
-    "-RegisterOnly",
-    "-TsfDllPath", "`"$TsfDll`""
-  )
-  if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
-    $args += @("-CoreDllPath", "`"$LocalCoreDll`"")
-  }
+  $args = New-ElevatedRegisterArguments
   $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $args -Verb RunAs -Wait -PassThru
-  if ($proc.ExitCode -ne 0) {
-    Write-Warning "Elevated TSF registration exited with code $($proc.ExitCode); verifying HKLM registration before failing."
-  }
+  $ElevatedExitCode = $proc.ExitCode
   $ExpectedRegisteredTsfDll = Join-Path $NativeInstallDir (Split-Path $TsfDll -Leaf)
   $RegisteredComPath = (Get-ItemProperty "HKLM:\Software\Classes\CLSID\{3D7B8D06-9872-4C31-B77D-3B87327CBF64}\InprocServer32")."(default)"
   if ($RegisteredComPath -ne $ExpectedRegisteredTsfDll) {
@@ -236,6 +262,9 @@ if (-not (Test-IsAdmin)) {
       throw "Versioned core DLL hash mismatch. Expected $sourceHash but found $installedHash at $ExpectedCoreDll"
     }
   }
+  if ($ElevatedExitCode -ne 0) {
+    Write-Verbose "Elevated TSF registration exited with code $ElevatedExitCode, but HKLM registration and core DLL verification passed."
+  }
 } else {
   New-Item -ItemType Directory -Force $NativeInstallDir | Out-Null
   $RegisteredTsfDll = Join-Path $NativeInstallDir (Split-Path $TsfDll -Leaf)
@@ -246,10 +275,13 @@ if (-not (Test-IsAdmin)) {
   } else {
     Remove-Item -Force (Join-Path $NativeInstallDir "shurufa_core.dll") -ErrorAction SilentlyContinue
   }
-  regsvr32.exe /s $RegisteredTsfDll
+  $regsvr = Start-Process -FilePath "regsvr32.exe" -ArgumentList @("/s", "`"$RegisteredTsfDll`"") -Wait -PassThru
   $RegisteredComPath = (Get-ItemProperty "HKLM:\Software\Classes\CLSID\{3D7B8D06-9872-4C31-B77D-3B87327CBF64}\InprocServer32")."(default)"
   if ($RegisteredComPath -ne $RegisteredTsfDll) {
     throw "TSF registration did not update HKLM. Expected $RegisteredTsfDll but found $RegisteredComPath"
+  }
+  if ($regsvr.ExitCode -ne 0) {
+    Write-Verbose "regsvr32 exited with code $($regsvr.ExitCode), but HKLM registration verification passed."
   }
   $RegisteredCoreDll = if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
     Join-Path $NativeInstallDir (Split-Path $LocalCoreDll -Leaf)
@@ -261,7 +293,7 @@ if (-not (Test-IsAdmin)) {
 
 if ($RegisterOnly) {
   Write-Host "Registered native TSF artifacts under $NativeInstallDir"
-  return
+  exit 0
 }
 
 if (-not $RegisterOnly) {
