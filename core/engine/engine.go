@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,9 @@ const doublePinyinVariantLimit = 64
 const abbreviationCandidatePenalty = 600
 const segmentedCandidatePenalty = 9000
 const segmentedPiecePenalty = 220
+const dynamicCandidateWeightBase = 8800
+
+var nowFunc = time.Now
 
 func DefaultConfig() Config {
 	return Config{
@@ -400,6 +404,7 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 		}
 	}
 
+	appendEntries(dynamicEntriesForInput(inputCode, nowFunc()), 0)
 	for _, item := range readings {
 		exactEntries := e.dict[item.reading]
 		appendEntries(exactEntries, item.penalty)
@@ -465,6 +470,73 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 		}
 	}
 	return nil
+}
+
+func dynamicEntriesForInput(input string, now time.Time) []Entry {
+	input = normalizeReading(input)
+	if input == "" {
+		return nil
+	}
+	add := func(texts ...string) []Entry {
+		out := make([]Entry, 0, len(texts))
+		seen := map[string]bool{}
+		for index, text := range texts {
+			text = strings.TrimSpace(text)
+			if text == "" || seen[text] {
+				continue
+			}
+			seen[text] = true
+			out = append(out, Entry{
+				Reading: input,
+				Text:    text,
+				Kind:    "dynamic",
+				Source:  "builtin-datetime",
+				Weight:  dynamicCandidateWeightBase - index,
+			})
+		}
+		return out
+	}
+	switch input {
+	case "rq", "date":
+		return add(
+			now.Format("2006-01-02"),
+			strconv.Itoa(now.Year())+"年"+strconv.Itoa(int(now.Month()))+"月"+strconv.Itoa(now.Day())+"日",
+			now.Format("2006/01/02"),
+		)
+	case "sj", "time":
+		return add(now.Format("15:04"), now.Format("15:04:05"))
+	case "xq", "week":
+		weekday := chineseWeekday(now.Weekday())
+		return add("星期"+weekday, "周"+weekday)
+	case "dt", "datetime":
+		return add(
+			now.Format("2006-01-02 15:04"),
+			strconv.Itoa(now.Year())+"年"+strconv.Itoa(int(now.Month()))+"月"+strconv.Itoa(now.Day())+"日 "+now.Format("15:04"),
+		)
+	case "ts", "timestamp":
+		return add(strconv.FormatInt(now.Unix(), 10))
+	default:
+		return nil
+	}
+}
+
+func chineseWeekday(day time.Weekday) string {
+	switch day {
+	case time.Monday:
+		return "一"
+	case time.Tuesday:
+		return "二"
+	case time.Wednesday:
+		return "三"
+	case time.Thursday:
+		return "四"
+	case time.Friday:
+		return "五"
+	case time.Saturday:
+		return "六"
+	default:
+		return "日"
+	}
 }
 
 type lookupReading struct {

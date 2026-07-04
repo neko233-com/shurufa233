@@ -205,6 +205,7 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 - when double pinyin is enabled, the Go core decodes the configured `doublePinyinScheme` (`xiaohe` or `microsoft`) while keeping full-pinyin fallback available; old configs with only `doublePinyin=true` use Xiaohe
 - in Microsoft double pinyin mode, the native TSF layer treats `;` as the `ing` final and sends it to the Go core instead of using it as the second-candidate shortcut
 - short initial input such as `nh`, `wx`, `srf`, and `zgr` is handled by the Go core abbreviation index, with exact full-pinyin candidates still kept ahead
+- dynamic Rime-style utility triggers such as `rq`, `sj`, `xq`, `dt`, and `ts` produce local date, time, weekday, datetime, and Unix timestamp candidates; English aliases `date`, `time`, `week`, `datetime`, and `timestamp` are available for double-pinyin and agent workflows
 - full-sentence input can fall back to a scored segmenter that chooses the best dictionary path, including user-learned word scores, instead of the first greedy split, while strong exact phrases still stay ahead
 - space, enter, main-row or numpad number keys, semicolon outside Microsoft double pinyin, apostrophe, brackets, page up/down, home/end, `-`, and `=` operate the visible candidate page
 - Chinese punctuation commits the selected candidate first, then inserts the punctuation; default `punctuation=full` maps common shifted punctuation such as `!`, `^`, `(`, `)`, and `-` to `！`, `……`, `（`, `）`, and `——`, while quote keys alternate paired Chinese quotes `“”` and `‘’`
@@ -230,7 +231,7 @@ SmokeEdit is single-instance guarded. Launching it again focuses the existing la
 
 Inside SmokeEdit, press `F6` to activate the shurufa233 TSF profile for the current test session and immediately refocus the native edit control. This is intended for local validation and does not change the Windows default input method. Press `F5` to clear the test buffer and reset metrics.
 
-The React/Vite settings app also includes an esports-style typing lab for the browser/settings-panel path. It tracks WPM, CPM, input event rate, average key-to-input latency when key events are available, P95 latency, one-second burst peak keys/s, accuracy, IME composition activity, and prompt completion progress. The lab probes the daemon preview API from the current trailing pinyin token and shows the live candidate strip, candidate metadata kinds, and recent-key trail, then can export a JSON test report for regression records. This React lab is useful for UI and Wails-hosted settings validation, while `Shurufa233SmokeEdit.exe` remains the authoritative native TSF validation target. Use prompts such as `zan`, `kaixin`, `wuyu`, `shengqi`, and `shengluehao` to verify emoji, kaomoji, and symbol candidates.
+The React/Vite settings app also includes an esports-style typing lab for the browser/settings-panel path. It tracks WPM, CPM, input event rate, average key-to-input latency when key events are available, P95 latency, one-second burst peak keys/s, accuracy, IME composition activity, and prompt completion progress. The lab probes the daemon preview API from the current trailing pinyin token and shows the live candidate strip, candidate metadata kinds, and recent-key trail, then can export a JSON test report for regression records. This React lab is useful for UI and Wails-hosted settings validation, while `Shurufa233SmokeEdit.exe` remains the authoritative native TSF validation target. Use prompts such as `zan`, `kaixin`, `wuyu`, `shengqi`, `shengluehao`, `rq`, `sj`, `xq`, `dt`, and `ts` to verify emoji, kaomoji, symbol, and dynamic datetime candidates.
 
 ## Agent Input Mode
 
@@ -274,7 +275,7 @@ GET /ime/candidates?start=0&limit=7
 HTTP fallback keeps the same paging, emoji, kaomoji, and symbol badge behavior as
 the in-process core path.
 Candidate type badges are intentionally short localized labels (`表情`, `颜`, `符`,
-`短`, `AI`) so emoji, kaomoji, symbol, phrase, and agent candidates stay readable without
+`短`, `时`, `AI`) so emoji, kaomoji, symbol, phrase, dynamic datetime, and agent candidates stay readable without
 making the native strip feel like a debug surface.
 
 Current skin fields come from the settings UI:

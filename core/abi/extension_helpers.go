@@ -24,6 +24,7 @@ var abiFeatureList = []string{
 	"gzip-dictionaries",
 	"abbreviation-candidates",
 	"emoji-kaomoji-symbol-candidates",
+	"dynamic-datetime-candidates",
 }
 
 type abiEnvelope struct {

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCandidatesAndLearning(t *testing.T) {
@@ -516,6 +517,56 @@ func TestBuiltinAgentCandidateDoesNotOverrideCommonWord(t *testing.T) {
 	}
 	if !foundAgent {
 		t.Fatalf("expected ai to expose /ask agent candidate, got %#v", state.Candidates)
+	}
+}
+
+func TestDynamicDateTimeCandidates(t *testing.T) {
+	oldNow := nowFunc
+	nowFunc = func() time.Time {
+		return time.Date(2026, time.July, 5, 14, 3, 9, 0, time.UTC)
+	}
+	defer func() { nowFunc = oldNow }()
+
+	e := New(DefaultConfig())
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "rq", want: "2026-07-05"},
+		{input: "date", want: "2026年7月5日"},
+		{input: "sj", want: "14:03"},
+		{input: "dt", want: "2026-07-05 14:03"},
+		{input: "ts", want: "1783260189"},
+	}
+
+	for _, tt := range tests {
+		state := e.Preview(tt.input)
+		found := false
+		for _, candidate := range state.Candidates {
+			if candidate.Text == tt.want {
+				found = true
+				if candidate.Kind != "dynamic" || candidate.Source != "builtin-datetime" {
+					t.Fatalf("expected dynamic metadata for %q, got %#v", tt.input, candidate)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("expected dynamic candidate %q for %q, got %#v", tt.want, tt.input, state.Candidates)
+		}
+	}
+}
+
+func TestDynamicWeekCandidates(t *testing.T) {
+	oldNow := nowFunc
+	nowFunc = func() time.Time {
+		return time.Date(2026, time.July, 5, 14, 3, 9, 0, time.UTC)
+	}
+	defer func() { nowFunc = oldNow }()
+
+	e := New(DefaultConfig())
+	state := e.Preview("xq")
+	if len(state.Candidates) < 2 || state.Candidates[0].Text != "星期日" || state.Candidates[1].Text != "周日" {
+		t.Fatalf("expected Sunday week candidates, got %#v", state.Candidates)
 	}
 }
 

@@ -64,7 +64,7 @@ Each row is:
 display_index<TAB>text<TAB>reading<TAB>score<TAB>kind<TAB>source
 ```
 
-`kind` and `source` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, `phrase`, and `agent`; renderers must tolerate older four-column payloads. Built-in examples include `zan` -> `👍` (`emoji`), `kaixin` -> `ヽ(・∀・)ﾉ` (`kaomoji`), `shengluehao` -> `……` (`symbol`), and `rewrite` -> `/rewrite ` (`agent`).
+`kind` and `source` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, `phrase`, `dynamic`, and `agent`; renderers must tolerate older four-column payloads. Built-in examples include `zan` -> `👍` (`emoji`), `kaixin` -> `ヽ(・∀・)ﾉ` (`kaomoji`), `shengluehao` -> `……` (`symbol`), `rq` -> today's date (`dynamic`), and `rewrite` -> `/rewrite ` (`agent`).
 
 The Windows glue calls `ShurufaFree` after copying the returned payload. Older per-candidate getters remain available as a compatibility fallback.
 
@@ -102,7 +102,8 @@ returns JSON with an `ok` field and `updatedAt`.
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
 `user-scores-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
-`abbreviation-candidates`, and `emoji-kaomoji-symbol-candidates`.
+`abbreviation-candidates`, `emoji-kaomoji-symbol-candidates`, and
+`dynamic-datetime-candidates`.
 
 `ShurufaCandidatePayloadV2` is the future rich candidate contract for native
 renderers, React/Wails diagnostics, esports typing labs, and mouse/skin

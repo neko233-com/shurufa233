@@ -242,6 +242,11 @@ const typingPrompts: TypingPrompt[] = [
     name: "颜表情候选",
     text: "zan kaixin wuyu shengqi aixin shengluehao",
   },
+  {
+    id: "dynamic",
+    name: "动态候选",
+    text: "rq sj xq dt ts date time week datetime timestamp",
+  },
 ];
 
 const defaultTypingMetrics: TypingMetrics = {
@@ -1253,6 +1258,7 @@ function kindLabel(kind?: string) {
   if (kind === "symbol") return "符";
   if (kind === "phrase") return "短";
   if (kind === "agent") return "AI";
+  if (kind === "dynamic") return "时";
   return "";
 }
 

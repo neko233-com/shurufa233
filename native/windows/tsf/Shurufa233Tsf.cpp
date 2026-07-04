@@ -1237,6 +1237,9 @@ class CandidateWindow {
     if (kind == L"agent") {
       return L"AI";
     }
+    if (kind == L"dynamic") {
+      return L"时";
+    }
     return L"";
   }
 
