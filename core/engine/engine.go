@@ -130,6 +130,12 @@ func (e *Engine) Configure(config Config) {
 	e.config = config
 }
 
+func (e *Engine) Config() Config {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.config
+}
+
 func normalizeCandidateLayout(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "horizontal", "wechat", "microsoft":

@@ -126,6 +126,44 @@ func ShurufaApplySchemaJSON(payload *C.char) *C.char {
 	return jsonCString(applyConfigEnvelope(next))
 }
 
+//export ShurufaSwitchesJSON
+func ShurufaSwitchesJSON(id C.uint64_t) *C.char {
+	session := getSession(uint64(id))
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"switches":  engine.SwitchOptions(session.Config()),
+		"config":    session.Config(),
+		"updatedAt": time.Now().UTC(),
+	})
+}
+
+//export ShurufaApplySwitchJSON
+func ShurufaApplySwitchJSON(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	session := getSession(uint64(id))
+	value := false
+	if req.Value != nil {
+		value = *req.Value
+	}
+	toggle := req.Value == nil || strings.EqualFold(req.Action, "toggle")
+	next, option, ok := engine.ApplySwitch(session.Config(), firstNonEmpty(req.ID, req.Switch, req.Schema, req.Input, req.Text), value, toggle)
+	if !ok {
+		return jsonCString(errorEnvelope("unknown switch id"))
+	}
+	session.Configure(next)
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"switch":    option,
+		"switches":  engine.SwitchOptions(next),
+		"config":    next,
+		"state":     session.State(),
+		"updatedAt": time.Now().UTC(),
+	})
+}
+
 //export ShurufaReloadConfig
 func ShurufaReloadConfig() *C.char {
 	config := loadConfig()

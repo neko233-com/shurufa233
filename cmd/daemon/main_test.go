@@ -143,6 +143,58 @@ func TestPutConfigNormalizesCandidatePool(t *testing.T) {
 	}
 }
 
+func TestSwitchesEndpointListsRimeStyleSwitches(t *testing.T) {
+	config := engine.DefaultConfig()
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/switches", nil)
+	rec := httptest.NewRecorder()
+	state.switches(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got switchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || len(got.Switches) == 0 {
+		t.Fatalf("switches = %#v", got)
+	}
+}
+
+func TestApplySwitchEndpointPersistsConfig(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/switches/apply", strings.NewReader(`{"id":"ascii_mode","value":true}`))
+	rec := httptest.NewRecorder()
+	state.applySwitch(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if state.config.Mode != "en" || session.Config().Mode != "en" {
+		t.Fatalf("switch did not update config/session: config=%#v session=%#v", state.config, session.Config())
+	}
+	saved, err := os.ReadFile(state.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(saved), `"mode": "en"`) {
+		t.Fatalf("saved config does not include mode en: %s", saved)
+	}
+}
+
 func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.CandidatePageSize = 5

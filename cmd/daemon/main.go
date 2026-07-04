@@ -54,6 +54,21 @@ type schemaRequest struct {
 	ID string `json:"id,omitempty"`
 }
 
+type switchRequest struct {
+	ID     string `json:"id,omitempty"`
+	Switch string `json:"switch,omitempty"`
+	Action string `json:"action,omitempty"`
+	Value  *bool  `json:"value,omitempty"`
+}
+
+type switchResponse struct {
+	OK        bool                  `json:"ok"`
+	Selected  *engine.SwitchOption  `json:"selected,omitempty"`
+	Switches  []engine.SwitchOption `json:"switches"`
+	Config    engine.Config         `json:"config,omitempty"`
+	UpdatedAt time.Time             `json:"updatedAt"`
+}
+
 type schemaResponse struct {
 	Selected string                `json:"selected"`
 	Schemas  []engine.SchemaPreset `json:"schemas"`
@@ -291,6 +306,8 @@ func main() {
 	mux.HandleFunc("POST /updates/source", state.withCORS(state.applyUpdateSource))
 	mux.HandleFunc("GET /schemas", state.withCORS(state.schemas))
 	mux.HandleFunc("POST /schemas/apply", state.withCORS(state.applySchema))
+	mux.HandleFunc("GET /switches", state.withCORS(state.switches))
+	mux.HandleFunc("POST /switches/apply", state.withCORS(state.applySwitch))
 	mux.HandleFunc("POST /ime/key", state.withCORS(state.imeKey))
 	mux.HandleFunc("POST /ime/backspace", state.withCORS(state.imeBackspace))
 	mux.HandleFunc("POST /ime/clear", state.withCORS(state.imeClear))
@@ -454,6 +471,54 @@ func (s *AppState) applySchema(w http.ResponseWriter, r *http.Request) {
 		Selected: s.config.Schema,
 		Schemas:  engine.BuiltinSchemaPresets(),
 		Config:   s.config,
+	})
+}
+
+func (s *AppState) switches(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	writeJSON(w, switchResponse{
+		OK:        true,
+		Switches:  engine.SwitchOptions(s.config),
+		Config:    s.config,
+		UpdatedAt: time.Now().UTC(),
+	})
+}
+
+func (s *AppState) applySwitch(w http.ResponseWriter, r *http.Request) {
+	var req switchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value := false
+	if req.Value != nil {
+		value = *req.Value
+	}
+	toggle := req.Value == nil || strings.EqualFold(req.Action, "toggle")
+	next, option, ok := engine.ApplySwitch(s.config, firstNonEmpty(req.ID, req.Switch), value, toggle)
+	if !ok {
+		http.Error(w, "unknown switch id", http.StatusBadRequest)
+		return
+	}
+	next = normalizeConfig(next)
+	s.config = next
+	s.engine.Configure(next)
+	for _, session := range s.sessions {
+		session.Configure(next)
+	}
+	if err := s.saveLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, switchResponse{
+		OK:        true,
+		Selected:  &option,
+		Switches:  engine.SwitchOptions(s.config),
+		Config:    s.config,
+		UpdatedAt: time.Now().UTC(),
 	})
 }
 

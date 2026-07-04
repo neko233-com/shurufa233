@@ -127,6 +127,24 @@ type DictionarySourceResponse = {
   selected: string;
 };
 
+type SwitchOption = {
+  id: string;
+  name: string;
+  rimeName?: string;
+  description: string;
+  value: boolean;
+  on: string;
+  off: string;
+  configField: string;
+};
+
+type SwitchResponse = {
+  ok: boolean;
+  selected?: SwitchOption;
+  switches: SwitchOption[];
+  config?: Config;
+};
+
 type SchemaPreset = {
   id: string;
   name: string;
@@ -593,6 +611,8 @@ function App() {
   const [dictionarySourceText, setDictionarySourceText] = useState("未读取");
   const [schemas, setSchemas] = useState<SchemaPreset[]>([]);
   const [schemaText, setSchemaText] = useState("未读取");
+  const [switches, setSwitches] = useState<SwitchOption[]>([]);
+  const [switchText, setSwitchText] = useState("未读取");
   const [wordbook, setWordbook] = useState<WordbookEntry[]>([]);
   const [wordbookDraft, setWordbookDraft] = useState("{}");
   const [wordbookText, setWordbookText] = useState("未读取");
@@ -640,6 +660,7 @@ function App() {
     void loadCatalog();
     void loadDictionarySources();
     void loadSchemas();
+    void loadSwitches();
     void runReverseLookup("你好");
   }, []);
 
@@ -951,6 +972,46 @@ function App() {
     } catch (err) {
       setSchemaText("应用失败");
       setError(err instanceof Error ? err.message : "schema apply failed");
+    }
+  }
+
+  async function loadSwitches() {
+    try {
+      const res = await fetch(`${apiBase}/switches`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as SwitchResponse;
+      setSwitches(data.switches ?? []);
+      setSwitchText(data.switches?.length ? `${data.switches.length} 个开关` : "无开关");
+      if (data.config) {
+        setConfig(hydrateConfig(data.config));
+      }
+      setError("");
+    } catch (err) {
+      setSwitchText("读取失败");
+      setError(err instanceof Error ? err.message : "switch load failed");
+    }
+  }
+
+  async function applyRuntimeSwitch(id: string, value: boolean) {
+    try {
+      const res = await fetch(`${apiBase}/switches/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, value }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as SwitchResponse;
+      setSwitches(data.switches ?? []);
+      setSwitchText(data.selected ? `${data.selected.name}: ${data.selected.value ? data.selected.on : data.selected.off}` : "已应用");
+      if (data.config) {
+        setConfig(hydrateConfig(data.config));
+      }
+      setStatus("saved");
+      window.setTimeout(() => setStatus("ready"), 900);
+      setError("");
+    } catch (err) {
+      setSwitchText("应用失败");
+      setError(err instanceof Error ? err.message : "switch apply failed");
     }
   }
 
@@ -1546,6 +1607,18 @@ function App() {
                   </span>
                   {schema.dictionarySourcePreset && <em>{schema.dictionarySourcePreset}</em>}
                 </button>
+              ))}
+            </div>
+            <div className="subHeader">
+              <span>Rime 开关</span>
+              <small>{switchText}</small>
+            </div>
+            <div className="toggleGrid">
+              {switches.map((item) => (
+                <label className="toggle" key={item.id} title={item.description}>
+                  <input type="checkbox" checked={item.value} onChange={(event) => void applyRuntimeSwitch(item.id, event.target.checked)} />
+                  <span>{item.name} · {item.value ? item.on : item.off}</span>
+                </label>
               ))}
             </div>
             <div className="segmented">

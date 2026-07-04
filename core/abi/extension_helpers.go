@@ -41,6 +41,7 @@ var abiFeatureList = []string{
 	"candidate-action-json",
 	"extension-command-json",
 	"key-behavior-config",
+	"rime-switches-json",
 }
 
 type abiEnvelope struct {
@@ -115,6 +116,8 @@ type extensionCommandPayload struct {
 	Delta        int              `json:"delta,omitempty"`
 	Side         string           `json:"side,omitempty"`
 	ID           string           `json:"id,omitempty"`
+	Switch       string           `json:"switch,omitempty"`
+	Value        *bool            `json:"value,omitempty"`
 	Schema       string           `json:"schema,omitempty"`
 	Reading      string           `json:"reading,omitempty"`
 	Text         string           `json:"text,omitempty"`
@@ -468,6 +471,32 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return map[string]any{
 			"ok":        true,
 			"schemas":   engine.BuiltinSchemaPresets(),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "switches-json", "rime-switches-json", "switches":
+		return map[string]any{
+			"ok":        true,
+			"switches":  engine.SwitchOptions(session.Config()),
+			"config":    session.Config(),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "apply-switch-json", "apply-switch", "toggle-switch", "switch":
+		value := false
+		if req.Value != nil {
+			value = *req.Value
+		}
+		toggle := req.Value == nil || strings.EqualFold(req.Action, "toggle") || strings.HasPrefix(command, "toggle")
+		next, option, ok := engine.ApplySwitch(session.Config(), firstNonEmpty(req.ID, req.Switch, req.Schema, req.Input, req.Text), value, toggle)
+		if !ok {
+			return errorEnvelope("unknown switch id"), true
+		}
+		session.Configure(next)
+		return map[string]any{
+			"ok":        true,
+			"switch":    option,
+			"switches":  engine.SwitchOptions(next),
+			"config":    next,
+			"state":     session.State(),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
 	case "candidate-action", "candidate-action-json":

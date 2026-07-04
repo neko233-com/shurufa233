@@ -169,6 +169,9 @@ shurufa-imecli symbols symbol /fs
 shurufa-imecli reverse "你好"
 shurufa-imecli schemas
 shurufa-imecli schema apply double-pinyin-microsoft
+shurufa-imecli switches
+shurufa-imecli switch ascii_mode on
+shurufa-imecli switch ascii_punct toggle
 shurufa-imecli update-sources
 shurufa-imecli update-source shurufa233-github
 shurufa-imecli update-check
@@ -235,6 +238,7 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 - key behavior comes from `keyProfile` and related shared config switches; `wechat`/`microsoft` keeps Shift toggle, semicolon/quote quick select, and `[]`/`-=` paging, while `rime` enables `,`/`.` paging and disables semicolon/quote quick select without rebuilding the TSF DLL
 - configured fuzzy initials such as `zh=z`, `ch=c`, and `sh=s` are handled in the Go core with exact pinyin candidates kept ahead of fuzzy matches
 - Rime-style schema presets are exposed through daemon `/schemas`, CLI `schema`, and the C ABI `schema-presets-json` / `apply-schema-json`; applying `wechat-pinyin`, `rime-luna-pinyin`, `rime-ice-pinyin`, `double-pinyin-xiaohe`, or `double-pinyin-microsoft` only updates the shared config and active Go sessions, so the Windows TSF glue keeps using the same reserved APIs
+- Rime-style runtime switches are exposed through daemon `/switches`, CLI `switches` / `switch`, C ABI `ShurufaSwitchesJSON` / `ShurufaApplySwitchJSON`, and the generic `ShurufaExecuteCommand(..., "apply-switch-json", ...)`; `ascii_mode`, `ascii_punct`, `simplification`, `candidate_comments`, `associations`, and `vertical_candidates` all map to shared config fields without changing the TSF DLL
 - when double pinyin is enabled, the Go core decodes the configured `doublePinyinScheme` (`xiaohe` or `microsoft`) while keeping full-pinyin fallback available; old configs with only `doublePinyin=true` use Xiaohe
 - in Microsoft double pinyin mode, the native TSF layer treats `;` as the `ing` final and sends it to the Go core instead of using it as the second-candidate shortcut
 - short initial input such as `nh`, `wx`, `srf`, and `zgr` is handled by the Go core abbreviation index, with exact full-pinyin candidates still kept ahead

@@ -113,6 +113,8 @@ char* ShurufaConfigJSON(void);
 char* ShurufaApplyConfigJSON(char* json);
 char* ShurufaSchemaPresetsJSON(void);
 char* ShurufaApplySchemaJSON(char* json);
+char* ShurufaSwitchesJSON(uint64_t session);
+char* ShurufaApplySwitchJSON(uint64_t session, char* json);
 char* ShurufaReloadConfig(void);
 char* ShurufaReloadDictionaries(void);
 char* ShurufaDictionaryManifestJSON(void);
@@ -155,7 +157,7 @@ C++ export on developer machines that only consume packaged builds.
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
 `candidate-comments`, `association-candidates`, `candidate-action-json`, and
-`extension-command-json`, and `key-behavior-config`.
+`extension-command-json`, `key-behavior-config`, and `rime-switches-json`.
 
 `ShurufaAssociate(session, {"context":"你好","limit":7})` returns a normal state
 object with post-commit association candidates. The same behavior is available
@@ -195,6 +197,9 @@ config-json
 apply-config-json       { ...engine.Config } or {"config":{...}}
 schema-presets-json
 apply-schema-json       {"id":"double-pinyin-microsoft"}
+switches-json
+apply-switch-json       {"id":"ascii_mode","value":true}
+toggle-switch           {"id":"ascii_punct"}
 reload-config
 reload-dictionaries
 dictionary-manifest-json
@@ -226,6 +231,15 @@ removes any matching reject, keeps the composition buffer active, returns a
 `forget`/`reject`/`delete-candidate` persists a hidden candidate row in
 `user-rejects.json`, removes any learned score for that candidate, keeps the
 composition buffer active, and returns a `rejected` object for UI feedback.
+
+`switches-json`, `apply-switch-json`, `toggle-switch`, `ShurufaSwitchesJSON`,
+and `ShurufaApplySwitchJSON` reserve a Rime-style runtime switch surface.
+Current switches map directly onto shared config fields: `ascii_mode` (`mode`),
+`ascii_punct` (`punctuation`), `simplification` (`script`),
+`candidate_comments` (`showCandidateComments`), `associations`, and
+`vertical_candidates` (`candidateLayout`). This lets native glue send one JSON
+switch event for Weasel/Squirrel-style UI behavior while Go owns the actual
+field mapping and future switch expansion.
 
 `catalog-json` and `ShurufaCatalogJSON` reserve the shared emoji, kaomoji,
 symbol, and agent resource surface for future native panels. The payload accepts

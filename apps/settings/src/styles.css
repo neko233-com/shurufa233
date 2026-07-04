@@ -203,6 +203,25 @@ h2 {
   margin-bottom: 18px;
 }
 
+.subHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 10px;
+}
+
+.subHeader span {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.subHeader small {
+  color: #64748b;
+  font-size: 12px;
+}
+
 .field {
   display: grid;
   gap: 8px;

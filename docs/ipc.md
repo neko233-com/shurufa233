@@ -27,6 +27,8 @@ The background daemon listens on `127.0.0.1:23333`.
 - `POST /updates/apply`
 - `GET /updates/sources`
 - `POST /updates/source`
+- `GET /switches`
+- `POST /switches/apply`
 - `GET /ime/mode`
 - `POST /ime/mode`
 - `POST /ime/select-char`
@@ -194,6 +196,19 @@ or:
 Mode is session-scoped (`zh` or `en`) and switching mode clears the active
 composition buffer. This mirrors the native Shift toggle without rewriting the
 saved default input mode in `config.json`.
+
+`GET /switches` returns Rime-style runtime switches derived from the shared
+config. `POST /switches/apply` accepts:
+
+```json
+{ "id": "ascii_mode", "value": true }
+```
+
+Omit `value` or pass `"action":"toggle"` to invert the current switch. Current
+switch ids are `ascii_mode`, `ascii_punct`, `simplification`,
+`candidate_comments`, `associations`, and `vertical_candidates`. The daemon
+persists the resulting config and refreshes active sessions, giving Wails/React,
+CLI, and future native switch panels the same behavior without platform glue.
 
 `POST /ime/select-char?index=0&side=first` commits the first character of a
 candidate, while `side=last` commits the last character. This mirrors Rime's

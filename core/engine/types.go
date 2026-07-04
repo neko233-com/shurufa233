@@ -94,6 +94,17 @@ type ReverseLookupResponse struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+type SwitchOption struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	RimeName    string `json:"rimeName,omitempty"`
+	Description string `json:"description"`
+	Value       bool   `json:"value"`
+	On          string `json:"on"`
+	Off         string `json:"off"`
+	ConfigField string `json:"configField"`
+}
+
 const (
 	UserPhraseKind   = "phrase"
 	UserPhraseSource = "user-phrase"

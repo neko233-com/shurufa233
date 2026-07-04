@@ -250,6 +250,71 @@ func TestUpdateSourcePostsSelectedID(t *testing.T) {
 	}
 }
 
+func TestSwitchesCallsEndpoint(t *testing.T) {
+	var switchesCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/switches" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		switchesCalled = true
+		_ = json.NewEncoder(w).Encode(switchResponse{
+			OK: true,
+			Switches: []switchOption{{
+				ID:          "ascii_mode",
+				Name:        "中英文",
+				Value:       false,
+				On:          "英文",
+				Off:         "中文",
+				ConfigField: "mode",
+			}},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := switches(server.Client()); err != nil {
+		t.Fatal(err)
+	}
+	if !switchesCalled {
+		t.Fatal("switches endpoint was not called")
+	}
+}
+
+func TestApplySwitchPostsSelectedSwitch(t *testing.T) {
+	var posted map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/switches/apply" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(switchResponse{
+			OK: true,
+			Selected: &switchOption{
+				ID:          "ascii_mode",
+				Value:       true,
+				On:          "英文",
+				Off:         "中文",
+				ConfigField: "mode",
+			},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := applySwitch(server.Client(), []string{"ascii_mode", "on"}); err != nil {
+		t.Fatal(err)
+	}
+	if posted["id"] != "ascii_mode" || posted["value"] != true {
+		t.Fatalf("posted switch payload = %#v", posted)
+	}
+}
+
 func TestSchemaApplyPostsSelectedID(t *testing.T) {
 	var schemaCalled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -583,6 +583,35 @@ func TestExecuteExtensionCommandSchemaPresets(t *testing.T) {
 	}
 }
 
+func TestExecuteExtensionCommandRimeSwitches(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "switches-json", `{}`)
+	if !handled {
+		t.Fatal("switches-json command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("switches-json = %#v", got)
+	}
+	switches, ok := result["switches"].([]engine.SwitchOption)
+	if !ok || len(switches) == 0 {
+		t.Fatalf("switches = %#v", result["switches"])
+	}
+
+	applied, handled := executeSessionExtensionCommand(session, "apply-switch-json", `{"id":"ascii_mode","value":true}`)
+	if !handled {
+		t.Fatal("apply-switch-json command was not handled")
+	}
+	appliedResult, ok := applied.(map[string]any)
+	if !ok || appliedResult["ok"] != true {
+		t.Fatalf("apply-switch-json = %#v", applied)
+	}
+	if session.Config().Mode != "en" || session.State().Mode != "en" {
+		t.Fatalf("ascii_mode switch did not update session config/state: config=%#v state=%#v", session.Config(), session.State())
+	}
+}
+
 func TestExecuteExtensionCommandCandidateActionCommitsCandidateChar(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	session.Preview("zhongwen")

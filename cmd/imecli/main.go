@@ -139,6 +139,24 @@ type configPayload struct {
 	DoublePinyinScheme string `json:"doublePinyinScheme"`
 }
 
+type switchOption struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	RimeName    string `json:"rimeName"`
+	Description string `json:"description"`
+	Value       bool   `json:"value"`
+	On          string `json:"on"`
+	Off         string `json:"off"`
+	ConfigField string `json:"configField"`
+}
+
+type switchResponse struct {
+	OK       bool           `json:"ok"`
+	Selected *switchOption  `json:"selected,omitempty"`
+	Switches []switchOption `json:"switches"`
+	Config   configPayload  `json:"config,omitempty"`
+}
+
 type wordbookResponse struct {
 	UserScores map[string]int `json:"userScores"`
 	Count      int            `json:"count"`
@@ -235,6 +253,10 @@ func main() {
 		err = schema(client, os.Args[2:])
 	case "mode":
 		err = mode(client, os.Args[2:])
+	case "switches":
+		err = switches(client)
+	case "switch":
+		err = applySwitch(client, os.Args[2:])
 	case "wordbook":
 		err = wordbook(client, os.Args[2:])
 	case "phrases", "phrase":
@@ -271,6 +293,8 @@ Usage:
   shurufa-imecli preview nihao
   shurufa-imecli associate "你好"
   shurufa-imecli mode [zh|en|toggle]
+  shurufa-imecli switches
+  shurufa-imecli switch <ascii_mode|ascii_punct|simplification|candidate_comments|associations|vertical_candidates> [on|off|toggle]
   shurufa-imecli wordbook list
   shurufa-imecli wordbook export
   shurufa-imecli wordbook import user-wordbook.json [--replace]
@@ -677,6 +701,64 @@ func mode(client *http.Client, args []string) error {
 	}
 	fmt.Println(state.Mode)
 	return nil
+}
+
+func switches(client *http.Client) error {
+	var response switchResponse
+	if err := getJSON(client, "/switches", &response); err != nil {
+		return err
+	}
+	printSwitches(response.Switches)
+	return nil
+}
+
+func applySwitch(client *http.Client, args []string) error {
+	if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+		return fmt.Errorf("missing switch id")
+	}
+	payload := map[string]any{"id": strings.TrimSpace(args[0])}
+	if len(args) > 1 {
+		switch strings.ToLower(strings.TrimSpace(args[1])) {
+		case "on", "true", "1", "enable", "enabled":
+			payload["value"] = true
+		case "off", "false", "0", "disable", "disabled":
+			payload["value"] = false
+		case "toggle", "":
+			payload["action"] = "toggle"
+		default:
+			return fmt.Errorf("unknown switch value %q", args[1])
+		}
+	} else {
+		payload["action"] = "toggle"
+	}
+	var response switchResponse
+	if err := postJSON(client, "/switches/apply", payload, &response); err != nil {
+		return err
+	}
+	if response.Selected != nil {
+		value := response.Selected.Off
+		if response.Selected.Value {
+			value = response.Selected.On
+		}
+		fmt.Printf("%s=%v (%s)\n", response.Selected.ID, response.Selected.Value, value)
+		return nil
+	}
+	printSwitches(response.Switches)
+	return nil
+}
+
+func printSwitches(items []switchOption) {
+	for _, item := range items {
+		value := item.Off
+		if item.Value {
+			value = item.On
+		}
+		fmt.Printf("%s=%v %s [%s]\n", item.ID, item.Value, value, item.ConfigField)
+		if item.RimeName != "" && item.RimeName != item.ID {
+			fmt.Printf("  rime: %s\n", item.RimeName)
+		}
+		fmt.Printf("  %s\n", item.Description)
+	}
 }
 
 func wordbook(client *http.Client, args []string) error {

@@ -614,6 +614,59 @@ func TestKeyBehaviorCanBeDerivedFromSchema(t *testing.T) {
 	}
 }
 
+func TestSwitchOptionsExposeRimeStyleRuntimeSwitches(t *testing.T) {
+	config := DefaultConfig()
+	config.Mode = "en"
+	config.Punctuation = "half"
+	config.Script = "traditional"
+	config.CandidateLayout = "vertical"
+	options := SwitchOptions(config)
+	got := map[string]bool{}
+	for _, option := range options {
+		got[option.ID] = option.Value
+	}
+	for id, value := range map[string]bool{
+		"ascii_mode":          true,
+		"ascii_punct":         true,
+		"simplification":      false,
+		"candidate_comments":  true,
+		"associations":        true,
+		"vertical_candidates": true,
+	} {
+		if got[id] != value {
+			t.Fatalf("switch %s = %v, want %v; options=%#v", id, got[id], value, options)
+		}
+	}
+}
+
+func TestApplySwitchTogglesConfigFields(t *testing.T) {
+	config := DefaultConfig()
+	config, option, ok := ApplySwitch(config, "ascii_mode", false, true)
+	if !ok || option.ID != "ascii_mode" || config.Mode != "en" {
+		t.Fatalf("ascii switch = ok:%v option:%#v config:%#v", ok, option, config)
+	}
+	config, _, ok = ApplySwitch(config, "ascii_punct", true, false)
+	if !ok || config.Punctuation != "half" {
+		t.Fatalf("ascii_punct switch config = %#v", config)
+	}
+	config, _, ok = ApplySwitch(config, "simplification", false, false)
+	if !ok || config.Script != "traditional" {
+		t.Fatalf("simplification switch config = %#v", config)
+	}
+	config, _, ok = ApplySwitch(config, "candidate_comments", false, false)
+	if !ok || config.ShowCandidateComments {
+		t.Fatalf("candidate_comments switch config = %#v", config)
+	}
+	config, _, ok = ApplySwitch(config, "associations", false, false)
+	if !ok || config.Associations {
+		t.Fatalf("associations switch config = %#v", config)
+	}
+	config, _, ok = ApplySwitch(config, "vertical_candidates", true, false)
+	if !ok || config.CandidateLayout != "vertical" {
+		t.Fatalf("vertical_candidates switch config = %#v", config)
+	}
+}
+
 func TestFuzzyInitialsExpandCandidates(t *testing.T) {
 	e := New(DefaultConfig())
 
