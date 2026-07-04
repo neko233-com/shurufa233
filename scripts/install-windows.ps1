@@ -429,7 +429,7 @@ if (-not $RegisterOnly) {
     Write-Warning "shurufa_core.dll was not found for $GoArch; TSF will use daemon IPC fallback."
   }
   Copy-Item -Force $ProfileCtlSource (Join-Path $InstallDir "Shurufa233ProfileCtl.exe")
-  Copy-Item -Force $SmokeEditSource (Join-Path $InstallDir "Shurufa233SmokeEdit.exe")
+  Copy-OptionalFile -Source $SmokeEditSource -Destination (Join-Path $InstallDir "Shurufa233SmokeEdit.exe")
   if (Test-Path (Join-Path $SettingsSource "index.html")) {
     $SettingsInstallDir = Join-Path $InstallDir "settings"
     Remove-Item -LiteralPath $SettingsInstallDir -Recurse -Force -ErrorAction SilentlyContinue

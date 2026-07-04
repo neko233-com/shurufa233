@@ -388,6 +388,8 @@ std::wstring Utf8ToWide(const char *value) {
 class CandidateWindow {
  public:
   using CandidateClickHandler = void (*)(void *, int);
+  using CandidateSelectHandler = void (*)(void *, int);
+  using CandidatePageHandler = void (*)(void *, int);
 
   struct CandidateView {
     int index = 0;
@@ -405,6 +407,16 @@ class CandidateWindow {
   void SetClickHandler(void *owner, CandidateClickHandler handler) {
     clickOwner_ = owner;
     clickHandler_ = handler;
+  }
+
+  void SetSelectHandler(void *owner, CandidateSelectHandler handler) {
+    selectOwner_ = owner;
+    selectHandler_ = handler;
+  }
+
+  void SetPageHandler(void *owner, CandidatePageHandler handler) {
+    pageOwner_ = owner;
+    pageHandler_ = handler;
   }
 
   void Show(const std::string &payload, int selectedIndex, int pageStart, int totalCount) {
@@ -481,6 +493,21 @@ class CandidateWindow {
       const int absoluteIndex = self->HitTestCandidate(point);
       if (absoluteIndex >= 0 && self->clickHandler_) {
         self->clickHandler_(self->clickOwner_, absoluteIndex);
+      }
+      return 0;
+    }
+    if (self && message == WM_MOUSEMOVE) {
+      const POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+      const int absoluteIndex = self->HitTestCandidate(point);
+      if (absoluteIndex >= 0) {
+        self->SelectCandidate(absoluteIndex);
+      }
+      return 0;
+    }
+    if (self && message == WM_MOUSEWHEEL) {
+      if (self->pageHandler_) {
+        const int delta = GET_WHEEL_DELTA_WPARAM(wparam);
+        self->pageHandler_(self->pageOwner_, delta < 0 ? 1 : -1);
       }
       return 0;
     }
@@ -633,6 +660,10 @@ class CandidateWindow {
   int fontSizeKey_ = 0;
   void *clickOwner_ = nullptr;
   CandidateClickHandler clickHandler_ = nullptr;
+  void *selectOwner_ = nullptr;
+  CandidateSelectHandler selectHandler_ = nullptr;
+  void *pageOwner_ = nullptr;
+  CandidatePageHandler pageHandler_ = nullptr;
 
   int CandidateWindowHeight() const {
     return max(82, fontSize_ * 2 + 56);
@@ -1092,6 +1123,22 @@ class CandidateWindow {
     return -1;
   }
 
+  void SelectCandidate(int absoluteIndex) {
+    const int relativeIndex = absoluteIndex - pageStart_;
+    if (relativeIndex < 0 || relativeIndex >= static_cast<int>(candidates_.size()) ||
+        relativeIndex == selectedIndex_) {
+      return;
+    }
+    selectedIndex_ = relativeIndex;
+    composing_ = CompositionText();
+    if (selectHandler_) {
+      selectHandler_(selectOwner_, absoluteIndex);
+    }
+    if (hwnd_) {
+      InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+  }
+
   void DrawPageIndicator(HDC dc, const RECT &rect) {
     if (totalCount_ <= static_cast<int>(candidates_.size())) {
       return;
@@ -1287,6 +1334,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   TextService() {
     AddDllRef();
     candidateWindow_.SetClickHandler(this, &TextService::OnCandidateClickedThunk);
+    candidateWindow_.SetSelectHandler(this, &TextService::OnCandidateSelectedThunk);
+    candidateWindow_.SetPageHandler(this, &TextService::OnCandidatePageThunk);
   }
 
   ~TextService() {
@@ -1550,6 +1599,20 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     static_cast<TextService *>(owner)->OnCandidateClicked(absoluteIndex);
   }
 
+  static void OnCandidateSelectedThunk(void *owner, int absoluteIndex) {
+    if (!owner) {
+      return;
+    }
+    static_cast<TextService *>(owner)->OnCandidateSelected(absoluteIndex);
+  }
+
+  static void OnCandidatePageThunk(void *owner, int delta) {
+    if (!owner) {
+      return;
+    }
+    static_cast<TextService *>(owner)->OnCandidatePage(delta);
+  }
+
   void OnCandidateClicked(int absoluteIndex) {
     if (!lastContext_ || !session_ || absoluteIndex < 0 ||
         absoluteIndex >= cachedCandidateCount_) {
@@ -1561,6 +1624,21 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     candidateWindow_.Hide();
     cachedCandidateCount_ = 0;
     compositionLength_ = 0;
+  }
+
+  void OnCandidateSelected(int absoluteIndex) {
+    if (!session_ || absoluteIndex < 0 || absoluteIndex >= cachedCandidateCount_) {
+      return;
+    }
+    selectedIndex_ = absoluteIndex;
+    pageOffset_ = (selectedIndex_ / kCandidatesPerPage) * kCandidatesPerPage;
+  }
+
+  void OnCandidatePage(int delta) {
+    if (!session_ || cachedCandidateCount_ <= kCandidatesPerPage || delta == 0) {
+      return;
+    }
+    MovePage(delta);
   }
 
   void RememberContext(ITfContext *context) {

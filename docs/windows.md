@@ -215,6 +215,8 @@ Candidate interaction:
 - `Space` / `Enter`: commit the highlighted candidate
 - `1`-`9`: commit candidate by number
 - mouse click: commit the clicked candidate in the native candidate strip
+- mouse hover: move the highlighted candidate under the pointer
+- mouse wheel over the candidate strip: page candidates
 - `Right` / `Down` / `Tab`: move highlight to the next candidate
 - `Left` / `Up`: move highlight to the previous candidate
 - `Esc`: clear the active composition and hide the candidate window
