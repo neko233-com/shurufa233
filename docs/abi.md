@@ -107,6 +107,7 @@ char* ShurufaState(uint64_t session);
 char* ShurufaCandidatePayloadV2(uint64_t session, int start, int limit);
 char* ShurufaAssociate(uint64_t session, const char* json);
 char* ShurufaCandidateAction(uint64_t session, const char* json);
+char* ShurufaKeyEventJSON(uint64_t session, const char* json);
 char* ShurufaCatalogJSON(uint64_t session, const char* json);
 char* ShurufaReverseLookupJSON(uint64_t session, const char* json);
 char* ShurufaConfigJSON(void);
@@ -162,8 +163,8 @@ C++ export on developer machines that only consume packaged builds.
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
 `candidate-comments`, `association-candidates`, `candidate-action-json`, and
-`extension-command-json`, `key-behavior-config`, `rime-switches-json`, and
-`app-context-rules-json`.
+`extension-command-json`, `key-behavior-config`, `rime-switches-json`,
+`app-context-rules-json`, and `key-event-json`.
 
 `ShurufaAssociate(session, {"context":"你好","limit":7})` returns a normal state
 object with post-commit association candidates. The same behavior is available
@@ -197,6 +198,9 @@ candidate-action        {"action":"next-page","start":0,"limit":7}
 candidate-action        {"action":"associate","context":"微信","limit":7}
 candidate-action        {"action":"pin","index":0}
 candidate-action        {"action":"forget","index":0}
+key-event-json          {"key":"n","character":"n"}
+key-event-json          {"key":"space","index":0}
+key-event-json          {"key":"n","character":"n","appContext":{"processName":"WeGame.exe"}}
 select                  {"index":0}
 select-candidate-char   {"index":0,"side":"first"}
 config-json
@@ -242,6 +246,18 @@ removes any matching reject, keeps the composition buffer active, returns a
 `forget`/`reject`/`delete-candidate` persists a hidden candidate row in
 `user-rejects.json`, removes any learned score for that candidate, keeps the
 composition buffer active, and returns a `rejected` object for UI feedback.
+
+`key-event-json` and `ShurufaKeyEventJSON` reserve the next-level keyboard event
+surface for TSF, IMKit, and game validation tools. Payloads may include `key`,
+`character`, `code`, `ctrl`, `alt`, `shift`, `meta`, `modifiers`, `index`,
+`start`, `limit`, and `appContext`. The result tells native glue whether the key
+was `handled`, which `committed` text should be inserted, which text should be
+`passThrough` to the host app, the refreshed `state`, and the current candidate
+page. It already covers composing characters, Backspace, Escape, Space/Enter
+candidate commit, number-key candidate selection, Shift tap mode toggle, and
+game/password/terminal app-context pass-through. This keeps future
+WeChat/Rime-style key behavior in Go/config first, instead of requiring another
+round of platform C++ or IMKit changes.
 
 `switches-json`, `apply-switch-json`, `toggle-switch`, `ShurufaSwitchesJSON`,
 and `ShurufaApplySwitchJSON` reserve a Rime-style runtime switch surface.

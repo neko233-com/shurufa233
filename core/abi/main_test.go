@@ -360,6 +360,15 @@ func TestCapabilitiesIncludeRimeRecognizerPatterns(t *testing.T) {
 	t.Fatalf("capabilities missing rime-recognizer-patterns-json: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeKeyEventJSON(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "key-event-json" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing key-event-json: %#v", abiFeatureList)
+}
+
 func TestPreviewPreservesPinyinSeparatorCandidate(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	state := session.Preview("xi'an")
@@ -720,6 +729,53 @@ func TestExecuteExtensionCommandCandidateActionCommitsCandidateChar(t *testing.T
 	result, ok := got.(candidateActionResult)
 	if !ok || !result.OK || result.Committed != "中" {
 		t.Fatalf("candidate-action first-char = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventInputsAndCommits(t *testing.T) {
+	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(t.TempDir(), "user-scores.json"))
+	session := engine.New(engine.DefaultConfig())
+	for _, key := range []string{"n", "i", "h", "a", "o"} {
+		got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"`+key+`","character":"`+key+`"}`)
+		if !handled {
+			t.Fatal("key-event-json command was not handled")
+		}
+		result, ok := got.(keyEventResult)
+		if !ok || !result.OK || !result.Handled || result.Action != "input" {
+			t.Fatalf("key-event input %q = %#v", key, got)
+		}
+	}
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"space"}`)
+	if !handled {
+		t.Fatal("key-event-json space was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || !result.Handled || result.Action != "commit-candidate" || result.Committed != "你好" || result.State.Buffer != "" {
+		t.Fatalf("key-event space = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventRespectsGameContext(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"n","character":"n","appContext":{"processName":"WeGame.exe"}}`)
+	if !handled {
+		t.Fatal("key-event-json command was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || result.Handled || result.PassThrough != "n" || result.Decision == nil || !result.Decision.DisableCandidates {
+		t.Fatalf("key-event game context = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventShiftToggle(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"shift","action":"tap"}`)
+	if !handled {
+		t.Fatal("key-event-json command was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || !result.Handled || result.Action != "toggle-mode" || result.State.Mode != "en" {
+		t.Fatalf("key-event shift toggle = %#v", got)
 	}
 }
 

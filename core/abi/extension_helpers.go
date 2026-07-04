@@ -46,6 +46,7 @@ var abiFeatureList = []string{
 	"rime-recognizer-patterns-json",
 	"app-context-rules-json",
 	"profile-bundle-json",
+	"key-event-json",
 }
 
 type abiEnvelope struct {
@@ -106,6 +107,21 @@ type candidateActionResult struct {
 	UpdatedAt  time.Time          `json:"updatedAt"`
 }
 
+type keyEventResult struct {
+	OK          bool                       `json:"ok"`
+	Handled     bool                       `json:"handled"`
+	Action      string                     `json:"action"`
+	Key         string                     `json:"key,omitempty"`
+	Character   string                     `json:"character,omitempty"`
+	Committed   string                     `json:"committed,omitempty"`
+	PassThrough string                     `json:"passThrough,omitempty"`
+	Reason      string                     `json:"reason,omitempty"`
+	Decision    *engine.AppContextDecision `json:"decision,omitempty"`
+	State       engine.State               `json:"state"`
+	Candidates  candidatePayloadV2         `json:"candidates"`
+	UpdatedAt   time.Time                  `json:"updatedAt"`
+}
+
 type profileBundle struct {
 	OK         bool           `json:"ok,omitempty"`
 	Version    int            `json:"version"`
@@ -124,8 +140,16 @@ type extensionCommandPayload struct {
 	Input        string             `json:"input,omitempty"`
 	Context      string             `json:"context,omitempty"`
 	Action       string             `json:"action,omitempty"`
+	Key          string             `json:"key,omitempty"`
+	Character    string             `json:"character,omitempty"`
+	Code         int                `json:"code,omitempty"`
 	Mode         string             `json:"mode,omitempty"`
 	Toggle       bool               `json:"toggle,omitempty"`
+	Ctrl         bool               `json:"ctrl,omitempty"`
+	Alt          bool               `json:"alt,omitempty"`
+	Shift        bool               `json:"shift,omitempty"`
+	Meta         bool               `json:"meta,omitempty"`
+	Modifiers    []string           `json:"modifiers,omitempty"`
 	Index        int                `json:"index,omitempty"`
 	DisplayIndex int                `json:"displayIndex,omitempty"`
 	Start        int                `json:"start,omitempty"`
@@ -512,6 +536,194 @@ func candidateActionIndex(req extensionCommandPayload, start int) int {
 	return req.Index
 }
 
+func executeKeyEvent(session *engine.Engine, req extensionCommandPayload) keyEventResult {
+	key := normalizeKeyEventKey(req)
+	character := keyEventCharacter(req)
+	before := session.State()
+	limit := req.Limit
+	if limit <= 0 {
+		limit = req.PageSize
+	}
+	if limit <= 0 {
+		limit = session.Config().CandidatePageSize
+	}
+
+	var decision *engine.AppContextDecision
+	if req.AppContext != nil {
+		resolved := engine.ResolveAppContext(session.Config(), *req.AppContext)
+		decision = &resolved
+		if resolved.DisableCandidates || resolved.Mode == "en" {
+			return buildKeyEventResult(session, "pass-through", key, character, "", character, "app-context", decision, false, req.Start, limit)
+		}
+	}
+	if hasSystemModifier(req) {
+		return buildKeyEventResult(session, "pass-through", key, character, "", character, "system-modifier", decision, false, req.Start, limit)
+	}
+	if before.Mode == "en" && character != "" {
+		return buildKeyEventResult(session, "pass-through", key, character, "", character, "ascii-mode", decision, false, req.Start, limit)
+	}
+
+	switch key {
+	case "shift", "leftshift", "rightshift":
+		if session.Config().ShiftToggleMode && (strings.EqualFold(req.Action, "tap") || strings.EqualFold(req.Action, "up") || req.Toggle) {
+			state := session.ToggleMode()
+			return buildKeyEventResultFromState("toggle-mode", key, character, "", "", "", decision, true, req.Start, limit, state)
+		}
+		return buildKeyEventResult(session, "pass-through", key, character, "", "", "shift-down", decision, false, req.Start, limit)
+	case "backspace", "bksp":
+		if before.Buffer == "" {
+			return buildKeyEventResult(session, "pass-through", key, character, "", "", "empty-buffer", decision, false, req.Start, limit)
+		}
+		return buildKeyEventResultFromState("backspace", key, character, "", "", "", decision, true, req.Start, limit, session.Backspace())
+	case "escape", "esc":
+		if before.Buffer == "" && len(before.Candidates) == 0 {
+			return buildKeyEventResult(session, "pass-through", key, character, "", "", "empty-buffer", decision, false, req.Start, limit)
+		}
+		return buildKeyEventResultFromState("clear", key, character, "", "", "", decision, true, req.Start, limit, session.Clear())
+	case "space", "enter", "return":
+		if len(before.Candidates) > 0 {
+			index := req.Index
+			state, err := session.Select(index)
+			if err != nil {
+				return buildKeyEventResult(session, "error", key, character, "", "", err.Error(), decision, true, req.Start, limit)
+			}
+			persistUserScores(session.UserScores())
+			return buildKeyEventResultFromState("commit-candidate", key, character, state.Committed, "", "", decision, true, 0, limit, state)
+		}
+		if before.Buffer != "" {
+			committed := before.Buffer
+			if key == "space" {
+				committed += " "
+			}
+			state := session.Clear()
+			return buildKeyEventResultFromState("commit-raw", key, character, committed, "", "", decision, true, 0, limit, state)
+		}
+		return buildKeyEventResult(session, "pass-through", key, character, "", character, "empty-buffer", decision, false, req.Start, limit)
+	}
+
+	if index, ok := keyEventCandidateIndex(key, req.Start); ok && len(before.Candidates) > index {
+		state, err := session.Select(index)
+		if err != nil {
+			return buildKeyEventResult(session, "error", key, character, "", "", err.Error(), decision, true, req.Start, limit)
+		}
+		persistUserScores(session.UserScores())
+		return buildKeyEventResultFromState("commit-candidate", key, character, state.Committed, "", "", decision, true, 0, limit, state)
+	}
+	if character != "" {
+		runes := []rune(character)
+		if len(runes) != 1 || !isABIKeyEventInputRune(runes[0]) {
+			return buildKeyEventResult(session, "pass-through", key, character, "", character, "non-composing-character", decision, false, req.Start, limit)
+		}
+		state := session.InputKey(runes[0])
+		return buildKeyEventResultFromState("input", key, character, "", "", "", decision, true, req.Start, limit, state)
+	}
+	return buildKeyEventResult(session, "pass-through", key, character, "", "", "unhandled-key", decision, false, req.Start, limit)
+}
+
+func buildKeyEventResult(session *engine.Engine, action string, key string, character string, committed string, passThrough string, reason string, decision *engine.AppContextDecision, handled bool, start int, limit int) keyEventResult {
+	return buildKeyEventResultFromState(action, key, character, committed, passThrough, reason, decision, handled, start, limit, session.State())
+}
+
+func buildKeyEventResultFromState(action string, key string, character string, committed string, passThrough string, reason string, decision *engine.AppContextDecision, handled bool, start int, limit int, state engine.State) keyEventResult {
+	if committed == "" {
+		committed = state.Committed
+	}
+	return keyEventResult{
+		OK:          true,
+		Handled:     handled,
+		Action:      action,
+		Key:         key,
+		Character:   character,
+		Committed:   committed,
+		PassThrough: passThrough,
+		Reason:      reason,
+		Decision:    decision,
+		State:       state,
+		Candidates:  buildCandidatePayloadV2FromState(state, start, limit),
+		UpdatedAt:   time.Now().UTC(),
+	}
+}
+
+func normalizeKeyEventKey(req extensionCommandPayload) string {
+	key := strings.ToLower(strings.TrimSpace(firstNonEmpty(req.Key, req.Input, req.Text)))
+	switch key {
+	case " ", "spacebar":
+		return "space"
+	case "\r", "\n", "ret":
+		return "enter"
+	case "esc":
+		return "escape"
+	case "del":
+		return "delete"
+	default:
+		return key
+	}
+}
+
+func keyEventCharacter(req extensionCommandPayload) string {
+	character := firstNonEmpty(req.Character, req.Text)
+	if character != "" {
+		runes := []rune(character)
+		if len(runes) == 1 {
+			return character
+		}
+	}
+	input := strings.TrimSpace(req.Input)
+	if input != "" {
+		runes := []rune(input)
+		if len(runes) == 1 {
+			return input
+		}
+	}
+	key := strings.TrimSpace(req.Key)
+	runes := []rune(key)
+	if len(runes) == 1 {
+		return key
+	}
+	if req.Code > 0 && req.Code < 128 {
+		r := rune(req.Code)
+		if isABIKeyEventInputRune(r) {
+			return string(r)
+		}
+	}
+	return ""
+}
+
+func hasSystemModifier(req extensionCommandPayload) bool {
+	if req.Ctrl || req.Alt || req.Meta {
+		return true
+	}
+	for _, modifier := range req.Modifiers {
+		switch strings.ToLower(strings.TrimSpace(modifier)) {
+		case "ctrl", "control", "alt", "menu", "meta", "win", "windows", "cmd", "command", "super":
+			return true
+		}
+	}
+	return false
+}
+
+func keyEventCandidateIndex(key string, start int) (int, bool) {
+	if len(key) != 1 || key[0] < '1' || key[0] > '9' {
+		return 0, false
+	}
+	if start < 0 {
+		start = 0
+	}
+	return start + int(key[0]-'1'), true
+}
+
+func isABIKeyEventInputRune(r rune) bool {
+	if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+		return true
+	}
+	switch r {
+	case ';', '\'', '/', '`', '@', '.', '-', '_', ':', '?', '&', '=', '%', '+':
+		return true
+	default:
+		return false
+	}
+}
+
 func buildCandidateActionResult(session *engine.Engine, action string, start int, limit int, committed string) candidateActionResult {
 	return buildCandidateActionResultWithState(action, start, limit, committed, session.State())
 }
@@ -698,6 +910,8 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return importProfileBundle(session, bundle), true
 	case "candidate-action", "candidate-action-json":
 		return executeCandidateAction(session, req), true
+	case "key-event", "key-event-json", "process-key-event-json":
+		return executeKeyEvent(session, req), true
 	case "catalog", "catalog-json", "symbols", "symbols-json":
 		return session.CatalogEntries(engine.CatalogRequest{
 			Kind:  req.Kind,
