@@ -29,6 +29,14 @@ Required Visual Studio components:
 - `Microsoft.VisualStudio.Component.VC.Tools.ARM64EC`
 - `Microsoft.VisualStudio.Component.Windows11SDK.26100`
 
+For the in-process Go core DLL, `build-windows.ps1` also needs a matching MinGW-w64 cross compiler:
+
+- `x64` / `amd64`: `x86_64-w64-mingw32-gcc.exe`
+- `x86` / `386`: `i686-w64-mingw32-gcc.exe`
+- `arm64`: `aarch64-w64-mingw32-gcc.exe`
+
+If the matching compiler is missing, daemon and CLI artifacts still build, but `shurufa_core.dll` is skipped for that architecture. That package will run through daemon IPC fallback instead of the fastest in-process core path.
+
 ## Build
 
 ```powershell
@@ -36,6 +44,22 @@ Required Visual Studio components:
 ```
 
 If ARM64 native linking fails with `msvcprt.lib`, the ARM64 VC tools are not installed yet.
+
+## Package
+
+Create installable Windows zip packages from existing build artifacts:
+
+```powershell
+.\scripts\package-windows.ps1 -Arch @('x64','arm64')
+```
+
+Each package contains the `build/windows` artifacts, install/uninstall scripts, docs, and a `manifest.json` with SHA-256 hashes. The manifest includes `performanceMode`; production-quality performance should be `in-process-core`, not `daemon-ipc-fallback`. Install from the package root with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -SkipBuild
+```
+
+Use `-SkipMissingArch` when packaging on a machine that has not installed every target toolchain yet.
 
 ## Install Current Machine
 

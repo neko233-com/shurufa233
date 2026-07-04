@@ -46,6 +46,31 @@ function Find-MingwCompiler {
     }
   }
 
+  $searchRoots = @()
+  $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+  if (Test-Path $wingetRoot) {
+    $searchRoots += $wingetRoot
+  }
+  foreach ($parent in @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+    if (-not $parent -or -not (Test-Path $parent)) { continue }
+    Get-ChildItem $parent -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match "mingw|llvm|winlibs|ucrt" } |
+      ForEach-Object { $searchRoots += $_.FullName }
+  }
+
+  foreach ($root in $searchRoots) {
+    foreach ($name in $preferred) {
+      $candidate = Get-ChildItem $root -Recurse -Filter $name -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match "\\bin\\[^\\]+$" } |
+        Select-Object -First 1
+      if ($candidate) {
+        $bin = Split-Path $candidate.FullName -Parent
+        $env:Path = "$bin;$env:Path"
+        return $candidate.FullName
+      }
+    }
+  }
+
   return $null
 }
 
