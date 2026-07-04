@@ -57,6 +57,13 @@ using ToggleModeFn = char *(*)(uint64_t);
 using ModeFn = char *(*)(uint64_t);
 using CommitCandidateFn = char *(*)(uint64_t, int);
 using FreeFn = void (*)(char *);
+using CoreStringFn = char *(*)();
+using SessionStringFn = char *(*)(uint64_t);
+using CandidatePayloadV2Fn = char *(*)(uint64_t, int, int);
+using ApplyConfigJsonFn = char *(*)(char *);
+using ImportUserScoresJsonFn = char *(*)(uint64_t, char *);
+using CommitTextFn = char *(*)(uint64_t, char *, char *);
+using AgentComposeFn = char *(*)(char *, char *);
 
 struct CoreApi {
   bool initialized = false;
@@ -77,6 +84,19 @@ struct CoreApi {
   ModeFn mode = nullptr;
   CommitCandidateFn commitCandidate = nullptr;
   FreeFn freeValue = nullptr;
+  CoreStringFn abiVersion = nullptr;
+  CoreStringFn capabilities = nullptr;
+  SessionStringFn stateJson = nullptr;
+  CandidatePayloadV2Fn candidatePayloadV2 = nullptr;
+  CoreStringFn configJson = nullptr;
+  ApplyConfigJsonFn applyConfigJson = nullptr;
+  CoreStringFn reloadConfig = nullptr;
+  CoreStringFn reloadDictionaries = nullptr;
+  CoreStringFn dictionaryManifestJson = nullptr;
+  SessionStringFn userScoresJson = nullptr;
+  ImportUserScoresJsonFn importUserScoresJson = nullptr;
+  CommitTextFn commitText = nullptr;
+  AgentComposeFn agentCompose = nullptr;
 
   bool Ready() const {
     return initialized && createSession && destroySession && inputKeyFast &&
@@ -375,6 +395,21 @@ bool TryLoadInProcessCore() {
   api.mode = LoadCoreProc<ModeFn>(module, "ShurufaMode");
   api.commitCandidate = LoadCoreProc<CommitCandidateFn>(module, "ShurufaCommitCandidate");
   api.freeValue = LoadCoreProc<FreeFn>(module, "ShurufaFree");
+  api.abiVersion = LoadCoreProc<CoreStringFn>(module, "ShurufaAbiVersion");
+  api.capabilities = LoadCoreProc<CoreStringFn>(module, "ShurufaCapabilities");
+  api.stateJson = LoadCoreProc<SessionStringFn>(module, "ShurufaState");
+  api.candidatePayloadV2 = LoadCoreProc<CandidatePayloadV2Fn>(module, "ShurufaCandidatePayloadV2");
+  api.configJson = LoadCoreProc<CoreStringFn>(module, "ShurufaConfigJSON");
+  api.applyConfigJson = LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplyConfigJSON");
+  api.reloadConfig = LoadCoreProc<CoreStringFn>(module, "ShurufaReloadConfig");
+  api.reloadDictionaries = LoadCoreProc<CoreStringFn>(module, "ShurufaReloadDictionaries");
+  api.dictionaryManifestJson =
+      LoadCoreProc<CoreStringFn>(module, "ShurufaDictionaryManifestJSON");
+  api.userScoresJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserScoresJSON");
+  api.importUserScoresJson =
+      LoadCoreProc<ImportUserScoresJsonFn>(module, "ShurufaImportUserScoresJSON");
+  api.commitText = LoadCoreProc<CommitTextFn>(module, "ShurufaCommitText");
+  api.agentCompose = LoadCoreProc<AgentComposeFn>(module, "ShurufaAgentCompose");
   if (!api.Ready()) {
     LogLine(L"In-process core missing required exports; falling back to daemon IPC");
     FreeLibrary(module);
@@ -409,6 +444,19 @@ void UseHttpCoreFallback() {
   g_core.mode = HttpModeValue;
   g_core.commitCandidate = HttpCommitCandidate;
   g_core.freeValue = HttpFree;
+  g_core.abiVersion = nullptr;
+  g_core.capabilities = nullptr;
+  g_core.stateJson = nullptr;
+  g_core.candidatePayloadV2 = nullptr;
+  g_core.configJson = nullptr;
+  g_core.applyConfigJson = nullptr;
+  g_core.reloadConfig = nullptr;
+  g_core.reloadDictionaries = nullptr;
+  g_core.dictionaryManifestJson = nullptr;
+  g_core.userScoresJson = nullptr;
+  g_core.importUserScoresJson = nullptr;
+  g_core.commitText = nullptr;
+  g_core.agentCompose = nullptr;
 }
 
 bool EnsureCoreLoaded() {

@@ -37,6 +37,10 @@ func loadConfig() engine.Config {
 	if err := json.Unmarshal(data, &config); err != nil {
 		return engine.DefaultConfig()
 	}
+	return normalizeConfig(config)
+}
+
+func normalizeConfig(config engine.Config) engine.Config {
 	if config.MaxCandidates <= 0 {
 		config.MaxCandidates = engine.DefaultConfig().MaxCandidates
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,5 +158,58 @@ func TestPersistUserScoresSyncMergesExistingScores(t *testing.T) {
 	}
 	if store.Scores["xiaolian|笑脸"] != 2 {
 		t.Fatalf("expected new score to be merged, got %#v", store.Scores)
+	}
+}
+
+func TestBuildCandidatePayloadV2IncludesMetadata(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	state := session.Preview("zan")
+	if len(state.Candidates) == 0 {
+		t.Fatal("expected zan candidates")
+	}
+
+	payload := buildCandidatePayloadV2(session, 0, 3)
+	if !payload.OK {
+		t.Fatal("payload should be ok")
+	}
+	if payload.Total == 0 || len(payload.Items) == 0 {
+		t.Fatalf("expected candidate items, got %#v", payload)
+	}
+	if payload.Items[0].Text == "" || payload.Items[0].Reading == "" {
+		t.Fatalf("expected text and reading metadata, got %#v", payload.Items[0])
+	}
+	if payload.Items[0].Score != payload.Items[0].Weight+payload.Items[0].UserScore {
+		t.Fatalf("score does not include user score: %#v", payload.Items[0])
+	}
+}
+
+func TestDecodeUserScoresPayloadAcceptsWrappedAndRawScores(t *testing.T) {
+	wrapped, err := decodeUserScoresPayload(`{"userScores":{"nihao|你好":25}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wrapped["nihao|你好"] != 25 {
+		t.Fatalf("wrapped score not decoded: %#v", wrapped)
+	}
+
+	raw, err := decodeUserScoresPayload(`{"xiexie|谢谢":10}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw["xiexie|谢谢"] != 10 {
+		t.Fatalf("raw score not decoded: %#v", raw)
+	}
+}
+
+func TestComposeAgentABIUsesContextForRewrite(t *testing.T) {
+	got := composeAgentABI("/rewrite", "这段话有点啰嗦")
+	if !got.OK || len(got.Items) < 2 {
+		t.Fatalf("expected rewrite items, got %#v", got)
+	}
+	if got.Items[0].Intent != "rewrite" || got.Items[0].Source != "builtin-agent" {
+		t.Fatalf("unexpected agent metadata: %#v", got.Items[0])
+	}
+	if !strings.Contains(got.Items[0].Text, "这段话有点啰嗦") {
+		t.Fatalf("expected context in rewrite prompt, got %#v", got.Items[0])
 	}
 }
