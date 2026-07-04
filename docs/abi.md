@@ -257,7 +257,8 @@ field mapping and future switch expansion.
 surface. Payloads may contain `{"yaml":"patch: ..."}` or raw YAML text. The Go
 core maps common Rime patch fields such as `schema_list`, `menu/page_size`,
 `speller/algebra`, `switches`, `style/horizontal`, `punctuator/import_preset`,
-`key_binder/import_preset`, `key_binder/bindings`, and
+`recognizer/import_preset`, `recognizer/patterns`, `key_binder/import_preset`,
+`key_binder/bindings`, and
 `ascii_composer/switch_key` into the shared config, persists it, and returns
 `applied` plus `warnings`. Native glue should prefer this JSON command instead
 of learning individual Rime YAML concepts in C++. The raw spelling algebra is
@@ -266,7 +267,10 @@ into active `fuzzyInitials` pairs so native callers get behavior changes through
 the existing config reload path. Rime `punctuator/full_shape` and
 `punctuator/half_shape` maps are persisted as `config.punctuationFullShape` and
 `config.punctuationHalfShape`; Windows TSF reads those maps from the same local
-config file before using its default punctuation table.
+config file before using its default punctuation table. Rime recognizer patterns
+are exposed as `config.recognizerPatterns` and through
+`rime-recognizer-patterns-json`, so native glue can query or reload URL/email,
+uppercase, reverse-lookup, and future recognizer rules through the command bus.
 
 `app-rules-json`, `resolve-app-context-json`, `ShurufaAppRulesJSON`, and
 `ShurufaResolveAppContextJSON` reserve the app-aware behavior surface that

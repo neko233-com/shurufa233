@@ -43,6 +43,7 @@ var abiFeatureList = []string{
 	"extension-command-json",
 	"key-behavior-config",
 	"rime-switches-json",
+	"rime-recognizer-patterns-json",
 	"app-context-rules-json",
 	"profile-bundle-json",
 }
@@ -630,6 +631,13 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return map[string]any{
 			"ok":        true,
 			"switches":  engine.SwitchOptions(session.Config()),
+			"config":    session.Config(),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "recognizer-json", "recognizer-patterns-json", "rime-recognizer-patterns-json":
+		return map[string]any{
+			"ok":        true,
+			"patterns":  session.Config().RecognizerPatterns,
 			"config":    session.Config(),
 			"updatedAt": session.State().UpdatedAt,
 		}, true

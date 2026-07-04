@@ -112,6 +112,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	}
 	config = engine.NormalizeSchemaConfig(config)
 	config = engine.NormalizeKeyBehavior(config)
+	config.RecognizerPatterns = engine.NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = engine.NormalizeAppRules(config.AppRules)
 	return config
 }

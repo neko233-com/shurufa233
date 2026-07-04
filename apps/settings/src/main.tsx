@@ -51,6 +51,7 @@ type Config = {
   punctuation: "full" | "half";
   punctuationFullShape?: Record<string, string[]>;
   punctuationHalfShape?: Record<string, string[]>;
+  recognizerPatterns?: Record<string, string>;
   script: "simplified" | "traditional";
   associations: boolean;
   keyProfile: "wechat" | "microsoft" | "rime" | "custom";
@@ -398,6 +399,12 @@ const defaultConfig: Config = {
   punctuation: "full",
   punctuationFullShape: {},
   punctuationHalfShape: {},
+  recognizerPatterns: {
+    email: "^[A-Za-z][-_.0-9A-Za-z]*@.*$",
+    url: "^(www[.]|https?:|ftp:|mailto:).*$",
+    reverse_lookup: "`[a-z]*'?$",
+    uppercase: "[A-Z][-_+.'0-9A-Za-z]*$",
+  },
   script: "simplified",
   associations: true,
   keyProfile: "wechat",
@@ -641,6 +648,7 @@ function hydrateConfig(config: Config): Config {
     candidateLayout: normalizeCandidateLayout(config.candidateLayout),
     script: normalizeScript(config.script),
     associations: config.associations ?? defaultConfig.associations,
+    recognizerPatterns: config.recognizerPatterns ?? defaultConfig.recognizerPatterns,
     keyProfile: normalizeKeyProfile(config.keyProfile),
     shiftToggleMode: config.shiftToggleMode ?? defaultConfig.shiftToggleMode,
     semicolonQuickSelect: config.semicolonQuickSelect ?? defaultConfig.semicolonQuickSelect,
@@ -1166,6 +1174,8 @@ function App() {
           data.config?.spellerAlgebra?.length ? ` · algebra ${data.config.spellerAlgebra.length}` : ""
         }${
           data.config?.punctuationFullShape ? ` · 全角标点 ${Object.keys(data.config.punctuationFullShape).length}` : ""
+        }${
+          data.config?.recognizerPatterns ? ` · 识别器 ${Object.keys(data.config.recognizerPatterns).length}` : ""
         }${
           data.warnings?.length ? ` · ${data.warnings.length} 个警告` : ""
         }`,

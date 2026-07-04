@@ -17,6 +17,7 @@ type Config struct {
 	Punctuation           string              `json:"punctuation"`
 	PunctuationFullShape  map[string][]string `json:"punctuationFullShape,omitempty"`
 	PunctuationHalfShape  map[string][]string `json:"punctuationHalfShape,omitempty"`
+	RecognizerPatterns    map[string]string   `json:"recognizerPatterns,omitempty"`
 	Script                string              `json:"script"`
 	Associations          bool                `json:"associations"`
 	KeyProfile            string              `json:"keyProfile"`

@@ -264,6 +264,40 @@ func TestInputKeyAcceptsSlashSymbolPrefix(t *testing.T) {
 	}
 }
 
+func TestRecognizerPatternsPassThroughURLAndEmail(t *testing.T) {
+	e := New(DefaultConfig())
+
+	urlState := e.Preview("https://example.com/a?q=1")
+	if urlState.Buffer != "https://example.com/a?q=1" {
+		t.Fatalf("expected URL buffer to be preserved, got %q", urlState.Buffer)
+	}
+	if len(urlState.Candidates) != 1 || urlState.Candidates[0].Text != "https://example.com/a?q=1" ||
+		urlState.Candidates[0].Source != "recognizer:url" {
+		t.Fatalf("expected URL passthrough candidate, got %#v", urlState.Candidates)
+	}
+
+	emailState := e.Preview("dev@example.com")
+	if emailState.Buffer != "dev@example.com" {
+		t.Fatalf("expected email buffer to be preserved, got %q", emailState.Buffer)
+	}
+	if len(emailState.Candidates) != 1 || emailState.Candidates[0].Text != "dev@example.com" ||
+		emailState.Candidates[0].Source != "recognizer:email" {
+		t.Fatalf("expected email passthrough candidate, got %#v", emailState.Candidates)
+	}
+}
+
+func TestRecognizerReverseLookupUsesExistingDictionary(t *testing.T) {
+	e := New(DefaultConfig())
+
+	state := e.Preview("`nihao")
+	if state.Buffer != "`nihao" {
+		t.Fatalf("expected reverse lookup buffer to be preserved, got %q", state.Buffer)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "你好" {
+		t.Fatalf("expected reverse lookup to reuse pinyin candidates, got %#v", state.Candidates)
+	}
+}
+
 func TestUserPhrasesCanBeAddedListedAndDeleted(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddEntries([]Entry{{Reading: "msd", Text: "默认短语", Weight: 20000}})
@@ -785,6 +819,30 @@ patch:
 	}
 	if result.Config.Punctuation != "half" {
 		t.Fatalf("half_shape should preserve existing half-mode behavior, got %q", result.Config.Punctuation)
+	}
+}
+
+func TestApplyRimeCustomYAMLMapsRecognizerPatterns(t *testing.T) {
+	result, err := ApplyRimeCustomYAML(DefaultConfig(), []byte(`
+patch:
+  recognizer/import_preset: default
+  recognizer/patterns:
+    email: "^[A-Za-z][-_.0-9A-Za-z]*@.*$"
+    url: "^(www[.]|https?:|ftp:|mailto:).*$"
+    reverse_lookup: "`+"`"+`[a-z]*'?$"
+    uppercase: "[A-Z][-_+.'0-9A-Za-z]*$"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Config.RecognizerPatterns["url"]; got == "" {
+		t.Fatalf("url recognizer pattern missing: %#v", result.Config.RecognizerPatterns)
+	}
+	if got := result.Config.RecognizerPatterns["reverse_lookup"]; got != "`[a-z]*'?$" {
+		t.Fatalf("reverse lookup pattern = %q", got)
+	}
+	if !containsString(result.Applied, "recognizer/patterns") {
+		t.Fatalf("recognizer patterns not reported as applied: %#v", result.Applied)
 	}
 }
 

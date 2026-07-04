@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 )
 
 type Engine struct {
@@ -56,6 +56,7 @@ func DefaultConfig() Config {
 		Language:             "zh-CN",
 		Mode:                 "zh",
 		Punctuation:          "full",
+		RecognizerPatterns:   DefaultRecognizerPatterns(),
 		Script:               "simplified",
 		Associations:         true,
 		KeyProfile:           "wechat",
@@ -102,6 +103,7 @@ func New(config Config) *Engine {
 	config.Script = normalizeScript(config.Script)
 	config = NormalizeSchemaConfig(config)
 	config = NormalizeKeyBehavior(config)
+	config.RecognizerPatterns = NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = NormalizeAppRules(config.AppRules)
 	e := &Engine{
 		config:  config,
@@ -129,8 +131,34 @@ func (e *Engine) Configure(config Config) {
 	config.Script = normalizeScript(config.Script)
 	config = NormalizeSchemaConfig(config)
 	config = NormalizeKeyBehavior(config)
+	config.RecognizerPatterns = NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = NormalizeAppRules(config.AppRules)
 	e.config = config
+}
+
+func DefaultRecognizerPatterns() map[string]string {
+	return map[string]string{
+		"email":          `^[A-Za-z][-_.0-9A-Za-z]*@.*$`,
+		"url":            `^(www[.]|https?:|ftp:|mailto:).*$`,
+		"reverse_lookup": "`[a-z]*'?$",
+		"uppercase":      `[A-Z][-_+.'0-9A-Za-z]*$`,
+	}
+}
+
+func NormalizeRecognizerPatterns(patterns map[string]string) map[string]string {
+	if patterns == nil {
+		return cloneStringMap(DefaultRecognizerPatterns())
+	}
+	out := make(map[string]string, len(patterns))
+	for key, value := range patterns {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }
 
 func (e *Engine) Config() Config {
@@ -591,8 +619,8 @@ func decompressDictionaryData(data []byte) ([]byte, error) {
 func (e *Engine) InputKey(key rune) State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if unicode.IsLetter(key) || key == ';' || key == '\'' || key == '/' {
-		e.buffer += strings.ToLower(string(key))
+	if isRecognizerInputRune(key) {
+		e.buffer += normalizeInputRuneForBuffer(key)
 	}
 	return e.stateLocked("")
 }
@@ -637,7 +665,7 @@ func (e *Engine) ToggleMode() State {
 func (e *Engine) Preview(input string) State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.buffer = normalizeInputCode(input)
+	e.buffer = e.normalizePreviewBufferLocked(input)
 	return e.stateLocked("")
 }
 
@@ -919,6 +947,9 @@ func (e *Engine) candidatesLocked() []Candidate {
 			Weight:  1,
 		}}
 	}
+	if recognized := e.recognizerCandidatesLocked(e.buffer); len(recognized) > 0 {
+		return recognized
+	}
 
 	entries := e.lookupLocked(e.buffer)
 	candidates := make([]Candidate, 0, len(entries))
@@ -981,6 +1012,137 @@ func candidateScore(candidate Candidate) int {
 		score += pinnedCandidateBonus
 	}
 	return score
+}
+
+func (e *Engine) normalizePreviewBufferLocked(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return ""
+	}
+	if e.recognizerPatternNameLocked(input) != "" {
+		return input
+	}
+	return normalizeInputCode(input)
+}
+
+func (e *Engine) recognizerCandidatesLocked(input string) []Candidate {
+	name := e.recognizerPatternNameLocked(input)
+	if name == "" {
+		return nil
+	}
+	if name == "reverse_lookup" && strings.HasPrefix(input, "`") {
+		code := normalizeReading(strings.TrimPrefix(input, "`"))
+		if code != "" {
+			return e.recognizerLookupCandidatesLocked(input, code)
+		}
+	}
+	return []Candidate{{
+		Text:    input,
+		Reading: input,
+		Kind:    "literal",
+		Source:  "recognizer:" + name,
+		Comment: recognizerComment(name),
+		Weight:  dynamicCandidateWeightBase,
+	}}
+}
+
+func (e *Engine) recognizerLookupCandidatesLocked(input string, code string) []Candidate {
+	entries := e.lookupLocked(code)
+	out := make([]Candidate, 0, min(len(entries), e.config.MaxCandidates))
+	seen := map[string]int{}
+	for _, entry := range entries {
+		displayText := convertScriptText(entry.Text, e.config.Script)
+		if e.isRejectedLocked(entry.Reading, displayText) {
+			continue
+		}
+		pinned := e.isPinnedLocked(entry.Reading, displayText)
+		next := Candidate{
+			Text:      displayText,
+			Reading:   input,
+			Kind:      "reverse",
+			Source:    "recognizer:reverse_lookup",
+			Comment:   "反查",
+			Weight:    entry.Weight,
+			UserScore: e.entryUserScoreLocked(entry),
+			Pinned:    pinned,
+		}
+		key := next.Text + "\x00" + next.Source
+		if previous, ok := seen[key]; ok {
+			if candidateScore(next) > candidateScore(out[previous]) {
+				out[previous] = next
+			}
+			continue
+		}
+		seen[key] = len(out)
+		out = append(out, next)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		left := candidateScore(out[i])
+		right := candidateScore(out[j])
+		if left == right {
+			return len([]rune(out[i].Text)) > len([]rune(out[j].Text))
+		}
+		return left > right
+	})
+	max := e.config.MaxCandidates
+	if max <= 0 {
+		max = DefaultConfig().MaxCandidates
+	}
+	if len(out) > max {
+		out = out[:max]
+	}
+	return out
+}
+
+func (e *Engine) recognizerPatternNameLocked(input string) string {
+	for _, name := range []string{"reverse_lookup", "email", "url", "uppercase"} {
+		if pattern := e.config.RecognizerPatterns[name]; recognizerPatternMatches(pattern, input) {
+			return name
+		}
+	}
+	names := make([]string, 0, len(e.config.RecognizerPatterns))
+	for name := range e.config.RecognizerPatterns {
+		switch name {
+		case "reverse_lookup", "email", "url", "uppercase":
+			continue
+		default:
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if recognizerPatternMatches(e.config.RecognizerPatterns[name], input) {
+			return name
+		}
+	}
+	return ""
+}
+
+func recognizerPatternMatches(pattern string, input string) bool {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" || input == "" {
+		return false
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(input)
+}
+
+func recognizerComment(name string) string {
+	switch name {
+	case "email":
+		return "邮箱"
+	case "url":
+		return "网址"
+	case "uppercase":
+		return "大写"
+	case "reverse_lookup":
+		return "反查"
+	default:
+		return "识别"
+	}
 }
 
 func (e *Engine) lookupLocked(reading string) []Entry {
@@ -1384,10 +1546,29 @@ func normalizeReading(input string) string {
 	return builder.String()
 }
 
+func isRecognizerInputRune(r rune) bool {
+	if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+		return true
+	}
+	switch r {
+	case ';', '\'', '/', '`', '@', '.', '-', '_', ':', '?', '&', '=', '%', '+':
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeInputRuneForBuffer(r rune) string {
+	if r >= 'A' && r <= 'Z' {
+		return string(r)
+	}
+	return strings.ToLower(string(r))
+}
+
 func normalizeInputCode(input string) string {
 	var builder strings.Builder
 	for _, r := range strings.ToLower(input) {
-		if r >= 'a' && r <= 'z' || r == ';' || r == '\'' || r == '/' {
+		if r >= 'a' && r <= 'z' || r == ';' || r == '\'' || r == '/' || r == '`' {
 			builder.WriteRune(r)
 		}
 	}
@@ -1801,6 +1982,17 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
 }
 
 func isCatalogEntryKind(kind string) bool {

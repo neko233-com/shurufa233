@@ -135,6 +135,24 @@ func ApplyRimeCustomYAML(base Config, data []byte) (RimeCustomResult, error) {
 			warnings = append(warnings, "punctuator/half_shape has no supported entries")
 		}
 	}
+	if raw, ok := rimeLookup(patch, "recognizer/import_preset"); ok {
+		preset := strings.ToLower(strings.TrimSpace(rimeString(raw)))
+		switch preset {
+		case "", "default":
+			config.RecognizerPatterns = mergeRecognizerPatterns(config.RecognizerPatterns, DefaultRecognizerPatterns())
+			applied = append(applied, "recognizer/import_preset:default")
+		default:
+			warnings = append(warnings, "unsupported recognizer preset: "+preset)
+		}
+	}
+	if raw, ok := rimeLookup(patch, "recognizer/patterns"); ok {
+		if patterns := rimeStringMap(raw); len(patterns) > 0 {
+			config.RecognizerPatterns = mergeRecognizerPatterns(config.RecognizerPatterns, patterns)
+			applied = append(applied, "recognizer/patterns")
+		} else {
+			warnings = append(warnings, "recognizer/patterns has no supported entries")
+		}
+	}
 	if raw, ok := rimeLookup(patch, "key_binder/import_preset"); ok {
 		preset := strings.ToLower(strings.TrimSpace(rimeString(raw)))
 		switch preset {
@@ -285,6 +303,38 @@ func mergePunctuationShape(base map[string][]string, next map[string][]string) m
 	}
 	for key, values := range next {
 		base[key] = uniqueRawStrings(append(base[key], values...))
+	}
+	return base
+}
+
+func rimeStringMap(raw any) map[string]string {
+	mapped, ok := rimeMap(raw)
+	if !ok {
+		return nil
+	}
+	out := map[string]string{}
+	for key, value := range mapped {
+		key = strings.TrimSpace(key)
+		text := strings.TrimSpace(rimeString(value))
+		if key == "" || text == "" {
+			continue
+		}
+		out[key] = text
+	}
+	return out
+}
+
+func mergeRecognizerPatterns(base map[string]string, next map[string]string) map[string]string {
+	if len(base) == 0 {
+		base = map[string]string{}
+	}
+	for key, value := range next {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		base[key] = value
 	}
 	return base
 }

@@ -3032,7 +3032,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     return L"";
   }
 
-  static std::unordered_map<std::string, std::wstring> JsonConfigPunctuationMapField(
+  static std::unordered_map<std::string, std::wstring> JsonConfigStringMapField(
       const std::string &json,
       const char *field) {
     std::unordered_map<std::string, std::wstring> out;
@@ -3105,8 +3105,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
     const std::string punctuation = JsonConfigStringField(json, "punctuation");
     punctuationFullWidth_ = punctuation != "half";
-    punctuationFullShape_ = JsonConfigPunctuationMapField(json, "punctuationFullShape");
-    punctuationHalfShape_ = JsonConfigPunctuationMapField(json, "punctuationHalfShape");
+    punctuationFullShape_ = JsonConfigStringMapField(json, "punctuationFullShape");
+    punctuationHalfShape_ = JsonConfigStringMapField(json, "punctuationHalfShape");
+    recognizerPatterns_ = JsonConfigStringMapField(json, "recognizerPatterns");
     doublePinyinEnabled_ = JsonConfigBoolField(json, "doublePinyin");
     const std::string scheme = JsonConfigStringField(json, "doublePinyinScheme");
     microsoftDoublePinyin_ = doublePinyinEnabled_ &&
@@ -3125,6 +3126,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     punctuationFullWidth_ = true;
     punctuationFullShape_.clear();
     punctuationHalfShape_.clear();
+    recognizerPatterns_.clear();
     doublePinyinEnabled_ = false;
     microsoftDoublePinyin_ = false;
     candidatePageSize_ = kDefaultCandidatesPerPage;
@@ -3222,6 +3224,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   bool punctuationFullWidth_ = true;
   std::unordered_map<std::string, std::wstring> punctuationFullShape_;
   std::unordered_map<std::string, std::wstring> punctuationHalfShape_;
+  std::unordered_map<std::string, std::wstring> recognizerPatterns_;
   bool doublePinyinEnabled_ = false;
   bool microsoftDoublePinyin_ = false;
   bool shiftToggleMode_ = true;

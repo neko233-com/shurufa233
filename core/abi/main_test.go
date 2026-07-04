@@ -351,6 +351,15 @@ func TestCapabilitiesIncludeKeyBehaviorConfig(t *testing.T) {
 	t.Fatalf("capabilities missing key-behavior-config: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeRimeRecognizerPatterns(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "rime-recognizer-patterns-json" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing rime-recognizer-patterns-json: %#v", abiFeatureList)
+}
+
 func TestPreviewPreservesPinyinSeparatorCandidate(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	state := session.Preview("xi'an")
@@ -628,6 +637,23 @@ func TestExecuteExtensionCommandRimeSwitches(t *testing.T) {
 	}
 	if session.Config().Mode != "en" || session.State().Mode != "en" {
 		t.Fatalf("ascii_mode switch did not update session config/state: config=%#v state=%#v", session.Config(), session.State())
+	}
+}
+
+func TestExecuteExtensionCommandRimeRecognizerPatterns(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "rime-recognizer-patterns-json", `{}`)
+	if !handled {
+		t.Fatal("rime-recognizer-patterns-json command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("rime-recognizer-patterns-json = %#v", got)
+	}
+	patterns, ok := result["patterns"].(map[string]string)
+	if !ok || patterns["url"] == "" || patterns["email"] == "" {
+		t.Fatalf("recognizer patterns = %#v", result["patterns"])
 	}
 }
 

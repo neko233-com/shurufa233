@@ -127,7 +127,8 @@ settings into the shared config. It accepts either raw YAML or JSON:
 Supported patch fields include `schema_list`, `schema/schema_id`,
 `menu/page_size`, `style/horizontal`, `style/vertical`, `speller/algebra`,
 `switches`, `translator/enable_sentence`, `punctuator/import_preset`,
-`punctuator/half_shape`, `key_binder/import_preset`, `key_binder/bindings`, and
+`punctuator/half_shape`, `recognizer/import_preset`, `recognizer/patterns`,
+`key_binder/import_preset`, `key_binder/bindings`, and
 `ascii_composer/switch_key/Shift_L|Shift_R`. The response contains the applied
 config plus `applied` and `warnings` arrays so GUI, CLI, Wails, and native
 debugging tools can show which Rime fields were accepted without adding
@@ -137,7 +138,10 @@ and `derive/^([nl])ue$/$1ve/` are also converted into active fuzzy spelling
 pairs such as `zh=z` and `ue=ve`. Rime punctuation maps are stored as
 `config.punctuationFullShape` and `config.punctuationHalfShape`; Windows TSF
 reads those local config fields and uses them before falling back to the built-in
-WeChat/Microsoft-style punctuation table.
+WeChat/Microsoft-style punctuation table. Rime recognizer patterns are stored as
+`config.recognizerPatterns`; default email, URL, reverse-lookup, and uppercase
+patterns can produce Go-core passthrough or explicit reverse-lookup candidates,
+while unsupported regular expressions are still preserved for future native use.
 
 `GET /wordbook` returns learned user word scores. `PUT /wordbook` accepts
 `{"userScores":{"reading|text":1000},"merge":true}` for JSON import or
