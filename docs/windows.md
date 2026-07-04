@@ -168,6 +168,7 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 
 - `Shift` toggles Chinese/English mode only when no composition is active
 - `Ctrl`/`Alt` shortcuts are passed through to the host app
+- configured fuzzy initials such as `zh=z`, `ch=c`, and `sh=s` are handled in the Go core with exact pinyin candidates kept ahead of fuzzy matches
 - space, enter, main-row or numpad number keys, semicolon, apostrophe, brackets, page up/down, home/end, `-`, and `=` operate the visible candidate page
 - Chinese punctuation commits the selected candidate first, then inserts the punctuation
 - if a raw letter buffer has no candidates, space, enter, or Chinese punctuation commits the raw letters instead of dropping the buffer

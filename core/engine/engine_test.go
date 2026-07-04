@@ -47,6 +47,49 @@ func TestEnglishMode(t *testing.T) {
 	}
 }
 
+func TestFuzzyInitialsExpandCandidates(t *testing.T) {
+	e := New(DefaultConfig())
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "zongwen", want: "中文"},
+		{input: "si", want: "是"},
+		{input: "surufa", want: "输入法"},
+	}
+
+	for _, tt := range tests {
+		state := e.Preview(tt.input)
+		found := false
+		for _, candidate := range state.Candidates {
+			if candidate.Text == tt.want {
+				found = true
+				if candidate.Weight <= 0 {
+					t.Fatalf("fuzzy candidate has invalid weight: %#v", candidate)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected fuzzy candidate %q for %q, got %#v", tt.want, tt.input, state.Candidates)
+		}
+	}
+}
+
+func TestFuzzyInitialsCanBeDisabled(t *testing.T) {
+	config := DefaultConfig()
+	config.FuzzyInitials = nil
+	e := New(config)
+
+	state := e.Preview("zongwen")
+	for _, candidate := range state.Candidates {
+		if candidate.Text == "中文" {
+			t.Fatalf("fuzzy candidate should be disabled, got %#v", state.Candidates)
+		}
+	}
+}
+
 func TestLoadDictionary(t *testing.T) {
 	e := New(DefaultConfig())
 	_, err := e.LoadDictionary(strings.NewReader(`{

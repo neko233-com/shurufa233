@@ -34,6 +34,31 @@ func TestNewEngineLoadsLocalDictionaries(t *testing.T) {
 	}
 }
 
+func TestNewEngineLoadsConfigForFuzzyInitials(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("SHURUFA233_CONFIG", configPath)
+	t.Setenv("SHURUFA233_DICTIONARY_DIR", t.TempDir())
+	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(t.TempDir(), "user-scores.json"))
+
+	config := engine.DefaultConfig()
+	config.FuzzyInitials = nil
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	session := engine.New(loadConfig())
+	state := session.Preview("zongwen")
+	for _, candidate := range state.Candidates {
+		if candidate.Text == "中文" {
+			t.Fatalf("expected ABI core to honor disabled fuzzy initials, got %#v", state.Candidates)
+		}
+	}
+}
+
 func TestPersistUserScoresAsync(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "user-scores.json")
 	t.Setenv("SHURUFA233_USER_SCORES", path)

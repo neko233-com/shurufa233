@@ -23,6 +23,8 @@ type Engine struct {
 }
 
 const maxPrefixEntries = 256
+const fuzzyCandidatePenalty = 120
+const fuzzyVariantLimit = 64
 
 func DefaultConfig() Config {
 	return Config{
@@ -288,21 +290,88 @@ func (e *Engine) candidatesLocked() []Candidate {
 
 func (e *Engine) lookupLocked(reading string) []Entry {
 	reading = normalizeReading(reading)
-	exact := append([]Entry{}, e.dict[reading]...)
+	var exact []Entry
+	seen := map[string]int{}
+	appendEntries := func(entries []Entry, penalty int) {
+		for _, entry := range entries {
+			if entry.Text == "" {
+				continue
+			}
+			next := entry
+			if penalty > 0 {
+				next.Weight = max(1, next.Weight-penalty)
+			}
+			key := next.Text + "\x00" + next.Kind + "\x00" + next.Source
+			if previous, ok := seen[key]; ok {
+				if next.Weight > exact[previous].Weight {
+					exact[previous] = next
+				}
+				continue
+			}
+			seen[key] = len(exact)
+			exact = append(exact, next)
+		}
+	}
+
+	appendEntries(e.dict[reading], 0)
+	for _, variant := range e.fuzzyReadingsLocked(reading) {
+		appendEntries(e.dict[variant], fuzzyCandidatePenalty)
+	}
 	if len(exact) > 0 {
 		return exact
 	}
 
-	prefixMatches := append([]Entry{}, e.prefix[reading]...)
-	if len(prefixMatches) > 0 {
-		return prefixMatches
+	seen = map[string]int{}
+	appendEntries(e.prefix[reading], 0)
+	for _, variant := range e.fuzzyReadingsLocked(reading) {
+		appendEntries(e.prefix[variant], fuzzyCandidatePenalty)
+	}
+	if len(exact) > 0 {
+		return exact
 	}
 
-	segmented := e.segmentGreedyLocked(reading)
-	if segmented != "" && segmented != reading {
-		return []Entry{{Reading: reading, Text: segmented, Weight: 3000}}
+	for _, variant := range append([]string{reading}, e.fuzzyReadingsLocked(reading)...) {
+		segmented := e.segmentGreedyLocked(variant)
+		if segmented != "" && segmented != reading {
+			penalty := 0
+			if variant != reading {
+				penalty = fuzzyCandidatePenalty
+			}
+			return []Entry{{Reading: variant, Text: segmented, Weight: max(1, 3000-penalty)}}
+		}
 	}
 	return nil
+}
+
+func (e *Engine) fuzzyReadingsLocked(reading string) []string {
+	rules := fuzzyRules(e.config.FuzzyInitials)
+	if len(rules) == 0 || reading == "" {
+		return nil
+	}
+	seen := map[string]bool{reading: true}
+	queue := []string{reading}
+	var out []string
+	for head := 0; head < len(queue) && len(seen) < fuzzyVariantLimit; head++ {
+		current := queue[head]
+		for _, rule := range rules {
+			for start := 0; start < len(current) && len(seen) < fuzzyVariantLimit; {
+				index := strings.Index(current[start:], rule.from)
+				if index < 0 {
+					break
+				}
+				index += start
+				next := current[:index] + rule.to + current[index+len(rule.from):]
+				start = index + len(rule.to)
+				if next == "" || seen[next] || len(next) > e.maxReadingLen+4 {
+					continue
+				}
+				seen[next] = true
+				queue = append(queue, next)
+				out = append(out, next)
+			}
+		}
+	}
+	return out
 }
 
 func (e *Engine) segmentGreedyLocked(reading string) string {
@@ -341,6 +410,39 @@ func normalizeReading(input string) string {
 		}
 	}
 	return builder.String()
+}
+
+type fuzzyRule struct {
+	from string
+	to   string
+}
+
+func fuzzyRules(items []string) []fuzzyRule {
+	seen := map[string]bool{}
+	var rules []fuzzyRule
+	for _, item := range items {
+		parts := strings.SplitN(item, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		left := normalizeReading(parts[0])
+		right := normalizeReading(parts[1])
+		if left == "" || right == "" || left == right {
+			continue
+		}
+		for _, pair := range [][2]string{{left, right}, {right, left}} {
+			key := pair[0] + "=" + pair[1]
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			rules = append(rules, fuzzyRule{from: pair[0], to: pair[1]})
+		}
+	}
+	sort.SliceStable(rules, func(i, j int) bool {
+		return len(rules[i].from) > len(rules[j].from)
+	})
+	return rules
 }
 
 func sortEntries(entries []Entry) {

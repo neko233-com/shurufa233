@@ -436,7 +436,8 @@ class CandidateWindow {
     pageHandler_ = handler;
   }
 
-  void Show(const std::string &payload, int selectedIndex, int pageStart, int totalCount) {
+  void Show(const std::string &payload, int selectedIndex, int pageStart, int totalCount,
+            const std::wstring &compositionText) {
     candidates_ = ParseCandidates(payload);
     if (candidates_.empty()) {
       Hide();
@@ -448,7 +449,7 @@ class CandidateWindow {
     selectedIndex_ = max(0, min(selectedIndex, static_cast<int>(candidates_.size()) - 1));
     pageStart_ = max(0, pageStart);
     totalCount_ = max(static_cast<int>(candidates_.size()), totalCount);
-    composing_ = CompositionText();
+    composing_ = compositionText.empty() ? CompositionText() : compositionText;
     EnsureWindow();
     RefreshDpi();
     RefreshSkin();
@@ -2143,7 +2144,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       cachedCandidateCount_ = 0;
       return;
     }
-    candidateWindow_.Show(candidates, selectedIndex_ - pageOffset_, pageOffset_, count);
+    candidateWindow_.Show(candidates, selectedIndex_ - pageOffset_, pageOffset_, count,
+                          Utf8ToWide(rawBuffer_.c_str()));
   }
 
   void MoveSelection(int delta) {

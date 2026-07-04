@@ -207,7 +207,7 @@ func getSession(id uint64) *engine.Engine {
 }
 
 func newEngine() *engine.Engine {
-	session := engine.New(engine.DefaultConfig())
+	session := engine.New(loadConfig())
 	for _, entry := range loadLocalDictionaryEntries() {
 		session.AddEntries(entry)
 	}
