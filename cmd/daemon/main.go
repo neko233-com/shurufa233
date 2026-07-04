@@ -213,6 +213,7 @@ func (s *AppState) putConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	next = normalizeConfig(next)
 	s.config = next
 	s.engine.Configure(next)
 	for _, session := range s.sessions {
@@ -338,6 +339,9 @@ func (s *AppState) sessionForRequest(r *http.Request) *engine.Engine {
 	if session == nil {
 		session = engine.New(s.config)
 		session.ImportUserScores(s.loadUserScores())
+		if err := s.loadLocalDictionariesIntoLocked(session); err != nil {
+			log.Printf("warning: could not load dictionaries into session %s: %v", id, err)
+		}
 		s.sessions[id] = session
 	}
 	return session
@@ -455,7 +459,7 @@ func (s *AppState) applyUpdates(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		loaded, err := s.engine.LoadDictionary(strings.NewReader(string(data)))
+		loaded, err := s.loadDictionaryIntoSessionsLocked(data)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
@@ -560,7 +564,7 @@ func (s *AppState) dictionaryURLs(rawURL string) []string {
 	return urls
 }
 
-func (s *AppState) loadLocalDictionariesLocked() error {
+func (s *AppState) loadLocalDictionariesIntoLocked(target *engine.Engine) error {
 	dir := s.dictionaryDir()
 	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
 	if err != nil {
@@ -577,7 +581,7 @@ func (s *AppState) loadLocalDictionariesLocked() error {
 		if err != nil {
 			return err
 		}
-		_, loadErr := s.engine.LoadDictionary(f)
+		_, loadErr := target.LoadDictionary(f)
 		closeErr := f.Close()
 		if loadErr != nil {
 			return loadErr
@@ -587,6 +591,26 @@ func (s *AppState) loadLocalDictionariesLocked() error {
 		}
 	}
 	return nil
+}
+
+func (s *AppState) loadLocalDictionariesLocked() error {
+	return s.loadLocalDictionariesIntoLocked(s.engine)
+}
+
+func (s *AppState) loadDictionaryIntoSessionsLocked(data []byte) (engine.DictionaryFile, error) {
+	loaded, err := s.engine.LoadDictionary(strings.NewReader(string(data)))
+	if err != nil {
+		return engine.DictionaryFile{}, err
+	}
+	for id, session := range s.sessions {
+		if session == nil || session == s.engine {
+			continue
+		}
+		if _, err := session.LoadDictionary(strings.NewReader(string(data))); err != nil {
+			return engine.DictionaryFile{}, fmt.Errorf("load dictionary into session %s: %w", id, err)
+		}
+	}
+	return loaded, nil
 }
 
 func isDictionaryMetadataFile(name string) bool {

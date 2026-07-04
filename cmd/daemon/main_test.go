@@ -1,9 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/neko233-com/shurufa233/core/engine"
 )
 
 func TestIsAllowedLocalOrigin(t *testing.T) {
@@ -45,5 +51,73 @@ func TestWithCORSPreflightAllowsLoopbackVite(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://127.0.0.1:5173" {
 		t.Fatalf("Access-Control-Allow-Origin = %q", got)
+	}
+}
+
+func TestPutConfigNormalizesCandidatePool(t *testing.T) {
+	state := &AppState{
+		config:   engine.DefaultConfig(),
+		engine:   engine.New(engine.DefaultConfig()),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	state.sessions["default"] = state.engine
+
+	next := engine.DefaultConfig()
+	next.MaxCandidates = 7
+	body, err := json.Marshal(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/config", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	state.putConfig(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if state.config.MaxCandidates != engine.DefaultConfig().MaxCandidates {
+		t.Fatalf("maxCandidates = %d, want %d", state.config.MaxCandidates, engine.DefaultConfig().MaxCandidates)
+	}
+}
+
+func TestNewSessionLoadsLocalDictionaries(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "shurufa233", "config.json")
+	dictionaryDir := filepath.Join(filepath.Dir(configPath), "dictionaries")
+	if err := os.MkdirAll(dictionaryDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dictionary := `{
+		"language": "zh-CN",
+		"version": "test",
+		"entries": [
+			{ "reading": "shi", "text": "是", "weight": 16000 },
+			{ "reading": "shi", "text": "时", "weight": 11800 },
+			{ "reading": "shi", "text": "事", "weight": 10800 },
+			{ "reading": "shi", "text": "市", "weight": 9800 },
+			{ "reading": "shi", "text": "使", "weight": 9400 },
+			{ "reading": "shi", "text": "试", "weight": 9300 },
+			{ "reading": "shi", "text": "十", "weight": 9000 },
+			{ "reading": "shi", "text": "识", "weight": 8600 }
+		]
+	}`
+	if err := os.WriteFile(filepath.Join(dictionaryDir, "zh-CN.test.json"), []byte(dictionary), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	state := &AppState{
+		sessions: map[string]*engine.Engine{},
+		path:     configPath,
+	}
+	if err := state.load(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/ime/key?session=tsf-test", nil)
+	session := state.sessionForRequest(req)
+	got := session.Preview("shi")
+	if len(got.Candidates) < 8 {
+		t.Fatalf("expected local dictionary candidates in new session, got %#v", got.Candidates)
 	}
 }
