@@ -115,6 +115,16 @@ func main() {
 	mux.HandleFunc("GET /ime/candidates", state.withCORS(state.imeCandidates))
 	mux.HandleFunc("GET /ime/skin", state.withCORS(state.imeSkin))
 	mux.HandleFunc("POST /agent/compose", state.withCORS(state.agentCompose))
+	if settingsDir := settingsStaticDir(); settingsDir != "" {
+		fileServer := http.StripPrefix("/settings/", http.FileServer(http.Dir(settingsDir)))
+		mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/settings/", http.StatusMovedPermanently)
+		})
+		mux.Handle("GET /settings/", fileServer)
+		log.Printf("settings UI serving from %s at http://%s/settings/", settingsDir, listenAddr)
+	} else {
+		log.Printf("settings UI static files not found; build apps/settings before packaging")
+	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
@@ -133,6 +143,28 @@ func main() {
 	}
 	log.Printf("shurufa233 daemon listening on http://%s", listenAddr)
 	log.Fatal(server.ListenAndServe())
+}
+
+func settingsStaticDir() string {
+	candidates := make([]string, 0, 3)
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "settings"))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(cwd, "settings"),
+			filepath.Join(cwd, "apps", "settings", "dist"),
+		)
+	}
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if info, err := os.Stat(filepath.Join(candidate, "index.html")); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func (s *AppState) load() error {

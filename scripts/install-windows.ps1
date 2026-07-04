@@ -329,7 +329,7 @@ $NativeArch = Get-CurrentNativeArch
 $GoArch = Get-CurrentGoArch
 
 if (-not $SkipBuild -and -not $RegisterOnly) {
-  & (Join-Path $Root "scripts\build-windows.ps1") -GoArch @($GoArch) -NativeArch @($NativeArch) -SkipFrontend
+  & (Join-Path $Root "scripts\build-windows.ps1") -GoArch @($GoArch) -NativeArch @($NativeArch)
 }
 
 $DaemonSource = Join-Path $Root "build\windows\go-$GoArch\shurufa-daemon.exe"
@@ -338,6 +338,7 @@ $CoreSource = Join-Path $Root "build\windows\go-$GoArch\shurufa_core.dll"
 $TsfSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233Tsf.dll"
 $ProfileCtlSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233ProfileCtl.exe"
 $SmokeEditSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233SmokeEdit.exe"
+$SettingsSource = Join-Path $Root "apps\settings\dist"
 
 if (-not $RegisterOnly) {
   foreach ($Path in @($DaemonSource, $CliSource, $TsfSource, $ProfileCtlSource, $SmokeEditSource)) {
@@ -375,6 +376,14 @@ if (-not $RegisterOnly) {
   }
   Copy-Item -Force $ProfileCtlSource (Join-Path $InstallDir "Shurufa233ProfileCtl.exe")
   Copy-Item -Force $SmokeEditSource (Join-Path $InstallDir "Shurufa233SmokeEdit.exe")
+  if (Test-Path (Join-Path $SettingsSource "index.html")) {
+    $SettingsInstallDir = Join-Path $InstallDir "settings"
+    Remove-Item -LiteralPath $SettingsInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $SettingsInstallDir | Out-Null
+    Copy-Item -Force -Recurse (Join-Path $SettingsSource "*") $SettingsInstallDir
+  } else {
+    Write-Warning "Settings UI build was not found at $SettingsSource; daemon /settings/ will be unavailable."
+  }
 
   $BundledDictionaryDir = Join-Path $Root "data\dictionaries"
   if (Test-Path $BundledDictionaryDir) {
@@ -480,5 +489,6 @@ if (Test-Path $ProfileCtl) {
 Write-Host "Installed shurufa233 to $InstallDir"
 Write-Host "Registered $NativeArch TSF DLL for the current user."
 Write-Host "Daemon is configured for startup through HKCU Run."
+Write-Host "Settings UI is served at http://127.0.0.1:23333/settings/."
 Write-Host "Input performance lab installed at $(Join-Path $InstallDir 'Shurufa233SmokeEdit.exe')."
 Write-Host "Open Windows Settings > Time & language > Typing > Advanced keyboard settings to select shurufa233, or rerun with -ActivateProfile when testing."

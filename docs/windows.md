@@ -74,6 +74,7 @@ The installer:
 - copies daemon, CLI, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
 - copies `Shurufa233ProfileCtl.exe` for current-session enable/activate/probe operations
 - copies `Shurufa233SmokeEdit.exe` for native TSF and typing performance validation
+- copies the React settings UI bundle and serves it from `http://127.0.0.1:23333/settings/`
 - starts the daemon and verifies `http://127.0.0.1:23333/health`
 - registers the TSF DLL through UAC because TSF profiles live under HKLM
 - enables the profile for the current user
@@ -90,6 +91,14 @@ The installer does not steal the default input method. Use Windows' normal input
 During composition, shurufa233 follows the Microsoft IME-style two-line shape: the upper preedit line shows the current English/pinyin spelling, and the lower candidate strip shows Chinese candidates. Skin settings are scoped mainly to the lower candidate strip; the upper preedit line keeps a neutral system look for readability.
 
 The daemon writes local startup and update diagnostics to `%LOCALAPPDATA%\shurufa233-daemon.log`. If install-time health verification fails, the installer prints the most recent daemon log lines before stopping.
+
+Open the installed settings panel at:
+
+```text
+http://127.0.0.1:23333/settings/
+```
+
+The settings panel is served by the local daemon from the installed static bundle, so it does not require a Vite development server after installation.
 
 For focused development testing only, pass `-ActivateProfile`:
 

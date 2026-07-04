@@ -120,6 +120,13 @@ foreach ($NativeArch in $Arch) {
     Copy-Item -Force $CoreSource (Join-Path $Stage "build\windows\go-$GoArch\shurufa_core.dll")
   }
 
+  $SettingsDist = Join-Path $Root "apps\settings\dist"
+  if (-not (Test-Path (Join-Path $SettingsDist "index.html"))) {
+    throw "Missing settings UI build: $SettingsDist. Run scripts\build-windows.ps1 before packaging."
+  }
+  New-Item -ItemType Directory -Force (Join-Path $Stage "apps\settings\dist") | Out-Null
+  Copy-Item -Force -Recurse (Join-Path $SettingsDist "*") (Join-Path $Stage "apps\settings\dist")
+
   Copy-RequiredFile -Source (Join-Path $Root "scripts\install-windows.ps1") -Destination (Join-Path $Stage "scripts\install-windows.ps1")
   Copy-RequiredFile -Source (Join-Path $Root "scripts\uninstall-windows.ps1") -Destination (Join-Path $Stage "scripts\uninstall-windows.ps1")
   Copy-RequiredFile -Source (Join-Path $Root "docs\windows.md") -Destination (Join-Path $Stage "docs\windows.md")
