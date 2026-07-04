@@ -38,7 +38,8 @@ var nowFunc = time.Now
 
 func DefaultConfig() Config {
 	return Config{
-		MaxCandidates: 42,
+		MaxCandidates:     42,
+		CandidatePageSize: 7,
 		FuzzyInitials: []string{
 			"zh=z",
 			"ch=c",
@@ -77,6 +78,7 @@ func New(config Config) *Engine {
 	if config.MaxCandidates <= 0 {
 		config = DefaultConfig()
 	}
+	config.CandidatePageSize = normalizeCandidatePageSize(config.CandidatePageSize)
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
 	e := &Engine{
@@ -96,9 +98,23 @@ func (e *Engine) Configure(config Config) {
 	if config.MaxCandidates <= 0 {
 		config.MaxCandidates = DefaultConfig().MaxCandidates
 	}
+	config.CandidatePageSize = normalizeCandidatePageSize(config.CandidatePageSize)
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
 	e.config = config
+}
+
+func normalizeCandidatePageSize(value int) int {
+	if value <= 0 {
+		return DefaultConfig().CandidatePageSize
+	}
+	if value < 3 {
+		return 3
+	}
+	if value > 9 {
+		return 9
+	}
+	return value
 }
 
 func (e *Engine) AddEntries(entries []Entry) {

@@ -72,6 +72,7 @@ func TestPutConfigNormalizesCandidatePool(t *testing.T) {
 
 	next := engine.DefaultConfig()
 	next.MaxCandidates = 7
+	next.CandidatePageSize = 99
 	body, err := json.Marshal(next)
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +87,30 @@ func TestPutConfigNormalizesCandidatePool(t *testing.T) {
 	}
 	if state.config.MaxCandidates != engine.DefaultConfig().MaxCandidates {
 		t.Fatalf("maxCandidates = %d, want %d", state.config.MaxCandidates, engine.DefaultConfig().MaxCandidates)
+	}
+	if state.config.CandidatePageSize != 9 {
+		t.Fatalf("candidatePageSize = %d, want 9", state.config.CandidatePageSize)
+	}
+}
+
+func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.CandidatePageSize = 5
+	state := &AppState{config: config}
+	req := httptest.NewRequest(http.MethodGet, "/ime/skin", nil)
+	rec := httptest.NewRecorder()
+
+	state.imeSkin(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	parts := strings.Split(rec.Body.String(), "|")
+	if len(parts) != 10 {
+		t.Fatalf("skin payload parts = %#v", parts)
+	}
+	if parts[9] != "5" {
+		t.Fatalf("candidate page size payload = %q, want 5", parts[9])
 	}
 }
 

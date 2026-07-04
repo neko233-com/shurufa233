@@ -456,7 +456,7 @@ func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s|%s|%s|%s|%s|%s",
+	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s|%s|%s|%s|%s|%s|%d",
 		s.config.Skin.FontFamily,
 		s.config.Skin.FontSize,
 		s.config.Skin.Accent,
@@ -466,6 +466,7 @@ func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 		s.config.Skin.Border,
 		s.config.Skin.HighlightText,
 		s.config.Skin.Theme,
+		s.config.CandidatePageSize,
 	)
 }
 
@@ -1159,6 +1160,15 @@ func normalizeConfig(config engine.Config) engine.Config {
 	defaults := engine.DefaultConfig()
 	if config.MaxCandidates < defaults.MaxCandidates {
 		config.MaxCandidates = defaults.MaxCandidates
+	}
+	if config.CandidatePageSize <= 0 {
+		config.CandidatePageSize = defaults.CandidatePageSize
+	}
+	if config.CandidatePageSize < 3 {
+		config.CandidatePageSize = 3
+	}
+	if config.CandidatePageSize > 9 {
+		config.CandidatePageSize = 9
 	}
 	if config.Language == "" {
 		config.Language = defaults.Language

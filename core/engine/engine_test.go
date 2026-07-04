@@ -66,6 +66,21 @@ func TestSelectCandidateCharRejectsInvalidSide(t *testing.T) {
 	}
 }
 
+func TestCandidatePageSizeConfigIsClamped(t *testing.T) {
+	config := DefaultConfig()
+	config.CandidatePageSize = 99
+	e := New(config)
+	if e.config.CandidatePageSize != 9 {
+		t.Fatalf("candidate page size = %d, want 9", e.config.CandidatePageSize)
+	}
+
+	config.CandidatePageSize = 1
+	e.Configure(config)
+	if e.config.CandidatePageSize != 3 {
+		t.Fatalf("candidate page size = %d, want 3", e.config.CandidatePageSize)
+	}
+}
+
 func TestGreedySegmentation(t *testing.T) {
 	e := New(DefaultConfig())
 	state := e.Preview("womende")

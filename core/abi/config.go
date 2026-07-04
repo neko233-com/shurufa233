@@ -44,6 +44,15 @@ func normalizeConfig(config engine.Config) engine.Config {
 	if config.MaxCandidates <= 0 {
 		config.MaxCandidates = engine.DefaultConfig().MaxCandidates
 	}
+	if config.CandidatePageSize <= 0 {
+		config.CandidatePageSize = engine.DefaultConfig().CandidatePageSize
+	}
+	if config.CandidatePageSize < 3 {
+		config.CandidatePageSize = 3
+	}
+	if config.CandidatePageSize > 9 {
+		config.CandidatePageSize = 9
+	}
 	if config.Language == "" {
 		config.Language = engine.DefaultConfig().Language
 	}

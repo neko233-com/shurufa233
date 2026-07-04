@@ -34,6 +34,7 @@ type Skin = {
 
 type Config = {
   maxCandidates: number;
+  candidatePageSize: number;
   fuzzyInitials: string[];
   doublePinyin: boolean;
   doublePinyinScheme: "xiaohe" | "microsoft";
@@ -136,6 +137,7 @@ const apiBase = "http://127.0.0.1:23333";
 
 const defaultConfig: Config = {
   maxCandidates: 42,
+  candidatePageSize: 7,
   fuzzyInitials: ["zh=z", "ch=c", "sh=s"],
   doublePinyin: false,
   doublePinyinScheme: "xiaohe",
@@ -320,6 +322,24 @@ function wordbookEntries(scores: Record<string, number>): WordbookEntry[] {
     .sort((left, right) => right.score - left.score || left.key.localeCompare(right.key));
 }
 
+function hydrateConfig(config: Config): Config {
+  return {
+    ...defaultConfig,
+    ...config,
+    candidatePageSize: Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize)),
+    skin: {
+      ...defaultConfig.skin,
+      ...config.skin,
+    },
+    update: {
+      ...defaultConfig.update,
+      ...config.update,
+      manifestUrls: config.update?.manifestUrls ?? defaultConfig.update.manifestUrls,
+      mirrorBaseUrls: config.update?.mirrorBaseUrls ?? defaultConfig.update.mirrorBaseUrls,
+    },
+  };
+}
+
 function App() {
   const [config, setConfig] = useState<Config>(defaultConfig);
   const [preview, setPreview] = useState("nihao");
@@ -353,6 +373,7 @@ function App() {
   }, [preview]);
 
   const candidateCount = state?.candidates?.length ?? 0;
+  const candidatePageSize = Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize));
   const typingPrompt = useMemo(
     () => typingPrompts.find((prompt) => prompt.id === typingPromptId) ?? typingPrompts[0],
     [typingPromptId],
@@ -379,8 +400,8 @@ function App() {
       }) as CSSProperties,
     [config.skin],
   );
-  const previewCandidates = (state?.candidates ?? []).slice(0, 7);
-  const typingProbeCandidates = typingProbe.candidates.slice(0, 7);
+  const previewCandidates = (state?.candidates ?? []).slice(0, candidatePageSize);
+  const typingProbeCandidates = typingProbe.candidates.slice(0, candidatePageSize);
   const typingProbeKinds = useMemo(() => {
     const kinds = new Set(typingProbeCandidates.map((candidate) => candidate.kind).filter(Boolean));
     return Array.from(kinds)
@@ -495,7 +516,7 @@ function App() {
     try {
       const res = await fetch(`${apiBase}/config`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setConfig(await res.json());
+      setConfig(hydrateConfig(await res.json()));
       setStatus("ready");
       setError("");
     } catch (err) {
@@ -555,7 +576,7 @@ function App() {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setConfig(await res.json());
+      setConfig(hydrateConfig(await res.json()));
       setStatus("saved");
       window.setTimeout(() => setStatus("ready"), 1000);
       setError("");
@@ -796,6 +817,16 @@ function App() {
                 max={99}
                 value={config.maxCandidates}
                 onChange={(event) => setConfig({ ...config, maxCandidates: Number(event.target.value) })}
+              />
+            </label>
+            <label className="field">
+              <span>每页候选数</span>
+              <input
+                type="number"
+                min={3}
+                max={9}
+                value={candidatePageSize}
+                onChange={(event) => setConfig({ ...config, candidatePageSize: Number(event.target.value) })}
               />
             </label>
             <label className="toggle">

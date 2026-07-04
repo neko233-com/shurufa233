@@ -32,6 +32,10 @@ The settings UI uses this IPC directly in development. A Wails v3 shell can host
 ASCII punctuation while preserving candidate-first commit behavior during active
 composition.
 
+They also include `candidatePageSize`, which controls the visible candidates per
+page in the native strip and React previews. The default is `7`; values are
+clamped to `3..9` so number-key selection remains predictable.
+
 They also include `doublePinyin` and `doublePinyinScheme`. The scheme is
 normalized to `xiaohe` or `microsoft`; old configs with only
 `"doublePinyin": true` continue to use Xiaohe. The Microsoft scheme is kept
@@ -77,6 +81,10 @@ layer to sacrifice its current bracket paging shortcut.
 `display_index`, `text`, `reading`, `score`, `kind`, `source`, and `comment`.
 The final three fields are optional metadata; older six-column rows remain valid
 for clients that have not adopted candidate comments yet.
+
+`GET /ime/skin` returns a compact pipe-separated native-renderer payload:
+`fontFamily|fontSize|accent|surface|text|mutedText|border|highlightText|theme|candidatePageSize`.
+Older nine-field payloads are still treated as the default seven-candidate page.
 
 `POST /agent/compose` body:
 

@@ -33,7 +33,9 @@ const GUID kProfileGuid = {
 constexpr wchar_t kDescription[] = L"shurufa233";
 constexpr wchar_t kModel[] = L"Apartment";
 constexpr LANGID kLanguage = MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
-constexpr int kCandidatesPerPage = 7;
+constexpr int kDefaultCandidatesPerPage = 7;
+constexpr int kMinCandidatesPerPage = 3;
+constexpr int kMaxCandidatesPerPage = 9;
 constexpr DWORD kSkinConfigPollMs = 250;
 constexpr DWORD kHttpSkinPollMs = 2000;
 
@@ -537,6 +539,7 @@ class CandidateWindow {
   }
 
   void Show(const std::string &payload, int selectedIndex, int pageStart, int totalCount,
+            int pageSize,
             const std::wstring &compositionText) {
     candidates_ = ParseCandidates(payload);
     if (candidates_.empty()) {
@@ -548,6 +551,7 @@ class CandidateWindow {
     }
     selectedIndex_ = max(0, min(selectedIndex, static_cast<int>(candidates_.size()) - 1));
     pageStart_ = max(0, pageStart);
+    pageSize_ = max(kMinCandidatesPerPage, min(kMaxCandidatesPerPage, pageSize));
     totalCount_ = max(static_cast<int>(candidates_.size()), totalCount);
     composing_ = compositionText.empty() ? CompositionText() : compositionText;
     EnsureWindow();
@@ -788,6 +792,7 @@ class CandidateWindow {
   int selectedIndex_ = 0;
   int pageStart_ = 0;
   int totalCount_ = 0;
+  int pageSize_ = kDefaultCandidatesPerPage;
   POINT hoverGuardScreenPoint_{};
   bool hoverGuardArmed_ = false;
   std::wstring fontFamily_ = L"Microsoft YaHei UI";
@@ -923,7 +928,7 @@ class CandidateWindow {
     HDC dc = GetDC(hwnd_);
     HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
     int width = max(Scale(260), TextWidth(dc, composing_) + Scale(44));
-    for (size_t i = 0; i < candidates_.size() && i < kCandidatesPerPage; ++i) {
+    for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
       width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(6);
     }
     width += PageControlsWidth();
@@ -1101,6 +1106,7 @@ class CandidateWindow {
     size_t sixth = fifth == std::string::npos ? std::string::npos : skin.find('|', fifth + 1);
     size_t seventh = sixth == std::string::npos ? std::string::npos : skin.find('|', sixth + 1);
     size_t eighth = seventh == std::string::npos ? std::string::npos : skin.find('|', seventh + 1);
+    size_t ninth = eighth == std::string::npos ? std::string::npos : skin.find('|', eighth + 1);
     if (first == std::string::npos || second == std::string::npos || third == std::string::npos ||
         fourth == std::string::npos || fifth == std::string::npos || sixth == std::string::npos ||
         seventh == std::string::npos || eighth == std::string::npos) {
@@ -1122,7 +1128,11 @@ class CandidateWindow {
     mutedText_ = ParseColor(skin.substr(fifth + 1, sixth - fifth - 1));
     border_ = ParseColor(skin.substr(sixth + 1, seventh - sixth - 1));
     highlightText_ = ParseColor(skin.substr(seventh + 1, eighth - seventh - 1));
-    theme_ = skin.substr(eighth + 1);
+    theme_ = skin.substr(eighth + 1, ninth == std::string::npos ? std::string::npos : ninth - eighth - 1);
+    if (ninth != std::string::npos) {
+      pageSize_ = max(kMinCandidatesPerPage,
+                      min(kMaxCandidatesPerPage, atoi(skin.substr(ninth + 1).c_str())));
+    }
     return true;
   }
 
@@ -1157,13 +1167,17 @@ class CandidateWindow {
     const std::string border = JsonStringField(json, "border");
     const std::string highlightText = JsonStringField(json, "highlightText");
     const std::string theme = JsonStringField(json, "theme");
+    int pageSize = JsonIntField(json, "candidatePageSize");
+    if (pageSize <= 0) {
+      pageSize = kDefaultCandidatesPerPage;
+    }
     if (fontFamily.empty() || fontSize <= 0 || accent.empty() || surface.empty() ||
         text.empty() || mutedText.empty() || border.empty() || highlightText.empty()) {
       return false;
     }
     std::string payload = fontFamily + "|" + std::to_string(fontSize) + "|" + accent + "|" +
                           surface + "|" + text + "|" + mutedText + "|" + border + "|" +
-                          highlightText + "|" + theme;
+                          highlightText + "|" + theme + "|" + std::to_string(pageSize);
     if (!ApplySkinPayload(payload)) {
       return false;
     }
@@ -1353,7 +1367,7 @@ class CandidateWindow {
     const int itemHeight = max(Scale(34), ScaledFontSize() + Scale(20));
     const int candidateRight = HasPageControls() ? rect.right - PageControlsWidth() - Scale(8)
                                                  : rect.right - Scale(14);
-    for (size_t i = 0; i < candidates_.size() && i < kCandidatesPerPage; ++i) {
+    for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
       const CandidateView &candidate = candidates_[i];
       const bool selected = static_cast<int>(i) == selectedIndex_;
       const int itemWidth = CandidateItemWidth(dc, candidate, selected);
@@ -1927,7 +1941,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return S_OK;
     }
 
-    if (IsPageKey(key) && cachedCandidateCount_ > kCandidatesPerPage) {
+    if (IsPageKey(key) && cachedCandidateCount_ > CandidatePageSize()) {
       MovePage(CandidatePageDeltaForKey(key));
       *eaten = TRUE;
       return S_OK;
@@ -2060,11 +2074,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return;
     }
     selectedIndex_ = absoluteIndex;
-    pageOffset_ = (selectedIndex_ / kCandidatesPerPage) * kCandidatesPerPage;
+    pageOffset_ = (selectedIndex_ / CandidatePageSize()) * CandidatePageSize();
   }
 
   void OnCandidatePage(int delta) {
-    if (!session_ || cachedCandidateCount_ <= kCandidatesPerPage || delta == 0) {
+    if (!session_ || cachedCandidateCount_ <= CandidatePageSize() || delta == 0) {
       return;
     }
     MovePage(delta);
@@ -2121,8 +2135,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (key == VK_HOME || key == VK_END) {
       return cachedCandidateCount_ > 0;
     }
-    if (IsPageKey(key) && (!IsBracketPageKey(key) || cachedCandidateCount_ > kCandidatesPerPage)) {
-      return cachedCandidateCount_ > kCandidatesPerPage;
+    if (IsPageKey(key) && (!IsBracketPageKey(key) || cachedCandidateCount_ > CandidatePageSize())) {
+      return cachedCandidateCount_ > CandidatePageSize();
     }
     if (key == VK_SPACE || key == VK_RETURN) {
       return cachedCandidateCount_ > 0 || !rawBuffer_.empty();
@@ -2136,7 +2150,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
     if (IsCandidateNumberKey(key)) {
       const int relativeIndex = CandidateIndexFromKey(key);
-      return relativeIndex < kCandidatesPerPage &&
+      return relativeIndex < CandidatePageSize() &&
              cachedCandidateCount_ > pageOffset_ + relativeIndex;
     }
     return false;
@@ -2198,7 +2212,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
   std::string BuildCandidatePayloadFromCore(int count) {
-    const int pageCount = min(kCandidatesPerPage, max(0, count - pageOffset_));
+    const int pageCount = min(CandidatePageSize(), max(0, count - pageOffset_));
     if (g_core.candidatePayloadRange) {
       char *payload = g_core.candidatePayloadRange(session_, pageOffset_, pageCount);
       std::string result = payload ? payload : "";
@@ -2265,12 +2279,12 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (selectedIndex_ < 0) {
       selectedIndex_ = 0;
     }
-    pageOffset_ = (selectedIndex_ / kCandidatesPerPage) * kCandidatesPerPage;
+    pageOffset_ = (selectedIndex_ / CandidatePageSize()) * CandidatePageSize();
     std::string candidates;
     if (g_core.inProcess) {
       candidates = BuildCandidatePayloadFromCore(count);
     } else {
-      const int pageCount = min(kCandidatesPerPage, max(0, count - pageOffset_));
+      const int pageCount = min(CandidatePageSize(), max(0, count - pageOffset_));
       wchar_t path[120]{};
       StringCchPrintfW(path, ARRAYSIZE(path),
                        L"/ime/candidates?session=%llu&start=%d&limit=%d",
@@ -2286,6 +2300,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return;
     }
     candidateWindow_.Show(candidates, selectedIndex_ - pageOffset_, pageOffset_, count,
+                          CandidatePageSize(),
                           Utf8ToWide(rawBuffer_.c_str()));
   }
 
@@ -2309,11 +2324,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
 
   void MovePage(int delta) {
     const int count = cachedCandidateCount_;
-    if (count <= kCandidatesPerPage) {
+    if (count <= CandidatePageSize()) {
       return;
     }
-    const int lastPageOffset = ((count - 1) / kCandidatesPerPage) * kCandidatesPerPage;
-    int nextOffset = pageOffset_ + delta * kCandidatesPerPage;
+    const int lastPageOffset = ((count - 1) / CandidatePageSize()) * CandidatePageSize();
+    int nextOffset = pageOffset_ + delta * CandidatePageSize();
     if (nextOffset > lastPageOffset) {
       nextOffset = 0;
     } else if (nextOffset < 0) {
@@ -2322,6 +2337,10 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     pageOffset_ = nextOffset;
     selectedIndex_ = min(pageOffset_, count - 1);
     UpdateCandidateWindow();
+  }
+
+  int CandidatePageSize() const {
+    return max(kMinCandidatesPerPage, min(kMaxCandidatesPerPage, candidatePageSize_));
   }
 
   void ClearSession() {
@@ -2551,12 +2570,30 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     return json.compare(pos, 4, "true") == 0;
   }
 
+  static int JsonConfigIntField(const std::string &json, const char *field) {
+    const std::string key = std::string("\"") + field + "\"";
+    const size_t keyPos = json.find(key);
+    if (keyPos == std::string::npos) {
+      return 0;
+    }
+    const size_t colon = json.find(':', keyPos + key.size());
+    if (colon == std::string::npos) {
+      return 0;
+    }
+    size_t pos = colon + 1;
+    while (pos < json.size() && isspace(static_cast<unsigned char>(json[pos]))) {
+      ++pos;
+    }
+    return atoi(json.c_str() + pos);
+  }
+
   void RefreshTypingConfigFromConfig() {
     const std::wstring path = ConfigPath();
     if (path.empty()) {
       punctuationFullWidth_ = true;
       doublePinyinEnabled_ = false;
       microsoftDoublePinyin_ = false;
+      candidatePageSize_ = kDefaultCandidatesPerPage;
       return;
     }
     const DWORD now = GetTickCount();
@@ -2569,6 +2606,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       punctuationFullWidth_ = true;
       doublePinyinEnabled_ = false;
       microsoftDoublePinyin_ = false;
+      candidatePageSize_ = kDefaultCandidatesPerPage;
       return;
     }
     if (hasConfigWriteTime_ && SameConfigFileTime(lastConfigWriteTime_, attrs.ftLastWriteTime)) {
@@ -2579,6 +2617,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       punctuationFullWidth_ = true;
       doublePinyinEnabled_ = false;
       microsoftDoublePinyin_ = false;
+      candidatePageSize_ = kDefaultCandidatesPerPage;
       return;
     }
     const std::string punctuation = JsonConfigStringField(json, "punctuation");
@@ -2587,6 +2626,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     const std::string scheme = JsonConfigStringField(json, "doublePinyinScheme");
     microsoftDoublePinyin_ = doublePinyinEnabled_ &&
                              (scheme == "microsoft" || scheme == "ms" || scheme == "sogou");
+    int pageSize = JsonConfigIntField(json, "candidatePageSize");
+    if (pageSize <= 0) {
+      pageSize = kDefaultCandidatesPerPage;
+    }
+    candidatePageSize_ = max(kMinCandidatesPerPage, min(kMaxCandidatesPerPage, pageSize));
     lastConfigWriteTime_ = attrs.ftLastWriteTime;
     hasConfigWriteTime_ = true;
   }
@@ -2646,6 +2690,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   bool punctuationFullWidth_ = true;
   bool doublePinyinEnabled_ = false;
   bool microsoftDoublePinyin_ = false;
+  int candidatePageSize_ = kDefaultCandidatesPerPage;
   std::wstring configPath_;
   bool configPathResolved_ = false;
   DWORD lastLocalConfigCheckTick_ = 0;
