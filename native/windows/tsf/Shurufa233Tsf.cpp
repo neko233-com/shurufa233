@@ -535,14 +535,14 @@ class CandidateWindow {
 
     if (statusText_.empty() && !candidates_.empty()) {
       RECT candidateBand{rect.left, CandidateBandTop(), rect.right, rect.bottom};
-      HBRUSH candidateBg = CreateSolidBrush(surface_);
+      HBRUSH candidateBg = CreateSolidBrush(CandidateBandColor());
       FillRect(dc, &candidateBand, candidateBg);
       DeleteObject(candidateBg);
 
-      HPEN separator = CreatePen(PS_SOLID, 1, border_);
+      HPEN separator = CreatePen(PS_SOLID, 1, MixColor(border_, CandidateBandColor(), 28));
       HGDIOBJ oldSeparator = SelectObject(dc, separator);
-      MoveToEx(dc, rect.left + 10, candidateBand.top, nullptr);
-      LineTo(dc, rect.right - 10, candidateBand.top);
+      MoveToEx(dc, rect.left + 14, candidateBand.top, nullptr);
+      LineTo(dc, rect.right - 14, candidateBand.top);
       SelectObject(dc, oldSeparator);
       DeleteObject(separator);
     }
@@ -596,11 +596,11 @@ class CandidateWindow {
   int fontSizeKey_ = 0;
 
   int CandidateWindowHeight() const {
-    return max(76, fontSize_ * 2 + 48);
+    return max(82, fontSize_ * 2 + 56);
   }
 
   int CandidateBandTop() const {
-    return fontSize_ + 22;
+    return fontSize_ + 24;
   }
 
   HFONT EnsureFont() {
@@ -640,7 +640,7 @@ class CandidateWindow {
   int CandidateItemWidth(HDC dc, const CandidateView &candidate, bool selected) const {
     const int textWidth = TextWidth(dc, candidate.text);
     const int kindWidth = candidate.kind.empty() ? 0 : TextWidth(dc, CandidateKindLabel(candidate.kind)) + 18;
-    return max(62, min(260, 44 + textWidth + kindWidth));
+    return max(66, min(280, 48 + textWidth + kindWidth));
   }
 
   int MeasureWindowWidth() {
@@ -709,6 +709,25 @@ class CandidateWindow {
 
   COLORREF PreeditUnderlineColor() const {
     return theme_ == "dark" ? RGB(150, 150, 150) : RGB(95, 99, 104);
+  }
+
+  COLORREF CandidateBandColor() const {
+    const COLORREF base = theme_ == "dark" ? RGB(30, 32, 36) : RGB(255, 255, 255);
+    return MixColor(surface_, base, 18);
+  }
+
+  COLORREF CandidateIdleColor() const {
+    return theme_ == "dark" ? MixColor(surface_, RGB(255, 255, 255), 5)
+                            : MixColor(surface_, accent_, 4);
+  }
+
+  COLORREF CandidateIdleBorderColor() const {
+    return theme_ == "dark" ? MixColor(border_, RGB(255, 255, 255), 8)
+                            : MixColor(border_, surface_, 36);
+  }
+
+  COLORREF CandidateAccentEdgeColor() const {
+    return MixColor(accent_, RGB(255, 255, 255), theme_ == "dark" ? 18 : 10);
   }
 
   static COLORREF ParseColor(const std::string &value) {
@@ -805,12 +824,25 @@ class CandidateWindow {
     DeleteObject(accentPen);
   }
 
+  void DrawRoundedRect(HDC dc, const RECT &rect, COLORREF fill, COLORREF stroke,
+                       int radius) const {
+    HBRUSH brush = CreateSolidBrush(fill);
+    HPEN pen = CreatePen(PS_SOLID, 1, stroke);
+    HGDIOBJ oldBrush = SelectObject(dc, brush);
+    HGDIOBJ oldPen = SelectObject(dc, pen);
+    RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, radius, radius);
+    SelectObject(dc, oldPen);
+    SelectObject(dc, oldBrush);
+    DeleteObject(pen);
+    DeleteObject(brush);
+  }
+
   void DrawCandidates(HDC dc, const RECT &rect) {
     statusText_.clear();
     DrawComposition(dc, rect);
-    int x = rect.left + 14;
-    const int y = CandidateBandTop() + 7;
-    const int itemHeight = max(32, fontSize_ + 18);
+    int x = rect.left + 15;
+    const int y = CandidateBandTop() + 8;
+    const int itemHeight = max(34, fontSize_ + 20);
     for (size_t i = 0; i < candidates_.size() && i < kCandidatesPerPage; ++i) {
       const CandidateView &candidate = candidates_[i];
       const bool selected = static_cast<int>(i) == selectedIndex_;
@@ -818,42 +850,34 @@ class CandidateWindow {
       RECT itemRect{x, y, x + itemWidth, y + itemHeight};
 
       if (selected) {
-        HBRUSH selected = CreateSolidBrush(accent_);
-        HPEN selectedPen = CreatePen(PS_SOLID, 1, accent_);
-        HGDIOBJ oldBrush = SelectObject(dc, selected);
-        HGDIOBJ oldPen = SelectObject(dc, selectedPen);
-        RoundRect(dc, itemRect.left, itemRect.top, itemRect.right, itemRect.bottom, 10, 10);
-        SelectObject(dc, oldPen);
-        SelectObject(dc, oldBrush);
-        DeleteObject(selectedPen);
-        DeleteObject(selected);
+        RECT shadowRect{itemRect.left + 1, itemRect.top + 2, itemRect.right + 1, itemRect.bottom + 2};
+        DrawRoundedRect(dc, shadowRect, MixColor(CandidateBandColor(), accent_, 18),
+                        MixColor(CandidateBandColor(), accent_, 18), 12);
+        DrawRoundedRect(dc, itemRect, accent_, CandidateAccentEdgeColor(), 12);
+      } else {
+        DrawRoundedRect(dc, itemRect, CandidateIdleColor(), CandidateIdleBorderColor(), 12);
       }
 
       wchar_t number[8]{};
       StringCchPrintfW(number, ARRAYSIZE(number), L"%d", candidate.index);
       SetTextColor(dc, selected ? highlightText_ : mutedText_);
-      RECT numberRect{itemRect.left + 10, itemRect.top, itemRect.left + 28, itemRect.bottom};
+      RECT numberRect{itemRect.left + 10, itemRect.top, itemRect.left + 30, itemRect.bottom};
       DrawTextW(dc, number, -1, &numberRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
 
       SetTextColor(dc, selected ? highlightText_ : text_);
-      RECT textRect{itemRect.left + 28, itemRect.top, itemRect.right - 8, itemRect.bottom};
+      RECT textRect{itemRect.left + 30, itemRect.top, itemRect.right - 10, itemRect.bottom};
       const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
       if (!kindLabel.empty()) {
         const int badgeWidth = TextWidth(dc, kindLabel) + 14;
-        textRect.right = max(textRect.left + 24, itemRect.right - badgeWidth - 8);
-        RECT badgeRect{itemRect.right - badgeWidth - 6, itemRect.top + 7,
-                       itemRect.right - 6, itemRect.bottom - 7};
-        HBRUSH badgeBrush = CreateSolidBrush(selected ? MixColor(accent_, highlightText_, 20)
-                                                       : MixColor(surface_, accent_, 12));
-        HPEN badgePen = CreatePen(PS_SOLID, 1, selected ? MixColor(accent_, highlightText_, 20)
-                                                        : MixColor(border_, accent_, 20));
-        HGDIOBJ oldBadgeBrush = SelectObject(dc, badgeBrush);
-        HGDIOBJ oldBadgePen = SelectObject(dc, badgePen);
-        RoundRect(dc, badgeRect.left, badgeRect.top, badgeRect.right, badgeRect.bottom, 8, 8);
-        SelectObject(dc, oldBadgePen);
-        SelectObject(dc, oldBadgeBrush);
-        DeleteObject(badgePen);
-        DeleteObject(badgeBrush);
+        textRect.right = max(textRect.left + 24, itemRect.right - badgeWidth - 9);
+        RECT badgeRect{itemRect.right - badgeWidth - 7, itemRect.top + 7,
+                       itemRect.right - 7, itemRect.bottom - 7};
+        DrawRoundedRect(dc, badgeRect,
+                        selected ? MixColor(accent_, highlightText_, 22)
+                                 : MixColor(CandidateBandColor(), accent_, 10),
+                        selected ? MixColor(accent_, highlightText_, 28)
+                                 : MixColor(border_, accent_, 22),
+                        9);
         SetTextColor(dc, selected ? highlightText_ : mutedText_);
         DrawTextW(dc, kindLabel.c_str(), static_cast<int>(kindLabel.size()), &badgeRect,
                   DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS);
@@ -861,7 +885,7 @@ class CandidateWindow {
       }
       DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
                 DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
-      x += itemWidth + 6;
+      x += itemWidth + 7;
       if (x > rect.right - 40) {
         break;
       }
@@ -878,7 +902,7 @@ class CandidateWindow {
     wchar_t label[32]{};
     StringCchPrintfW(label, ARRAYSIZE(label), L"%d-%d/%d", first, last, totalCount_);
     SetTextColor(dc, mutedText_);
-    RECT labelRect{max(rect.left + 12, rect.right - 96), CandidateBandTop() + 7,
+    RECT labelRect{max(rect.left + 12, rect.right - 96), CandidateBandTop() + 8,
                    rect.right - 14, rect.bottom - 8};
     DrawTextW(dc, label, -1, &labelRect, DT_SINGLELINE | DT_VCENTER | DT_RIGHT);
   }

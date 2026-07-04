@@ -422,12 +422,32 @@ function App() {
                 />
               </label>
               <label className="colorField">
+                <span>次要文字</span>
+                <input
+                  type="color"
+                  value={config.skin.mutedText}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, mutedText: event.target.value, theme: "custom" } })
+                  }
+                />
+              </label>
+              <label className="colorField">
                 <span>边框</span>
                 <input
                   type="color"
                   value={config.skin.border}
                   onChange={(event) =>
                     setConfig({ ...config, skin: { ...config.skin, border: event.target.value, theme: "custom" } })
+                  }
+                />
+              </label>
+              <label className="colorField">
+                <span>高亮文字</span>
+                <input
+                  type="color"
+                  value={config.skin.highlightText}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, highlightText: event.target.value, theme: "custom" } })
                   }
                 />
               </label>
