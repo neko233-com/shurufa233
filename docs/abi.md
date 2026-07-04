@@ -143,7 +143,7 @@ It also includes `schema`, a stable Rime-style scheme id such as
 lists the built-in scheme table, while `ShurufaApplySchemaJSON({"id":"..."})`
 expands a preset into the shared config fields that the native TSF layer already
 understands (`doublePinyin`, `doublePinyinScheme`, `candidateLayout`,
-`showCandidateComments`, punctuation, fuzzy initials, and dictionary source
+`showCandidateComments`, punctuation, fuzzy initials, key behavior profile, and dictionary source
 preference). This keeps new schemes in Go/config instead of requiring another
 C++ export on developer machines that only consume packaged builds.
 
@@ -155,7 +155,7 @@ C++ export on developer machines that only consume packaged builds.
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
 `candidate-comments`, `association-candidates`, `candidate-action-json`, and
-`extension-command-json`.
+`extension-command-json`, and `key-behavior-config`.
 
 `ShurufaAssociate(session, {"context":"你好","limit":7})` returns a normal state
 object with post-commit association candidates. The same behavior is available
@@ -294,7 +294,7 @@ experiments:
 in-process sessions. `ShurufaReloadConfig` reloads `%APPDATA%\shurufa233\config.json`
 or `SHURUFA233_CONFIG` and applies it to active sessions. Use these for skin,
 candidate count, visible candidate page size, candidate layout, fuzzy initials,
-double pinyin scheme, punctuation, update-channel, and mode changes that should
+double pinyin scheme, punctuation, key behavior profile, update-channel, and mode changes that should
 be visible without reinstalling the TSF DLL.
 
 `ShurufaReloadDictionaries` reloads local `.json` and `.json.gz` dictionary

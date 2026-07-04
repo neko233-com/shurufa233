@@ -583,6 +583,37 @@ func TestDefaultConfigShowsCandidateComments(t *testing.T) {
 	}
 }
 
+func TestKeyBehaviorProfilesNormalize(t *testing.T) {
+	wechat := NormalizeKeyBehavior(Config{KeyProfile: "wechat"})
+	if !wechat.ShiftToggleMode || !wechat.SemicolonQuickSelect || !wechat.QuoteQuickSelect ||
+		!wechat.BracketPageKeys || !wechat.MinusEqualPageKeys || wechat.CommaPeriodPageKeys {
+		t.Fatalf("wechat key behavior = %#v", wechat)
+	}
+
+	rime := NormalizeKeyBehavior(Config{KeyProfile: "rime"})
+	if !rime.ShiftToggleMode || rime.SemicolonQuickSelect || rime.QuoteQuickSelect ||
+		!rime.BracketPageKeys || !rime.MinusEqualPageKeys || !rime.CommaPeriodPageKeys {
+		t.Fatalf("rime key behavior = %#v", rime)
+	}
+
+	custom := NormalizeKeyBehavior(Config{
+		KeyProfile:          "custom",
+		BracketPageKeys:     true,
+		CommaPeriodPageKeys: true,
+	})
+	if custom.ShiftToggleMode || custom.SemicolonQuickSelect || custom.QuoteQuickSelect ||
+		!custom.BracketPageKeys || custom.MinusEqualPageKeys || !custom.CommaPeriodPageKeys {
+		t.Fatalf("custom key behavior = %#v", custom)
+	}
+}
+
+func TestKeyBehaviorCanBeDerivedFromSchema(t *testing.T) {
+	config := NormalizeKeyBehavior(Config{Schema: "rime-luna-pinyin"})
+	if config.KeyProfile != "rime" || !config.CommaPeriodPageKeys || config.SemicolonQuickSelect {
+		t.Fatalf("schema-derived key behavior = %#v", config)
+	}
+}
+
 func TestFuzzyInitialsExpandCandidates(t *testing.T) {
 	e := New(DefaultConfig())
 

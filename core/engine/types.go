@@ -16,6 +16,13 @@ type Config struct {
 	Punctuation           string   `json:"punctuation"`
 	Script                string   `json:"script"`
 	Associations          bool     `json:"associations"`
+	KeyProfile            string   `json:"keyProfile"`
+	ShiftToggleMode       bool     `json:"shiftToggleMode"`
+	SemicolonQuickSelect  bool     `json:"semicolonQuickSelect"`
+	QuoteQuickSelect      bool     `json:"quoteQuickSelect"`
+	BracketPageKeys       bool     `json:"bracketPageKeys"`
+	MinusEqualPageKeys    bool     `json:"minusEqualPageKeys"`
+	CommaPeriodPageKeys   bool     `json:"commaPeriodPageKeys"`
 	Skin                  Skin     `json:"skin"`
 	Update                Update   `json:"update"`
 }
@@ -122,6 +129,13 @@ type SchemaPreset struct {
 	DoublePinyinScheme     string   `json:"doublePinyinScheme,omitempty"`
 	FuzzyInitials          []string `json:"fuzzyInitials,omitempty"`
 	Punctuation            string   `json:"punctuation,omitempty"`
+	KeyProfile             string   `json:"keyProfile,omitempty"`
+	ShiftToggleMode        bool     `json:"shiftToggleMode"`
+	SemicolonQuickSelect   bool     `json:"semicolonQuickSelect"`
+	QuoteQuickSelect       bool     `json:"quoteQuickSelect"`
+	BracketPageKeys        bool     `json:"bracketPageKeys"`
+	MinusEqualPageKeys     bool     `json:"minusEqualPageKeys"`
+	CommaPeriodPageKeys    bool     `json:"commaPeriodPageKeys"`
 	CandidateLayout        string   `json:"candidateLayout,omitempty"`
 	ShowCandidateComments  bool     `json:"showCandidateComments"`
 	DictionarySourcePreset string   `json:"dictionarySourcePreset,omitempty"`

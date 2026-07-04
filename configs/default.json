@@ -12,6 +12,13 @@
   "punctuation": "full",
   "script": "simplified",
   "associations": true,
+  "keyProfile": "wechat",
+  "shiftToggleMode": true,
+  "semicolonQuickSelect": true,
+  "quoteQuickSelect": true,
+  "bracketPageKeys": true,
+  "minusEqualPageKeys": true,
+  "commaPeriodPageKeys": false,
   "skin": {
     "fontFamily": "Microsoft YaHei UI",
     "fontSize": 15,

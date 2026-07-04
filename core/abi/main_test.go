@@ -138,6 +138,25 @@ func TestLoadConfigKeepsDoublePinyinScheme(t *testing.T) {
 	}
 }
 
+func TestLoadConfigKeepsKeyBehaviorProfile(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("SHURUFA233_CONFIG", configPath)
+	config := engine.DefaultConfig()
+	config.KeyProfile = "rime"
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := loadConfig()
+	if got.KeyProfile != "rime" || !got.CommaPeriodPageKeys || got.SemicolonQuickSelect {
+		t.Fatalf("key behavior config = %#v", got)
+	}
+}
+
 func TestPersistUserScoresAsync(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "user-scores.json")
 	t.Setenv("SHURUFA233_USER_SCORES", path)
@@ -321,6 +340,15 @@ func TestCapabilitiesIncludeDictionarySourcePresets(t *testing.T) {
 		}
 	}
 	t.Fatalf("capabilities missing dictionary-source-presets: %#v", abiFeatureList)
+}
+
+func TestCapabilitiesIncludeKeyBehaviorConfig(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "key-behavior-config" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing key-behavior-config: %#v", abiFeatureList)
 }
 
 func TestPreviewPreservesPinyinSeparatorCandidate(t *testing.T) {

@@ -50,6 +50,13 @@ type Config = {
   punctuation: "full" | "half";
   script: "simplified" | "traditional";
   associations: boolean;
+  keyProfile: "wechat" | "microsoft" | "rime" | "custom";
+  shiftToggleMode: boolean;
+  semicolonQuickSelect: boolean;
+  quoteQuickSelect: boolean;
+  bracketPageKeys: boolean;
+  minusEqualPageKeys: boolean;
+  commaPeriodPageKeys: boolean;
   skin: Skin;
   update: UpdateConfig;
 };
@@ -131,6 +138,7 @@ type SchemaPreset = {
   doublePinyinScheme?: Config["doublePinyinScheme"];
   fuzzyInitials?: string[];
   punctuation?: Config["punctuation"];
+  keyProfile?: Config["keyProfile"];
   candidateLayout?: Config["candidateLayout"];
   showCandidateComments: boolean;
   dictionarySourcePreset?: string;
@@ -296,6 +304,13 @@ const defaultConfig: Config = {
   punctuation: "full",
   script: "simplified",
   associations: true,
+  keyProfile: "wechat",
+  shiftToggleMode: true,
+  semicolonQuickSelect: true,
+  quoteQuickSelect: true,
+  bracketPageKeys: true,
+  minusEqualPageKeys: true,
+  commaPeriodPageKeys: false,
   skin: {
     fontFamily: "Microsoft YaHei UI",
     fontSize: 15,
@@ -501,6 +516,13 @@ function hydrateConfig(config: Config): Config {
     candidateLayout: normalizeCandidateLayout(config.candidateLayout),
     script: normalizeScript(config.script),
     associations: config.associations ?? defaultConfig.associations,
+    keyProfile: normalizeKeyProfile(config.keyProfile),
+    shiftToggleMode: config.shiftToggleMode ?? defaultConfig.shiftToggleMode,
+    semicolonQuickSelect: config.semicolonQuickSelect ?? defaultConfig.semicolonQuickSelect,
+    quoteQuickSelect: config.quoteQuickSelect ?? defaultConfig.quoteQuickSelect,
+    bracketPageKeys: config.bracketPageKeys ?? defaultConfig.bracketPageKeys,
+    minusEqualPageKeys: config.minusEqualPageKeys ?? defaultConfig.minusEqualPageKeys,
+    commaPeriodPageKeys: config.commaPeriodPageKeys ?? defaultConfig.commaPeriodPageKeys,
     showCandidateComments: config.showCandidateComments ?? defaultConfig.showCandidateComments,
     skin: {
       ...defaultConfig.skin,
@@ -522,6 +544,39 @@ function normalizeCandidateLayout(layout?: string): Config["candidateLayout"] {
 
 function normalizeScript(script?: string): Config["script"] {
   return script === "traditional" ? "traditional" : "simplified";
+}
+
+function normalizeKeyProfile(profile?: string): Config["keyProfile"] {
+  if (profile === "microsoft" || profile === "rime" || profile === "custom") return profile;
+  return "wechat";
+}
+
+function applyKeyProfileConfig(config: Config, profile: Config["keyProfile"]): Config {
+  if (profile === "custom") {
+    return { ...config, keyProfile: "custom" };
+  }
+  if (profile === "rime") {
+    return {
+      ...config,
+      keyProfile: "rime",
+      shiftToggleMode: true,
+      semicolonQuickSelect: false,
+      quoteQuickSelect: false,
+      bracketPageKeys: true,
+      minusEqualPageKeys: true,
+      commaPeriodPageKeys: true,
+    };
+  }
+  return {
+    ...config,
+    keyProfile: profile,
+    shiftToggleMode: true,
+    semicolonQuickSelect: true,
+    quoteQuickSelect: true,
+    bracketPageKeys: true,
+    minusEqualPageKeys: true,
+    commaPeriodPageKeys: false,
+  };
 }
 
 function App() {
@@ -1527,6 +1582,76 @@ function App() {
               >
                 繁体输出
               </button>
+            </div>
+            <div className="segmented three">
+              <button
+                className={(config.keyProfile ?? "wechat") === "wechat" ? "selected" : ""}
+                onClick={() => setConfig(applyKeyProfileConfig(config, "wechat"))}
+              >
+                微信键位
+              </button>
+              <button
+                className={config.keyProfile === "rime" ? "selected" : ""}
+                onClick={() => setConfig(applyKeyProfileConfig(config, "rime"))}
+              >
+                Rime 键位
+              </button>
+              <button
+                className={config.keyProfile === "custom" ? "selected" : ""}
+                onClick={() => setConfig(applyKeyProfileConfig(config, "custom"))}
+              >
+                自定义
+              </button>
+            </div>
+            <div className="toggleGrid">
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.shiftToggleMode}
+                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", shiftToggleMode: event.target.checked })}
+                />
+                <span>Shift 切中英</span>
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.semicolonQuickSelect}
+                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", semicolonQuickSelect: event.target.checked })}
+                />
+                <span>; 选二候选</span>
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.quoteQuickSelect}
+                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", quoteQuickSelect: event.target.checked })}
+                />
+                <span>' 选三候选</span>
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.bracketPageKeys}
+                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", bracketPageKeys: event.target.checked })}
+                />
+                <span>[] 翻页</span>
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.minusEqualPageKeys}
+                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", minusEqualPageKeys: event.target.checked })}
+                />
+                <span>-= 翻页</span>
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.commaPeriodPageKeys}
+                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", commaPeriodPageKeys: event.target.checked })}
+                />
+                <span>,. 翻页</span>
+              </label>
             </div>
             <label className="field">
               <span>语言词库</span>

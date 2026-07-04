@@ -13,6 +13,13 @@ var builtinSchemaPresets = []SchemaPreset{
 		DoublePinyin:          false,
 		FuzzyInitials:         []string{"zh=z", "ch=c", "sh=s"},
 		Punctuation:           "full",
+		KeyProfile:            "wechat",
+		ShiftToggleMode:       true,
+		SemicolonQuickSelect:  true,
+		QuoteQuickSelect:      true,
+		BracketPageKeys:       true,
+		MinusEqualPageKeys:    true,
+		CommaPeriodPageKeys:   false,
 		CandidateLayout:       "horizontal",
 		ShowCandidateComments: true,
 	},
@@ -27,6 +34,13 @@ var builtinSchemaPresets = []SchemaPreset{
 		DoublePinyin:           false,
 		FuzzyInitials:          []string{"zh=z", "ch=c", "sh=s"},
 		Punctuation:            "full",
+		KeyProfile:             "rime",
+		ShiftToggleMode:        true,
+		SemicolonQuickSelect:   false,
+		QuoteQuickSelect:       false,
+		BracketPageKeys:        true,
+		MinusEqualPageKeys:     true,
+		CommaPeriodPageKeys:    true,
 		CandidateLayout:        "vertical",
 		ShowCandidateComments:  true,
 		DictionarySourcePreset: "rime-luna-pinyin-source",
@@ -42,6 +56,13 @@ var builtinSchemaPresets = []SchemaPreset{
 		DoublePinyin:           false,
 		FuzzyInitials:          []string{"zh=z", "ch=c", "sh=s"},
 		Punctuation:            "full",
+		KeyProfile:             "rime",
+		ShiftToggleMode:        true,
+		SemicolonQuickSelect:   false,
+		QuoteQuickSelect:       false,
+		BracketPageKeys:        true,
+		MinusEqualPageKeys:     true,
+		CommaPeriodPageKeys:    true,
 		CandidateLayout:        "horizontal",
 		ShowCandidateComments:  true,
 		DictionarySourcePreset: "rime-ice-source",
@@ -58,6 +79,13 @@ var builtinSchemaPresets = []SchemaPreset{
 		DoublePinyinScheme:    "xiaohe",
 		FuzzyInitials:         []string{"zh=z", "ch=c", "sh=s"},
 		Punctuation:           "full",
+		KeyProfile:            "rime",
+		ShiftToggleMode:       true,
+		SemicolonQuickSelect:  false,
+		QuoteQuickSelect:      false,
+		BracketPageKeys:       true,
+		MinusEqualPageKeys:    true,
+		CommaPeriodPageKeys:   true,
 		CandidateLayout:       "horizontal",
 		ShowCandidateComments: true,
 	},
@@ -72,6 +100,13 @@ var builtinSchemaPresets = []SchemaPreset{
 		DoublePinyinScheme:    "microsoft",
 		FuzzyInitials:         []string{"zh=z", "ch=c", "sh=s"},
 		Punctuation:           "full",
+		KeyProfile:            "microsoft",
+		ShiftToggleMode:       true,
+		SemicolonQuickSelect:  true,
+		QuoteQuickSelect:      true,
+		BracketPageKeys:       true,
+		MinusEqualPageKeys:    true,
+		CommaPeriodPageKeys:   false,
 		CandidateLayout:       "horizontal",
 		ShowCandidateComments: true,
 	},
@@ -86,6 +121,13 @@ var builtinSchemaPresets = []SchemaPreset{
 		DoublePinyinScheme:    "microsoft",
 		FuzzyInitials:         []string{"zh=z", "ch=c", "sh=s"},
 		Punctuation:           "full",
+		KeyProfile:            "microsoft",
+		ShiftToggleMode:       true,
+		SemicolonQuickSelect:  true,
+		QuoteQuickSelect:      true,
+		BracketPageKeys:       true,
+		MinusEqualPageKeys:    true,
+		CommaPeriodPageKeys:   false,
 		CandidateLayout:       "horizontal",
 		ShowCandidateComments: true,
 	},
@@ -174,6 +216,15 @@ func ApplySchemaPresetConfig(config Config, id string) (Config, bool) {
 	if preset.Punctuation != "" {
 		config.Punctuation = preset.Punctuation
 	}
+	if preset.KeyProfile != "" {
+		config.KeyProfile = preset.KeyProfile
+		config.ShiftToggleMode = preset.ShiftToggleMode
+		config.SemicolonQuickSelect = preset.SemicolonQuickSelect
+		config.QuoteQuickSelect = preset.QuoteQuickSelect
+		config.BracketPageKeys = preset.BracketPageKeys
+		config.MinusEqualPageKeys = preset.MinusEqualPageKeys
+		config.CommaPeriodPageKeys = preset.CommaPeriodPageKeys
+	}
 	if preset.CandidateLayout != "" {
 		config.CandidateLayout = preset.CandidateLayout
 	}
@@ -190,6 +241,55 @@ func cloneSchemaPreset(preset SchemaPreset) SchemaPreset {
 	return preset
 }
 
+func NormalizeKeyBehavior(config Config) Config {
+	profile := config.KeyProfile
+	if strings.TrimSpace(profile) == "" {
+		if preset, ok := SchemaPresetByID(config.Schema); ok && preset.KeyProfile != "" {
+			profile = preset.KeyProfile
+		}
+	}
+	switch NormalizeKeyProfile(profile) {
+	case "custom":
+		config.KeyProfile = "custom"
+		return config
+	case "rime":
+		config.KeyProfile = "rime"
+		config.ShiftToggleMode = true
+		config.SemicolonQuickSelect = false
+		config.QuoteQuickSelect = false
+		config.BracketPageKeys = true
+		config.MinusEqualPageKeys = true
+		config.CommaPeriodPageKeys = true
+		return config
+	case "microsoft":
+		config.KeyProfile = "microsoft"
+	default:
+		config.KeyProfile = "wechat"
+	}
+	config.ShiftToggleMode = true
+	config.SemicolonQuickSelect = true
+	config.QuoteQuickSelect = true
+	config.BracketPageKeys = true
+	config.MinusEqualPageKeys = true
+	config.CommaPeriodPageKeys = false
+	return config
+}
+
+func NormalizeKeyProfile(profile string) string {
+	switch strings.ToLower(strings.TrimSpace(profile)) {
+	case "", "default", "wechat", "weixin", "wx":
+		return "wechat"
+	case "microsoft", "ms", "ms-pinyin", "windows":
+		return "microsoft"
+	case "rime", "weasel", "squirrel", "luna", "luna-pinyin":
+		return "rime"
+	case "custom", "advanced":
+		return "custom"
+	default:
+		return "wechat"
+	}
+}
+
 func schemaMatchesConfig(preset SchemaPreset, config Config) bool {
 	if preset.DoublePinyin != config.DoublePinyin {
 		return false
@@ -198,6 +298,10 @@ func schemaMatchesConfig(preset SchemaPreset, config Config) bool {
 		return false
 	}
 	if preset.CandidateLayout != "" && normalizeCandidateLayout(preset.CandidateLayout) != normalizeCandidateLayout(config.CandidateLayout) {
+		return false
+	}
+	if preset.KeyProfile != "" && strings.TrimSpace(config.KeyProfile) != "" &&
+		NormalizeKeyProfile(preset.KeyProfile) != NormalizeKeyProfile(config.KeyProfile) {
 		return false
 	}
 	if preset.DictionarySourcePreset != "" && strings.TrimSpace(config.Update.SourcePreset) != preset.DictionarySourcePreset {

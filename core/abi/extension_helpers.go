@@ -40,6 +40,7 @@ var abiFeatureList = []string{
 	"association-candidates",
 	"candidate-action-json",
 	"extension-command-json",
+	"key-behavior-config",
 }
 
 type abiEnvelope struct {

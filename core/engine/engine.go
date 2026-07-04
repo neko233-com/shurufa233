@@ -51,13 +51,20 @@ func DefaultConfig() Config {
 			"ch=c",
 			"sh=s",
 		},
-		DoublePinyin:       false,
-		DoublePinyinScheme: "xiaohe",
-		Language:           "zh-CN",
-		Mode:               "zh",
-		Punctuation:        "full",
-		Script:             "simplified",
-		Associations:       true,
+		DoublePinyin:         false,
+		DoublePinyinScheme:   "xiaohe",
+		Language:             "zh-CN",
+		Mode:                 "zh",
+		Punctuation:          "full",
+		Script:               "simplified",
+		Associations:         true,
+		KeyProfile:           "wechat",
+		ShiftToggleMode:      true,
+		SemicolonQuickSelect: true,
+		QuoteQuickSelect:     true,
+		BracketPageKeys:      true,
+		MinusEqualPageKeys:   true,
+		CommaPeriodPageKeys:  false,
 		Skin: Skin{
 			FontFamily:    "Microsoft YaHei UI",
 			FontSize:      15,
@@ -93,6 +100,7 @@ func New(config Config) *Engine {
 	config.Mode = normalizeMode(config.Mode)
 	config.Script = normalizeScript(config.Script)
 	config = NormalizeSchemaConfig(config)
+	config = NormalizeKeyBehavior(config)
 	e := &Engine{
 		config:  config,
 		dict:    make(map[string][]Entry),
@@ -118,6 +126,7 @@ func (e *Engine) Configure(config Config) {
 	config.Mode = normalizeMode(config.Mode)
 	config.Script = normalizeScript(config.Script)
 	config = NormalizeSchemaConfig(config)
+	config = NormalizeKeyBehavior(config)
 	e.config = config
 }
 

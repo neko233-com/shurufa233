@@ -98,6 +98,17 @@ normalized to `xiaohe` or `microsoft`; old configs with only
 explicit because its `;` key is an `ing` final, so native glue must treat it as
 input code instead of the second-candidate shortcut while that scheme is active.
 
+They also include key behavior fields: `keyProfile`, `shiftToggleMode`,
+`semicolonQuickSelect`, `quoteQuickSelect`, `bracketPageKeys`,
+`minusEqualPageKeys`, and `commaPeriodPageKeys`. `keyProfile=wechat` and
+`keyProfile=microsoft` keep the default WeChat/Microsoft feel: Shift toggles
+Chinese/English, `;` and `'` select the second and third candidates, and `[]`
+plus `-=` page candidates. `keyProfile=rime` keeps Shift and bracket/minus-equal
+paging while enabling `,`/`.` Rime-style paging and disabling semicolon/quote
+quick select. `keyProfile=custom` honors each boolean switch directly. The
+Windows TSF layer reads these values from the shared config file, so shortcut
+changes do not require new C++ builds.
+
 `GET /wordbook` returns learned user word scores. `PUT /wordbook` accepts
 `{"userScores":{"reading|text":1000},"merge":true}` for JSON import or
 replacement when `merge` is false. `DELETE /wordbook?key=reading%7Ctext` removes

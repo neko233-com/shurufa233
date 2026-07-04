@@ -266,6 +266,10 @@ h2 {
   box-shadow: 0 1px 4px rgb(15 23 42 / 0.1);
 }
 
+.segmented.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .schemaGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -367,6 +371,23 @@ h2 {
   width: 18px;
   height: 18px;
   accent-color: var(--accent);
+}
+
+.toggleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin-bottom: 14px;
+}
+
+.toggleGrid .toggle {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.toggleGrid .toggle span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .swatches {

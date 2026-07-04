@@ -84,6 +84,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 		config.Update.InstalledVersion = engine.DefaultConfig().Update.InstalledVersion
 	}
 	config = engine.NormalizeSchemaConfig(config)
+	config = engine.NormalizeKeyBehavior(config)
 	return config
 }
 

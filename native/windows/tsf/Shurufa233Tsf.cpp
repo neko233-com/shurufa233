@@ -1766,6 +1766,10 @@ int CandidateQuickSelectIndexFromKey(WPARAM key) {
   return -1;
 }
 
+bool IsCommaPeriodPageKey(WPARAM key) {
+  return !IsShiftPressed() && (key == VK_OEM_COMMA || key == L',' || key == VK_OEM_PERIOD || key == L'.');
+}
+
 bool IsPageKey(WPARAM key) {
   if (!IsShiftPressed() && (key == VK_OEM_4 || key == L'[' || key == VK_OEM_6 || key == L']')) {
     return true;
@@ -1992,7 +1996,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
     RememberContext(context);
 
-    if (IsShiftKey(key)) {
+    if (shiftToggleMode_ && IsShiftKey(key)) {
       if (!shiftDown_) {
         shiftDown_ = true;
         shiftToggleCandidate_ = rawBuffer_.empty() && cachedCandidateCount_ == 0;
@@ -2072,13 +2076,13 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return S_OK;
     }
 
-    if (IsPageKey(key) && cachedCandidateCount_ > CandidatePageSize()) {
-      MovePage(CandidatePageDeltaForKey(key));
+    if (IsConfiguredPageKey(key) && cachedCandidateCount_ > CandidatePageSize()) {
+      MovePage(ConfiguredPageDeltaForKey(key));
       *eaten = TRUE;
       return S_OK;
     }
 
-    const int quickIndex = CandidateQuickSelectIndexFromKey(key);
+    const int quickIndex = ConfiguredQuickSelectIndexFromKey(key);
     if (quickIndex >= 0 && cachedCandidateCount_ > pageOffset_ + quickIndex) {
       CommitCandidate(context, pageOffset_ + quickIndex);
       selectedIndex_ = 0;
@@ -2135,7 +2139,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (!eaten) {
       return E_INVALIDARG;
     }
-    *eaten = IsShiftKey(key) && shiftDown_ && shiftToggleCandidate_ && !HasSystemModifier();
+    *eaten = shiftToggleMode_ && IsShiftKey(key) && shiftDown_ && shiftToggleCandidate_ && !HasSystemModifier();
     return S_OK;
   }
 
@@ -2143,7 +2147,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (!eaten) {
       return E_INVALIDARG;
     }
-    if (IsShiftKey(key)) {
+    if (shiftToggleMode_ && IsShiftKey(key)) {
       const bool shouldToggle = shiftDown_ && shiftToggleCandidate_ && !HasSystemModifier();
       if (shouldToggle) {
         ToggleAsciiMode();
@@ -2235,6 +2239,55 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     return !asciiMode_ && microsoftDoublePinyin_ && (key == VK_OEM_1 || key == L';');
   }
 
+  int ConfiguredQuickSelectIndexFromKey(WPARAM key) const {
+    if (IsShiftPressed()) {
+      return -1;
+    }
+    if (semicolonQuickSelect_ && !IsMicrosoftDoublePinyinSemicolonKey(key) &&
+        (key == VK_OEM_1 || key == L';')) {
+      return 1;
+    }
+    if (quoteQuickSelect_ && (key == VK_OEM_7 || key == L'\'')) {
+      return 2;
+    }
+    return -1;
+  }
+
+  bool IsConfiguredBracketPageKey(WPARAM key) const {
+    return bracketPageKeys_ && IsBracketPageKey(key);
+  }
+
+  bool IsConfiguredPageKey(WPARAM key) const {
+    if (IsConfiguredBracketPageKey(key)) {
+      return true;
+    }
+    if (minusEqualPageKeys_ &&
+        (key == VK_NEXT || key == VK_PRIOR || key == VK_OEM_MINUS ||
+         key == VK_OEM_PLUS || key == L'-' || key == L'=')) {
+      return true;
+    }
+    return commaPeriodPageKeys_ && IsCommaPeriodPageKey(key);
+  }
+
+  int ConfiguredPageDeltaForKey(WPARAM key) const {
+    if (IsConfiguredBracketPageKey(key)) {
+      return CandidatePageDeltaForKey(key);
+    }
+    if (minusEqualPageKeys_ && (key == VK_PRIOR || key == VK_OEM_MINUS || key == L'-')) {
+      return -1;
+    }
+    if (minusEqualPageKeys_ && (key == VK_NEXT || key == VK_OEM_PLUS || key == L'=')) {
+      return 1;
+    }
+    if (commaPeriodPageKeys_ && !IsShiftPressed() && (key == VK_OEM_COMMA || key == L',')) {
+      return -1;
+    }
+    if (commaPeriodPageKeys_ && !IsShiftPressed() && (key == VK_OEM_PERIOD || key == L'.')) {
+      return 1;
+    }
+    return 0;
+  }
+
   bool ShouldEatKey(WPARAM key) const {
     if (!session_) {
       return false;
@@ -2242,7 +2295,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (HasSystemModifier()) {
       return false;
     }
-    if (IsShiftKey(key)) {
+    if (shiftToggleMode_ && IsShiftKey(key)) {
       return true;
     }
     if (asciiMode_) {
@@ -2266,13 +2319,13 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (key == VK_HOME || key == VK_END) {
       return cachedCandidateCount_ > 0;
     }
-    if (IsPageKey(key) && (!IsBracketPageKey(key) || cachedCandidateCount_ > CandidatePageSize())) {
+    if (IsConfiguredPageKey(key) && (!IsConfiguredBracketPageKey(key) || cachedCandidateCount_ > CandidatePageSize())) {
       return cachedCandidateCount_ > CandidatePageSize();
     }
     if (key == VK_SPACE || key == VK_RETURN) {
       return cachedCandidateCount_ > 0 || !rawBuffer_.empty();
     }
-    const int quickIndex = CandidateQuickSelectIndexFromKey(key);
+    const int quickIndex = ConfiguredQuickSelectIndexFromKey(key);
     if (quickIndex >= 0) {
       return cachedCandidateCount_ > pageOffset_ + quickIndex;
     }
@@ -2721,10 +2774,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   void RefreshTypingConfigFromConfig() {
     const std::wstring path = ConfigPath();
     if (path.empty()) {
-      punctuationFullWidth_ = true;
-      doublePinyinEnabled_ = false;
-      microsoftDoublePinyin_ = false;
-      candidatePageSize_ = kDefaultCandidatesPerPage;
+      ResetTypingConfigDefaults();
       return;
     }
     const DWORD now = GetTickCount();
@@ -2734,10 +2784,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     lastLocalConfigCheckTick_ = now;
     WIN32_FILE_ATTRIBUTE_DATA attrs{};
     if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attrs)) {
-      punctuationFullWidth_ = true;
-      doublePinyinEnabled_ = false;
-      microsoftDoublePinyin_ = false;
-      candidatePageSize_ = kDefaultCandidatesPerPage;
+      ResetTypingConfigDefaults();
       return;
     }
     if (hasConfigWriteTime_ && SameConfigFileTime(lastConfigWriteTime_, attrs.ftLastWriteTime)) {
@@ -2745,10 +2792,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
     const std::string json = ReadConfigUtf8File(path);
     if (json.empty()) {
-      punctuationFullWidth_ = true;
-      doublePinyinEnabled_ = false;
-      microsoftDoublePinyin_ = false;
-      candidatePageSize_ = kDefaultCandidatesPerPage;
+      ResetTypingConfigDefaults();
       return;
     }
     const std::string punctuation = JsonConfigStringField(json, "punctuation");
@@ -2762,8 +2806,53 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       pageSize = kDefaultCandidatesPerPage;
     }
     candidatePageSize_ = max(kMinCandidatesPerPage, min(kMaxCandidatesPerPage, pageSize));
+    ApplyKeyBehaviorConfig(json);
     lastConfigWriteTime_ = attrs.ftLastWriteTime;
     hasConfigWriteTime_ = true;
+  }
+
+  void ResetTypingConfigDefaults() {
+    punctuationFullWidth_ = true;
+    doublePinyinEnabled_ = false;
+    microsoftDoublePinyin_ = false;
+    candidatePageSize_ = kDefaultCandidatesPerPage;
+    ApplyWechatKeyBehavior();
+  }
+
+  void ApplyWechatKeyBehavior() {
+    shiftToggleMode_ = true;
+    semicolonQuickSelect_ = true;
+    quoteQuickSelect_ = true;
+    bracketPageKeys_ = true;
+    minusEqualPageKeys_ = true;
+    commaPeriodPageKeys_ = false;
+  }
+
+  void ApplyRimeKeyBehavior() {
+    shiftToggleMode_ = true;
+    semicolonQuickSelect_ = false;
+    quoteQuickSelect_ = false;
+    bracketPageKeys_ = true;
+    minusEqualPageKeys_ = true;
+    commaPeriodPageKeys_ = true;
+  }
+
+  void ApplyKeyBehaviorConfig(const std::string &json) {
+    const std::string profile = JsonConfigStringField(json, "keyProfile");
+    if (profile == "rime" || profile == "weasel" || profile == "squirrel") {
+      ApplyRimeKeyBehavior();
+      return;
+    }
+    if (profile == "custom") {
+      shiftToggleMode_ = JsonConfigBoolField(json, "shiftToggleMode");
+      semicolonQuickSelect_ = JsonConfigBoolField(json, "semicolonQuickSelect");
+      quoteQuickSelect_ = JsonConfigBoolField(json, "quoteQuickSelect");
+      bracketPageKeys_ = JsonConfigBoolField(json, "bracketPageKeys");
+      minusEqualPageKeys_ = JsonConfigBoolField(json, "minusEqualPageKeys");
+      commaPeriodPageKeys_ = JsonConfigBoolField(json, "commaPeriodPageKeys");
+      return;
+    }
+    ApplyWechatKeyBehavior();
   }
 
   void RefreshAsciiModeFromCore() {
@@ -2821,6 +2910,12 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   bool punctuationFullWidth_ = true;
   bool doublePinyinEnabled_ = false;
   bool microsoftDoublePinyin_ = false;
+  bool shiftToggleMode_ = true;
+  bool semicolonQuickSelect_ = true;
+  bool quoteQuickSelect_ = true;
+  bool bracketPageKeys_ = true;
+  bool minusEqualPageKeys_ = true;
+  bool commaPeriodPageKeys_ = false;
   int candidatePageSize_ = kDefaultCandidatesPerPage;
   std::wstring configPath_;
   bool configPathResolved_ = false;

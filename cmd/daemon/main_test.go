@@ -278,6 +278,35 @@ func TestNormalizeConfigDefaultsInvalidDoublePinyinScheme(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigKeepsKeyBehaviorProfiles(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.KeyProfile = "rime"
+
+	got := normalizeConfig(next)
+
+	if got.KeyProfile != "rime" || !got.CommaPeriodPageKeys || got.SemicolonQuickSelect {
+		t.Fatalf("rime key behavior = %#v", got)
+	}
+}
+
+func TestNormalizeConfigKeepsCustomKeyBehavior(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.KeyProfile = "custom"
+	next.ShiftToggleMode = false
+	next.SemicolonQuickSelect = false
+	next.QuoteQuickSelect = false
+	next.BracketPageKeys = true
+	next.MinusEqualPageKeys = false
+	next.CommaPeriodPageKeys = true
+
+	got := normalizeConfig(next)
+
+	if got.KeyProfile != "custom" || got.ShiftToggleMode || got.SemicolonQuickSelect ||
+		got.QuoteQuickSelect || !got.BracketPageKeys || got.MinusEqualPageKeys || !got.CommaPeriodPageKeys {
+		t.Fatalf("custom key behavior = %#v", got)
+	}
+}
+
 func TestSchemasEndpointListsPresets(t *testing.T) {
 	config := engine.DefaultConfig()
 	session := engine.New(config)
