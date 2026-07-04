@@ -88,6 +88,8 @@ The installer does not steal the default input method. Use Windows' normal input
 
 During composition, shurufa233 follows the Microsoft IME-style two-line shape: the upper preedit line shows the current English/pinyin spelling, and the lower candidate strip shows Chinese candidates. Skin settings are scoped mainly to the lower candidate strip; the upper preedit line keeps a neutral system look for readability.
 
+The daemon writes local startup and update diagnostics to `%LOCALAPPDATA%\shurufa233-daemon.log`. If install-time health verification fails, the installer prints the most recent daemon log lines before stopping.
+
 For focused development testing only, pass `-ActivateProfile`:
 
 ```powershell
@@ -144,6 +146,7 @@ Local TSF diagnostics are written to:
 
 ```text
 %LOCALAPPDATA%\shurufa233-tsf.log
+%LOCALAPPDATA%\shurufa233-daemon.log
 ```
 
 ## Input Performance Lab

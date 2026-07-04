@@ -25,6 +25,7 @@ type AppState struct {
 	engine   *engine.Engine
 	sessions map[string]*engine.Engine
 	path     string
+	logPath  string
 	client   *http.Client
 }
 
@@ -72,14 +73,24 @@ type userScoreStore struct {
 }
 
 func main() {
+	logFile, logPath, err := setupFileLogging()
+	if err != nil {
+		log.Printf("warning: daemon file logging is unavailable: %v", err)
+	}
+	if logFile != nil {
+		defer logFile.Close()
+	}
+
 	configPath, err := configFile()
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Printf("shurufa233 daemon starting; config=%s log=%s", configPath, logPath)
 
 	state := &AppState{
 		sessions: make(map[string]*engine.Engine),
 		path:     configPath,
+		logPath:  logPath,
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -141,6 +152,7 @@ func (s *AppState) health(w http.ResponseWriter, _ *http.Request) {
 		"ok":         true,
 		"service":    "shurufa233-daemon",
 		"configPath": s.path,
+		"logPath":    s.logPath,
 		"updatedAt":  time.Now().UTC(),
 	})
 }
@@ -622,6 +634,47 @@ func writeJSON(w http.ResponseWriter, value any) {
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func setupFileLogging() (*os.File, string, error) {
+	logPath, err := daemonLogFile()
+	if err != nil {
+		return nil, "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		return nil, logPath, err
+	}
+	rotateLogIfLarge(logPath, 4*1024*1024)
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, logPath, err
+	}
+	log.SetOutput(io.MultiWriter(os.Stderr, file))
+	return file, logPath, nil
+}
+
+func daemonLogFile() (string, error) {
+	if override := strings.TrimSpace(os.Getenv("SHURUFA233_LOG")); override != "" {
+		return override, nil
+	}
+	if base := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); base != "" {
+		return filepath.Join(base, "shurufa233-daemon.log"), nil
+	}
+	base, err := os.UserCacheDir()
+	if err == nil && strings.TrimSpace(base) != "" {
+		return filepath.Join(base, "shurufa233-daemon.log"), nil
+	}
+	return filepath.Join(os.TempDir(), "shurufa233-daemon.log"), nil
+}
+
+func rotateLogIfLarge(path string, maxBytes int64) {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() <= maxBytes {
+		return
+	}
+	backup := path + ".1"
+	_ = os.Remove(backup)
+	_ = os.Rename(path, backup)
 }
 
 func configFile() (string, error) {

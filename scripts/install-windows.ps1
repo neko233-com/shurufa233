@@ -96,6 +96,18 @@ function Test-DaemonHealth {
   }
 }
 
+function Write-DaemonDiagnostics {
+  $logPath = Join-Path $env:LOCALAPPDATA "shurufa233-daemon.log"
+  if (Test-Path $logPath) {
+    Write-Warning "shurufa-daemon did not become healthy. Recent daemon log from ${logPath}:"
+    Get-Content -Path $logPath -Tail 80 -ErrorAction SilentlyContinue | ForEach-Object {
+      Write-Warning $_
+    }
+  } else {
+    Write-Warning "shurufa-daemon log was not found at $logPath"
+  }
+}
+
 function Start-DaemonAndWait {
   param([string]$DaemonPath)
 
@@ -113,6 +125,7 @@ function Start-DaemonAndWait {
     }
     Start-Sleep -Milliseconds 250
   }
+  Write-DaemonDiagnostics
   throw "shurufa-daemon did not become healthy on http://127.0.0.1:23333/health"
 }
 
