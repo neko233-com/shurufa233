@@ -10,6 +10,8 @@ Cross-platform Chinese input method prototype using a three-layer isolation mode
 
 The current local MVP runs the Go engine, daemon IPC, and settings UI on Windows. Native Windows TSF glue is scaffolded under `native/windows/tsf`; building and registering it requires Visual Studio Build Tools with the Windows SDK.
 
+Windows native support targets Windows 11 only for the first production line.
+
 ## Quick Start
 
 ```powershell
