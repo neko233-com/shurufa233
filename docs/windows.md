@@ -219,6 +219,7 @@ Candidate interaction:
 
 - `Space` / `Enter`: commit the highlighted candidate
 - `1`-`9`: commit candidate by number
+- `;` / `'`: commit the second / third candidate when that candidate exists
 - mouse click: commit the clicked candidate in the native candidate strip
 - mouse hover: move the highlighted candidate under the pointer
 - mouse wheel over the candidate strip: page candidates

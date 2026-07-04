@@ -1330,6 +1330,19 @@ int CandidateIndexFromKey(WPARAM key) {
   return 0;
 }
 
+int CandidateQuickSelectIndexFromKey(WPARAM key) {
+  if (IsShiftPressed()) {
+    return -1;
+  }
+  if (key == VK_OEM_1 || key == L';') {
+    return 1;
+  }
+  if (key == VK_OEM_7 || key == L'\'') {
+    return 2;
+  }
+  return -1;
+}
+
 bool IsPageKey(WPARAM key) {
   return key == VK_NEXT || key == VK_PRIOR || key == VK_OEM_MINUS || key == VK_OEM_PLUS ||
          key == L'-' || key == L'=';
@@ -1605,6 +1618,18 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return S_OK;
     }
 
+    const int quickIndex = CandidateQuickSelectIndexFromKey(key);
+    if (quickIndex >= 0 && cachedCandidateCount_ > pageOffset_ + quickIndex) {
+      CommitCandidate(context, pageOffset_ + quickIndex);
+      selectedIndex_ = 0;
+      pageOffset_ = 0;
+      candidateWindow_.Hide();
+      cachedCandidateCount_ = 0;
+      compositionLength_ = 0;
+      *eaten = TRUE;
+      return S_OK;
+    }
+
     const std::wstring punctuation = ChinesePunctuationForKey(key);
     if (!asciiMode_ && !punctuation.empty()) {
       if (cachedCandidateCount_ > 0) {
@@ -1768,6 +1793,10 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
     if (key == VK_SPACE || key == VK_RETURN) {
       return cachedCandidateCount_ > 0;
+    }
+    const int quickIndex = CandidateQuickSelectIndexFromKey(key);
+    if (quickIndex >= 0) {
+      return cachedCandidateCount_ > pageOffset_ + quickIndex;
     }
     if (!asciiMode_ && !ChinesePunctuationForKey(key).empty()) {
       return true;
