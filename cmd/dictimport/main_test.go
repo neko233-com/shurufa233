@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,6 +160,29 @@ func TestResolveImportTableRejectsUnsafePaths(t *testing.T) {
 		if _, _, err := resolveImportTable(t.TempDir(), table); err == nil {
 			t.Fatalf("expected unsafe import error for %q", table)
 		}
+	}
+}
+
+func TestWriteDictionaryOutputCanGzip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dictionary.json.gz")
+	if err := writeDictionaryOutput(path, []byte(`{"language":"zh-CN","entries":[]}`), true); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	decoded, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(decoded), `"language":"zh-CN"`) {
+		t.Fatalf("decoded gzip = %q", decoded)
 	}
 }
 

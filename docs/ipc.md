@@ -102,6 +102,12 @@ https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-ma
 For China-region acceleration, keep GitHub as the canonical source and publish the same release artifacts to one or more configured mirror/CDN base URLs. The daemon tries mirror base URLs before the original dictionary URL.
 When `autoCheck` is enabled, the daemon checks the configured manifest in the background after startup and then periodically. When `autoApply` is also enabled, a newer manifest is downloaded, SHA-256 verified when hashes are present, loaded into all active IME sessions, and persisted under the local dictionary directory without requiring the settings panel to stay open.
 
+Large dictionaries can be published as `.json.gz`. The daemon verifies `sha256`
+against the downloaded artifact bytes, decompresses gzip when `compression` is
+`gzip` or the URL ends with `.gz`, verifies `contentSha256` against the
+decompressed JSON when provided, and then persists the decompressed `.json`
+atomically.
+
 Manifest shape:
 
 ```json
@@ -113,7 +119,9 @@ Manifest shape:
       "language": "zh-CN",
       "version": "2026.07.04",
       "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.2026.07.04.json",
-      "sha256": "optional lowercase hex"
+      "sha256": "optional downloaded artifact lowercase hex",
+      "compression": "gzip",
+      "contentSha256": "optional decompressed JSON lowercase hex"
     }
   ]
 }

@@ -43,16 +43,20 @@ go run ./cmd/dictimport `
   -language zh-CN `
   -version rime-ice-2026-07-05 `
   -source rime-ice `
-  -out data/dictionaries/zh-CN.rime-ice.json `
+  -out data/dictionaries/zh-CN.rime-ice.json.gz `
   path\to\rime_ice.dict.yaml
 ```
 
 Useful import flags:
 
+- `-gzip`: write gzip-compressed JSON. This is also enabled automatically when `-out` ends with `.gz`.
 - `-imports=false`: convert only the files named on the command line.
 - `-missing-imports=error`: fail when an imported table cannot be found. This is the default and safest release behavior.
 - `-missing-imports=warn`: keep converting available tables and print warnings for missing optional imports.
 - `-missing-imports=skip`: silently ignore missing imports for quick local experiments.
 
 After conversion, point `data/dictionaries/dictionary-manifest.json` or a GitHub
-Release manifest at the generated JSON so the daemon can hot-update it.
+Release manifest at the generated JSON or JSON gzip artifact so the daemon can
+hot-update it. For `.json.gz` releases, set manifest `compression` to `gzip`,
+`sha256` to the compressed artifact hash, and optionally `contentSha256` to the
+decompressed JSON hash.

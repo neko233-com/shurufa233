@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -34,6 +36,30 @@ func TestNewEngineLoadsLocalDictionaries(t *testing.T) {
 	}
 }
 
+func TestNewEngineLoadsLocalGzipDictionaries(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SHURUFA233_DICTIONARY_DIR", dir)
+	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(t.TempDir(), "user-scores.json"))
+
+	dictionary := `{
+		"language": "zh-CN",
+		"version": "gzip",
+		"entries": [{ "reading": "yasuo", "text": "压缩", "weight": 30000 }]
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "zh-CN.gzip.json.gz"), gzipBytes(t, []byte(dictionary)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	session := engine.New(engine.DefaultConfig())
+	for _, entries := range loadLocalDictionaryEntries() {
+		session.AddEntries(entries)
+	}
+	state := session.Preview("yasuo")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "压缩" {
+		t.Fatalf("expected local gzip dictionary candidate, got %#v", state.Candidates)
+	}
+}
+
 func TestNewEngineLoadsConfigForFuzzyInitials(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	t.Setenv("SHURUFA233_CONFIG", configPath)
@@ -57,6 +83,19 @@ func TestNewEngineLoadsConfigForFuzzyInitials(t *testing.T) {
 			t.Fatalf("expected ABI core to honor disabled fuzzy initials, got %#v", state.Candidates)
 		}
 	}
+}
+
+func gzipBytes(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	if _, err := writer.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
 }
 
 func TestLoadConfigKeepsHalfWidthPunctuation(t *testing.T) {

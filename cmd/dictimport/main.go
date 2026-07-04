@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -19,6 +21,7 @@ func main() {
 	version := flag.String("version", "rime-import", "dictionary version")
 	source := flag.String("source", "rime", "source label")
 	outPath := flag.String("out", "", "output JSON path, stdout when empty")
+	gzipOutput := flag.Bool("gzip", false, "write gzip-compressed JSON output; also enabled when -out ends with .gz")
 	includeImports := flag.Bool("imports", true, "resolve Rime import_tables recursively")
 	missingImports := flag.String("missing-imports", "error", "missing import_tables policy: error, warn, or skip")
 	flag.Parse()
@@ -48,15 +51,39 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	data = append(data, '\n')
-	if *outPath == "" {
-		_, _ = os.Stdout.Write(data)
-		return
-	}
-	if err := os.WriteFile(*outPath, data, 0o644); err != nil {
+	if err := writeDictionaryOutput(*outPath, data, *gzipOutput || strings.HasSuffix(strings.ToLower(*outPath), ".gz")); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func writeDictionaryOutput(path string, data []byte, gzipEnabled bool) error {
+	data = append(data, '\n')
+	if gzipEnabled {
+		compressed, err := gzipData(data)
+		if err != nil {
+			return err
+		}
+		data = compressed
+	}
+	if path == "" {
+		_, err := os.Stdout.Write(data)
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+func gzipData(data []byte) ([]byte, error) {
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	if _, err := writer.Write(data); err != nil {
+		_ = writer.Close()
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
 }
 
 type rimeCollector struct {

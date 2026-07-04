@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/neko233-com/shurufa233/core/engine"
 )
@@ -34,10 +32,14 @@ func loadLocalDictionaryEntries() [][]engine.Entry {
 	if err != nil {
 		return nil
 	}
+	gzFiles, err := filepath.Glob(filepath.Join(dir, "*.json.gz"))
+	if err == nil {
+		files = append(files, gzFiles...)
+	}
 	entries := make([][]engine.Entry, 0, len(files))
 	for _, file := range files {
 		name := filepath.Base(file)
-		if name == "manifest.json" || name == "dictionary-manifest.json" {
+		if isDictionaryMetadataFile(name) {
 			continue
 		}
 		loaded, err := loadDictionaryFile(file)
@@ -55,14 +57,14 @@ func loadDictionaryFile(path string) ([]engine.Entry, error) {
 		return nil, err
 	}
 	defer file.Close()
-	data, err := io.ReadAll(file)
+	dict, err := engine.DecodeDictionary(file)
 	if err != nil {
 		return nil, err
 	}
-	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
-	var dict engine.DictionaryFile
-	if err := json.Unmarshal(data, &dict); err != nil {
-		return nil, err
-	}
 	return dict.Entries, nil
+}
+
+func isDictionaryMetadataFile(name string) bool {
+	name = strings.TrimSuffix(name, ".gz")
+	return name == "manifest.json" || name == "dictionary-manifest.json"
 }

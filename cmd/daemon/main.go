@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -71,10 +73,12 @@ type dictionaryManifest struct {
 }
 
 type dictionaryDescriptor struct {
-	Language string `json:"language"`
-	Version  string `json:"version"`
-	URL      string `json:"url"`
-	SHA256   string `json:"sha256,omitempty"`
+	Language      string `json:"language"`
+	Version       string `json:"version"`
+	URL           string `json:"url"`
+	SHA256        string `json:"sha256,omitempty"`
+	Compression   string `json:"compression,omitempty"`
+	ContentSHA256 string `json:"contentSha256,omitempty"`
 }
 
 type updateCheck struct {
@@ -647,14 +651,24 @@ func (s *AppState) applyLatestDictionaries(force bool) (updateApplyResult, error
 		if config.Language != "" && item.Language != config.Language {
 			continue
 		}
-		data, err := s.downloadDictionaryWithConfig(config, item)
+		rawData, err := s.downloadDictionaryWithConfig(config, item)
 		if err != nil {
 			return updateApplyResult{}, err
 		}
 		if item.SHA256 != "" {
-			sum := sha256.Sum256(data)
+			sum := sha256.Sum256(rawData)
 			if !strings.EqualFold(fmt.Sprintf("%x", sum[:]), item.SHA256) {
 				return updateApplyResult{}, errors.New("dictionary sha256 mismatch")
+			}
+		}
+		data, err := decodeDownloadedDictionary(item, rawData)
+		if err != nil {
+			return updateApplyResult{}, err
+		}
+		if item.ContentSHA256 != "" {
+			sum := sha256.Sum256(data)
+			if !strings.EqualFold(fmt.Sprintf("%x", sum[:]), item.ContentSHA256) {
+				return updateApplyResult{}, errors.New("dictionary content sha256 mismatch")
 			}
 		}
 		downloaded = append(downloaded, downloadedDictionary{item: item, data: data})
@@ -668,7 +682,7 @@ func (s *AppState) applyLatestDictionaries(force bool) (updateApplyResult, error
 	for _, file := range downloaded {
 		item := file.item
 		filePath := filepath.Join(dir, item.Language+"."+item.Version+".json")
-		if err := os.WriteFile(filePath, file.data, 0o644); err != nil {
+		if err := writeFileAtomic(filePath, file.data, 0o644); err != nil {
 			return updateApplyResult{}, err
 		}
 		loaded, err := s.loadDictionaryIntoSessionsLocked(file.data)
@@ -799,6 +813,30 @@ func (s *AppState) downloadDictionaryWithConfig(config engine.Config, item dicti
 	return nil, lastErr
 }
 
+func decodeDownloadedDictionary(item dictionaryDescriptor, data []byte) ([]byte, error) {
+	compression := strings.ToLower(strings.TrimSpace(item.Compression))
+	if compression == "" && (strings.HasSuffix(strings.ToLower(item.URL), ".gz") || hasGzipHeader(data)) {
+		compression = "gzip"
+	}
+	switch compression {
+	case "":
+		return data, nil
+	case "gzip", "gz":
+		reader, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		defer reader.Close()
+		return io.ReadAll(reader)
+	default:
+		return nil, fmt.Errorf("unsupported dictionary compression %q", item.Compression)
+	}
+}
+
+func hasGzipHeader(data []byte) bool {
+	return len(data) >= 2 && data[0] == 0x1f && data[1] == 0x8b
+}
+
 func dictionaryURLs(config engine.Config, rawURL string) []string {
 	urls := []string{rawURL}
 	name := filepath.Base(strings.ReplaceAll(rawURL, "\\", "/"))
@@ -812,12 +850,50 @@ func dictionaryURLs(config engine.Config, rawURL string) []string {
 	return urls
 }
 
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
 func (s *AppState) loadLocalDictionariesIntoLocked(target *engine.Engine) error {
 	dir := s.dictionaryDir()
 	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
 	if err != nil {
 		return err
 	}
+	gzFiles, err := filepath.Glob(filepath.Join(dir, "*.json.gz"))
+	if err != nil {
+		return err
+	}
+	files = append(files, gzFiles...)
 	for _, file := range files {
 		if isDictionaryMetadataFile(filepath.Base(file)) {
 			continue
@@ -846,7 +922,7 @@ func (s *AppState) loadLocalDictionariesLocked() error {
 }
 
 func (s *AppState) loadDictionaryIntoSessionsLocked(data []byte) (engine.DictionaryFile, error) {
-	loaded, err := s.engine.LoadDictionary(strings.NewReader(string(data)))
+	loaded, err := s.engine.LoadDictionary(bytes.NewReader(data))
 	if err != nil {
 		return engine.DictionaryFile{}, err
 	}
@@ -854,7 +930,7 @@ func (s *AppState) loadDictionaryIntoSessionsLocked(data []byte) (engine.Diction
 		if session == nil || session == s.engine {
 			continue
 		}
-		if _, err := session.LoadDictionary(strings.NewReader(string(data))); err != nil {
+		if _, err := session.LoadDictionary(bytes.NewReader(data)); err != nil {
 			return engine.DictionaryFile{}, fmt.Errorf("load dictionary into session %s: %w", id, err)
 		}
 	}
@@ -862,6 +938,7 @@ func (s *AppState) loadDictionaryIntoSessionsLocked(data []byte) (engine.Diction
 }
 
 func isDictionaryMetadataFile(name string) bool {
+	name = strings.TrimSuffix(name, ".gz")
 	return name == "manifest.json" || name == "dictionary-manifest.json"
 }
 

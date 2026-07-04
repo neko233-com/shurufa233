@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -480,10 +482,98 @@ func TestDictionaryAutoUpdateAppliesConfiguredRelease(t *testing.T) {
 	}
 }
 
+func TestDictionaryAutoUpdateAppliesGzipRelease(t *testing.T) {
+	dictionary := []byte(`{
+		"language": "zh-CN",
+		"version": "remote-gzip",
+		"entries": [
+			{ "reading": "yasuo", "text": "压缩热更", "weight": 20000 }
+		]
+	}`)
+	compressed := gzipBytes(t, dictionary)
+	rawSHA := sha256Hex(compressed)
+	contentSHA := sha256Hex(dictionary)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/dictionary-manifest.json":
+			_, _ = fmt.Fprintf(w, `{
+				"version": "remote-gzip",
+				"channel": "stable",
+				"generatedAt": "2026-07-04T00:00:00Z",
+				"dictionaries": [
+					{
+						"language": "zh-CN",
+						"version": "remote-gzip",
+						"url": "%s/zh-CN.remote-gzip.json.gz",
+						"compression": "gzip",
+						"sha256": "%s",
+						"contentSha256": "%s"
+					}
+				]
+			}`, serverURL(r), rawSHA, contentSHA)
+		case "/zh-CN.remote-gzip.json.gz":
+			w.Header().Set("Content-Type", "application/gzip")
+			_, _ = w.Write(compressed)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	config := engine.DefaultConfig()
+	config.Update.ManifestURLs = []string{server.URL + "/dictionary-manifest.json"}
+	config.Update.AutoCheck = true
+	config.Update.AutoApply = true
+	config.Update.InstalledVersion = "builtin"
+
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+		client:   server.Client(),
+	}
+	state.sessions["default"] = state.engine
+
+	state.runDictionaryAutoUpdateOnce()
+
+	got := state.engine.Preview("yasuo")
+	if len(got.Candidates) == 0 || got.Candidates[0].Text != "压缩热更" {
+		t.Fatalf("auto-updated gzip candidates = %#v", got.Candidates)
+	}
+	filePath := filepath.Join(filepath.Dir(state.path), "dictionaries", "zh-CN.remote-gzip.json")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("expected decompressed dictionary file: %v", err)
+	}
+	if !bytes.Contains(data, []byte("压缩热更")) {
+		t.Fatalf("expected decompressed JSON at %s, got %q", filePath, data)
+	}
+}
+
 func serverURL(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host
+}
+
+func gzipBytes(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	if _, err := writer.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:])
 }

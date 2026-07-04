@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"io"
@@ -148,8 +149,21 @@ func (e *Engine) sortIndexLocked() {
 }
 
 func (e *Engine) LoadDictionary(reader io.Reader) (DictionaryFile, error) {
+	file, err := DecodeDictionary(reader)
+	if err != nil {
+		return file, err
+	}
+	e.AddEntries(file.Entries)
+	return file, nil
+}
+
+func DecodeDictionary(reader io.Reader) (DictionaryFile, error) {
 	var file DictionaryFile
 	data, err := io.ReadAll(reader)
+	if err != nil {
+		return file, err
+	}
+	data, err = decompressDictionaryData(data)
 	if err != nil {
 		return file, err
 	}
@@ -157,8 +171,19 @@ func (e *Engine) LoadDictionary(reader io.Reader) (DictionaryFile, error) {
 	if err := json.Unmarshal(data, &file); err != nil {
 		return file, err
 	}
-	e.AddEntries(file.Entries)
 	return file, nil
+}
+
+func decompressDictionaryData(data []byte) ([]byte, error) {
+	if len(data) < 2 || data[0] != 0x1f || data[1] != 0x8b {
+		return data, nil
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
 }
 
 func (e *Engine) InputKey(key rune) State {

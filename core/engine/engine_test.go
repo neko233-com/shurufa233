@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"bytes"
+	"compress/gzip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -238,6 +240,23 @@ func TestLoadDictionaryAcceptsUTF8BOM(t *testing.T) {
 	}
 }
 
+func TestLoadDictionaryAcceptsGzipJSON(t *testing.T) {
+	e := New(DefaultConfig())
+	data := gzipBytes(t, []byte(`{
+		"language": "zh-CN",
+		"version": "gzip",
+		"entries": [{ "reading": "yasuobao", "text": "压缩包", "weight": 9000 }]
+	}`))
+	_, err := e.LoadDictionary(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := e.Preview("yasuobao")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "压缩包" {
+		t.Fatalf("expected gzip dictionary candidate, got %#v", state.Candidates)
+	}
+}
+
 func TestLoadDictionaryMergesDuplicates(t *testing.T) {
 	e := New(DefaultConfig())
 	_, err := e.LoadDictionary(strings.NewReader(`{
@@ -261,6 +280,19 @@ func TestLoadDictionaryMergesDuplicates(t *testing.T) {
 	if state.Candidates[0].Weight != 20000 {
 		t.Fatalf("expected merged candidate to keep highest weight, got %d", state.Candidates[0].Weight)
 	}
+}
+
+func gzipBytes(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	if _, err := writer.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
 }
 
 func TestImportUserScoresAffectsRanking(t *testing.T) {
