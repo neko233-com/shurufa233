@@ -82,6 +82,56 @@ func TestPutConfigNormalizesCandidatePool(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigKeepsCandidateSkinReadable(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.Skin.Surface = "#ffffff"
+	next.Skin.Text = "#ffffff"
+	next.Skin.MutedText = "#ffffff"
+	next.Skin.Accent = "#2563eb"
+	next.Skin.HighlightText = "#2563eb"
+
+	got := normalizeConfig(next)
+
+	if got.Skin.Text == "#ffffff" {
+		t.Fatalf("text color was not corrected: %#v", got.Skin)
+	}
+	if contrastRatio(got.Skin.Text, got.Skin.Surface) < 4.5 {
+		t.Fatalf("text contrast = %.2f, want >= 4.5", contrastRatio(got.Skin.Text, got.Skin.Surface))
+	}
+	if contrastRatio(got.Skin.MutedText, got.Skin.Surface) < 3.0 {
+		t.Fatalf("muted contrast = %.2f, want >= 3.0", contrastRatio(got.Skin.MutedText, got.Skin.Surface))
+	}
+	if contrastRatio(got.Skin.HighlightText, got.Skin.Accent) < 4.5 {
+		t.Fatalf("highlight contrast = %.2f, want >= 4.5", contrastRatio(got.Skin.HighlightText, got.Skin.Accent))
+	}
+}
+
+func TestNormalizeConfigRejectsInvalidSkinColors(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.Skin.Surface = "white"
+	next.Skin.Accent = "#12"
+	next.Skin.Text = "#gggggg"
+	next.Skin.MutedText = "transparent"
+	next.Skin.Border = "none"
+	next.Skin.HighlightText = "currentColor"
+
+	got := normalizeConfig(next)
+	defaults := engine.DefaultConfig()
+
+	if got.Skin.Surface != defaults.Skin.Surface {
+		t.Fatalf("surface = %q, want %q", got.Skin.Surface, defaults.Skin.Surface)
+	}
+	if got.Skin.Accent != defaults.Skin.Accent {
+		t.Fatalf("accent = %q, want %q", got.Skin.Accent, defaults.Skin.Accent)
+	}
+	if got.Skin.Border != defaults.Skin.Border {
+		t.Fatalf("border = %q, want %q", got.Skin.Border, defaults.Skin.Border)
+	}
+	if !isHexColor(got.Skin.Text) || !isHexColor(got.Skin.MutedText) || !isHexColor(got.Skin.HighlightText) {
+		t.Fatalf("normalized skin contains invalid text colors: %#v", got.Skin)
+	}
+}
+
 func TestNewSessionLoadsLocalDictionaries(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "shurufa233", "config.json")

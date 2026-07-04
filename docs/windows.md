@@ -211,6 +211,8 @@ Current skin fields come from the settings UI:
 - highlight text color
 - theme mode
 
+The daemon normalizes skin colors before saving config. Invalid color strings fall back to defaults, and low-contrast candidate text, muted text, or highlighted text is automatically corrected to a readable black/white value. This keeps custom skins from producing an unreadable candidate strip during live typing.
+
 The candidate window is local-only. It does not fetch remote UI assets or send input text to a cloud service.
 
 Candidate interaction:

@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -795,18 +797,39 @@ func normalizeConfig(config engine.Config) engine.Config {
 	if config.Skin.Surface == "" {
 		config.Skin.Surface = defaults.Skin.Surface
 	}
+	if !isHexColor(config.Skin.Surface) {
+		config.Skin.Surface = defaults.Skin.Surface
+	}
+	if !isHexColor(config.Skin.Accent) {
+		config.Skin.Accent = defaults.Skin.Accent
+	}
 	if config.Skin.Text == "" {
+		config.Skin.Text = defaults.Skin.Text
+	}
+	if !isHexColor(config.Skin.Text) {
 		config.Skin.Text = defaults.Skin.Text
 	}
 	if config.Skin.MutedText == "" {
 		config.Skin.MutedText = defaults.Skin.MutedText
 	}
+	if !isHexColor(config.Skin.MutedText) {
+		config.Skin.MutedText = defaults.Skin.MutedText
+	}
 	if config.Skin.Border == "" {
+		config.Skin.Border = defaults.Skin.Border
+	}
+	if !isHexColor(config.Skin.Border) {
 		config.Skin.Border = defaults.Skin.Border
 	}
 	if config.Skin.HighlightText == "" {
 		config.Skin.HighlightText = defaults.Skin.HighlightText
 	}
+	if !isHexColor(config.Skin.HighlightText) {
+		config.Skin.HighlightText = defaults.Skin.HighlightText
+	}
+	config.Skin.Text = ensureReadableColor(config.Skin.Text, config.Skin.Surface, 4.5)
+	config.Skin.MutedText = ensureReadableColor(config.Skin.MutedText, config.Skin.Surface, 3.0)
+	config.Skin.HighlightText = ensureReadableColor(config.Skin.HighlightText, config.Skin.Accent, 4.5)
 	if config.Update.Channel == "" {
 		config.Update.Channel = defaults.Update.Channel
 	}
@@ -820,4 +843,75 @@ func normalizeConfig(config engine.Config) engine.Config {
 		config.Update.InstalledVersion = defaults.Update.InstalledVersion
 	}
 	return config
+}
+
+type rgbColor struct {
+	r float64
+	g float64
+	b float64
+}
+
+func isHexColor(value string) bool {
+	_, ok := parseHexColor(value)
+	return ok
+}
+
+func parseHexColor(value string) (rgbColor, bool) {
+	if len(value) != 7 || value[0] != '#' {
+		return rgbColor{}, false
+	}
+	r, err := strconv.ParseUint(value[1:3], 16, 8)
+	if err != nil {
+		return rgbColor{}, false
+	}
+	g, err := strconv.ParseUint(value[3:5], 16, 8)
+	if err != nil {
+		return rgbColor{}, false
+	}
+	b, err := strconv.ParseUint(value[5:7], 16, 8)
+	if err != nil {
+		return rgbColor{}, false
+	}
+	return rgbColor{r: float64(r), g: float64(g), b: float64(b)}, true
+}
+
+func ensureReadableColor(foreground, background string, minRatio float64) string {
+	if contrastRatio(foreground, background) >= minRatio {
+		return foreground
+	}
+	blackRatio := contrastRatio("#111827", background)
+	whiteRatio := contrastRatio("#ffffff", background)
+	if whiteRatio > blackRatio {
+		return "#ffffff"
+	}
+	return "#111827"
+}
+
+func contrastRatio(foreground, background string) float64 {
+	fg, ok := parseHexColor(foreground)
+	if !ok {
+		return 0
+	}
+	bg, ok := parseHexColor(background)
+	if !ok {
+		return 0
+	}
+	l1 := relativeLuminance(fg) + 0.05
+	l2 := relativeLuminance(bg) + 0.05
+	if l1 < l2 {
+		l1, l2 = l2, l1
+	}
+	return l1 / l2
+}
+
+func relativeLuminance(color rgbColor) float64 {
+	return 0.2126*linearRGB(color.r) + 0.7152*linearRGB(color.g) + 0.0722*linearRGB(color.b)
+}
+
+func linearRGB(value float64) float64 {
+	value = value / 255
+	if value <= 0.03928 {
+		return value / 12.92
+	}
+	return math.Pow((value+0.055)/1.055, 2.4)
 }
