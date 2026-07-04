@@ -74,7 +74,8 @@ The installer:
 - copies daemon, CLI, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
 - copies `Shurufa233ProfileCtl.exe` for current-session enable/activate/probe operations
 - copies `Shurufa233SmokeEdit.exe` for native TSF and typing performance validation
-- if `Shurufa233SmokeEdit.exe` is locked by a stale validation process, installs the latest lab as `Shurufa233SmokeEdit-<stamp>.exe` and points the Start Menu shortcut to that fresh binary
+- stops fixed and versioned `Shurufa233SmokeEdit*` validation labs before copying
+- if `Shurufa233SmokeEdit.exe` is still locked by Windows, installs the latest lab as `Shurufa233SmokeEdit-<stamp>.exe` and points the Start Menu shortcut to that fresh binary
 - copies the React settings UI bundle and serves it from `http://127.0.0.1:23333/settings/`
 - creates Start Menu shortcuts under `shurufa233` for the settings panel and input performance lab
 - starts the daemon and verifies `http://127.0.0.1:23333/health`

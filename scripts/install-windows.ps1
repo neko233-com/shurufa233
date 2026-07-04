@@ -239,6 +239,37 @@ function Stop-TextServiceHost {
   }
 }
 
+function Stop-SmokeEditLabs {
+  $processes = @(Get-Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProcessName -like "Shurufa233SmokeEdit*" })
+  if ($processes.Count -eq 0) {
+    return
+  }
+
+  $processes | Stop-Process -Force -ErrorAction SilentlyContinue
+  for ($i = 0; $i -lt 12; $i++) {
+    $remaining = @(Get-Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.ProcessName -like "Shurufa233SmokeEdit*" })
+    if ($remaining.Count -eq 0) {
+      return
+    }
+    Start-Sleep -Milliseconds 250
+  }
+
+  $remaining = @(Get-Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProcessName -like "Shurufa233SmokeEdit*" })
+  foreach ($process in $remaining) {
+    & cmd.exe /c "taskkill /F /PID $($process.Id) /T >nul 2>nul" | Out-Null
+  }
+  for ($i = 0; $i -lt 8; $i++) {
+    if (-not (Get-Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.ProcessName -like "Shurufa233SmokeEdit*" })) {
+      return
+    }
+    Start-Sleep -Milliseconds 250
+  }
+}
+
 function Get-StartMenuDir {
   return Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\shurufa233"
 }
@@ -432,10 +463,11 @@ if (-not $RegisterOnly) {
   New-Item -ItemType Directory -Force $InstallDir | Out-Null
   Stop-TextServiceHost
   Get-Process -Name shurufa-daemon -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  Get-Process -Name Shurufa233SmokeEdit -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Stop-SmokeEditLabs
   for ($i = 0; $i -lt 20; $i++) {
     $daemonRunning = Get-Process -Name shurufa-daemon -ErrorAction SilentlyContinue
-    $smokeRunning = Get-Process -Name Shurufa233SmokeEdit -ErrorAction SilentlyContinue
+    $smokeRunning = Get-Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.ProcessName -like "Shurufa233SmokeEdit*" }
     if (-not $daemonRunning -and -not $smokeRunning) { break }
     Start-Sleep -Milliseconds 250
   }
