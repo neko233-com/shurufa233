@@ -2,6 +2,8 @@ import { StrictMode, useCallback, useEffect, useMemo, useRef, useState, type CSS
 import { createRoot } from "react-dom/client";
 import {
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
   Check,
   CircleAlert,
   Download,
@@ -93,10 +95,35 @@ type Candidate = {
   userScore: number;
 };
 
+type CandidatePageItem = Candidate & {
+  index: number;
+  displayIndex: number;
+  score: number;
+};
+
 type EngineState = {
   buffer: string;
   candidates: Candidate[] | null;
   committed?: string;
+  updatedAt: string;
+};
+
+type CandidateActionResult = {
+  ok: boolean;
+  action: string;
+  start: number;
+  limit: number;
+  total: number;
+  committed?: string;
+  state: EngineState;
+  candidates: {
+    ok: boolean;
+    start: number;
+    limit: number;
+    total: number;
+    items: CandidatePageItem[];
+    updatedAt: string;
+  };
   updatedAt: string;
 };
 
@@ -354,6 +381,8 @@ function normalizeCandidateLayout(layout?: string): Config["candidateLayout"] {
 function App() {
   const [config, setConfig] = useState<Config>(defaultConfig);
   const [preview, setPreview] = useState("nihao");
+  const [previewPageStart, setPreviewPageStart] = useState(0);
+  const [previewCommitted, setPreviewCommitted] = useState("");
   const [state, setState] = useState<EngineState | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "offline" | "saved">("loading");
   const [updateText, setUpdateText] = useState("未检查");
@@ -387,6 +416,8 @@ function App() {
   const candidatePageSize = Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize));
   const candidateLayout = normalizeCandidateLayout(config.candidateLayout);
   const showCandidateComments = config.showCandidateComments ?? defaultConfig.showCandidateComments;
+  const normalizedPreviewPageStart =
+    candidateCount > 0 ? Math.min(previewPageStart, Math.floor((candidateCount - 1) / candidatePageSize) * candidatePageSize) : 0;
   const typingPrompt = useMemo(
     () => typingPrompts.find((prompt) => prompt.id === typingPromptId) ?? typingPrompts[0],
     [typingPromptId],
@@ -413,7 +444,7 @@ function App() {
       }) as CSSProperties,
     [config.skin],
   );
-  const previewCandidates = (state?.candidates ?? []).slice(0, candidatePageSize);
+  const previewCandidates = (state?.candidates ?? []).slice(normalizedPreviewPageStart, normalizedPreviewPageStart + candidatePageSize);
   const typingProbeCandidates = typingProbe.candidates.slice(0, candidatePageSize);
   const typingProbeKinds = useMemo(() => {
     const kinds = new Set(typingProbeCandidates.map((candidate) => candidate.kind).filter(Boolean));
@@ -547,11 +578,40 @@ function App() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setState(await res.json());
+      setPreviewPageStart(0);
+      setPreviewCommitted("");
       if (status === "offline") setStatus("ready");
       setError("");
     } catch (err) {
       setStatus("offline");
       setError(err instanceof Error ? err.message : "daemon offline");
+    }
+  }
+
+  async function runCandidateAction(action: string, displayIndex?: number) {
+    try {
+      const res = await fetch(`${apiBase}/ime/candidate-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          start: normalizedPreviewPageStart,
+          limit: candidatePageSize,
+          displayIndex,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as CandidateActionResult;
+      setState(data.state);
+      setPreviewPageStart(data.start);
+      if (data.committed) {
+        setPreviewCommitted(data.committed);
+        setStatus("ready");
+      }
+      setError("");
+    } catch (err) {
+      setStatus("offline");
+      setError(err instanceof Error ? err.message : "candidate action failed");
     }
   }
 
@@ -1149,7 +1209,7 @@ function App() {
             <div className="candidatePreviewShell">
               <div className="candidatePreview" style={candidateBarStyle}>
                 <div className="compositionRow">
-                  <span>{state?.buffer || preview || "nihao"}</span>
+                  <span>{state?.buffer || previewCommitted || preview || "nihao"}</span>
                 </div>
                 <div className={candidateLayout === "vertical" ? "candidateBand vertical" : "candidateBand"}>
                   {previewCandidates.length > 0 ? (
@@ -1157,6 +1217,7 @@ function App() {
                       <button
                         key={`${candidate.reading}-${candidate.text}-${index}`}
                         className={index === 0 ? "candidatePill selected" : "candidatePill"}
+                        onClick={() => void runCandidateAction("select", index + 1)}
                       >
                         <b>{index + 1}</b>
                         <span className="candidateText">{candidate.text}</span>
@@ -1165,10 +1226,30 @@ function App() {
                       </button>
                     ))
                   ) : (
-                    <span className="emptyCandidate">等待输入</span>
+                    <span className="emptyCandidate">{previewCommitted ? `已上屏 ${previewCommitted}` : "等待输入"}</span>
                   )}
-                  {candidateCount > previewCandidates.length && (
-                    <span className="pageIndicator">1-{previewCandidates.length}/{candidateCount}</span>
+                  {candidateCount > candidatePageSize && (
+                    <div className="candidatePager">
+                      <button
+                        className="candidatePageButton"
+                        disabled={normalizedPreviewPageStart === 0}
+                        onClick={() => void runCandidateAction("prev-page")}
+                        title="上一页"
+                      >
+                        <ChevronLeft size={15} />
+                      </button>
+                      <span className="pageIndicator">
+                        {normalizedPreviewPageStart + 1}-{normalizedPreviewPageStart + previewCandidates.length}/{candidateCount}
+                      </span>
+                      <button
+                        className="candidatePageButton"
+                        disabled={normalizedPreviewPageStart + previewCandidates.length >= candidateCount}
+                        onClick={() => void runCandidateAction("next-page")}
+                        title="下一页"
+                      >
+                        <ChevronRight size={15} />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

@@ -304,6 +304,83 @@ func TestImeSelectCharCommitsCandidateCharacter(t *testing.T) {
 	}
 }
 
+func TestImeCandidateActionPagesAndCommitsByDisplayIndex(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.CandidatePageSize = 2
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{
+		{Reading: "ceshi", Text: "测试一", Weight: 10010},
+		{Reading: "ceshi", Text: "测试二", Weight: 10009},
+		{Reading: "ceshi", Text: "测试三", Weight: 10008},
+		{Reading: "ceshi", Text: "测试四", Weight: 10007},
+	})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	session.Preview("ceshi")
+
+	req := httptest.NewRequest(http.MethodPost, "/ime/candidate-action", strings.NewReader(`{"action":"next-page","start":0}`))
+	rec := httptest.NewRecorder()
+	state.imeCandidateAction(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var page candidateActionResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if !page.OK || page.Start != 2 || page.Limit != 2 || len(page.Candidates.Items) != 2 {
+		t.Fatalf("candidate action page = %#v", page)
+	}
+	if page.Candidates.Items[0].Text != "测试三" {
+		t.Fatalf("first next-page candidate = %#v", page.Candidates.Items[0])
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/ime/candidate-action", strings.NewReader(`{"action":"select","start":2,"displayIndex":2}`))
+	rec = httptest.NewRecorder()
+	state.imeCandidateAction(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var commit candidateActionResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &commit); err != nil {
+		t.Fatal(err)
+	}
+	if commit.Committed != "测试四" || commit.State.Buffer != "" {
+		t.Fatalf("candidate action commit = %#v", commit)
+	}
+}
+
+func TestImeCandidateActionCommitsFirstCharacter(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{{Reading: "houxuan", Text: "候选", Weight: 20000}})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	session.Preview("houxuan")
+
+	req := httptest.NewRequest(http.MethodPost, "/ime/candidate-action?action=first-char&index=0", nil)
+	rec := httptest.NewRecorder()
+	state.imeCandidateAction(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result candidateActionResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Committed != "候" {
+		t.Fatalf("candidate action first-char = %#v", result)
+	}
+}
+
 func TestImeModeCanToggleSessionMode(t *testing.T) {
 	config := engine.DefaultConfig()
 	session := engine.New(config)

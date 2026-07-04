@@ -44,6 +44,51 @@ type modeRequest struct {
 	Toggle bool   `json:"toggle,omitempty"`
 }
 
+type candidateActionRequest struct {
+	Action       string `json:"action,omitempty"`
+	Index        int    `json:"index,omitempty"`
+	DisplayIndex int    `json:"displayIndex,omitempty"`
+	Start        int    `json:"start,omitempty"`
+	Limit        int    `json:"limit,omitempty"`
+	PageSize     int    `json:"pageSize,omitempty"`
+	Delta        int    `json:"delta,omitempty"`
+	Side         string `json:"side,omitempty"`
+}
+
+type candidateActionResult struct {
+	OK         bool                 `json:"ok"`
+	Action     string               `json:"action"`
+	Start      int                  `json:"start"`
+	Limit      int                  `json:"limit"`
+	Total      int                  `json:"total"`
+	Committed  string               `json:"committed,omitempty"`
+	State      engine.State         `json:"state"`
+	Candidates candidatePagePayload `json:"candidates"`
+	UpdatedAt  time.Time            `json:"updatedAt"`
+}
+
+type candidatePagePayload struct {
+	OK        bool                `json:"ok"`
+	Start     int                 `json:"start"`
+	Limit     int                 `json:"limit"`
+	Total     int                 `json:"total"`
+	Items     []candidatePageItem `json:"items"`
+	UpdatedAt time.Time           `json:"updatedAt"`
+}
+
+type candidatePageItem struct {
+	Index        int    `json:"index"`
+	DisplayIndex int    `json:"displayIndex"`
+	Text         string `json:"text"`
+	Reading      string `json:"reading"`
+	Kind         string `json:"kind,omitempty"`
+	Source       string `json:"source,omitempty"`
+	Comment      string `json:"comment,omitempty"`
+	Weight       int    `json:"weight"`
+	UserScore    int    `json:"userScore"`
+	Score        int    `json:"score"`
+}
+
 type agentRequest struct {
 	Input   string `json:"input"`
 	Context string `json:"context,omitempty"`
@@ -151,6 +196,7 @@ func main() {
 	mux.HandleFunc("POST /ime/clear", state.withCORS(state.imeClear))
 	mux.HandleFunc("POST /ime/select", state.withCORS(state.imeSelect))
 	mux.HandleFunc("POST /ime/select-char", state.withCORS(state.imeSelectChar))
+	mux.HandleFunc("POST /ime/candidate-action", state.withCORS(state.imeCandidateAction))
 	mux.HandleFunc("GET /ime/count", state.withCORS(state.imeCount))
 	mux.HandleFunc("GET /ime/candidates", state.withCORS(state.imeCandidates))
 	mux.HandleFunc("GET /ime/skin", state.withCORS(state.imeSkin))
@@ -397,6 +443,22 @@ func (s *AppState) imeSelectChar(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(state.Committed))
 }
 
+func (s *AppState) imeCandidateAction(w http.ResponseWriter, r *http.Request) {
+	var req candidateActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	applyCandidateActionQuery(&req, r)
+	session := s.sessionForRequest(r)
+	result, err := s.executeCandidateAction(session, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, result)
+}
+
 func (s *AppState) imeCount(w http.ResponseWriter, r *http.Request) {
 	session := s.sessionForRequest(r)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -429,6 +491,192 @@ func (s *AppState) imeCandidates(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(strings.Join(parts, "\n")))
+}
+
+func applyCandidateActionQuery(req *candidateActionRequest, r *http.Request) {
+	query := r.URL.Query()
+	if raw := strings.TrimSpace(query.Get("action")); raw != "" {
+		req.Action = raw
+	}
+	if raw := strings.TrimSpace(query.Get("side")); raw != "" {
+		req.Side = raw
+	}
+	if raw := strings.TrimSpace(query.Get("index")); raw != "" {
+		req.Index = parseBoundedInt(raw, req.Index, -1)
+	}
+	if raw := strings.TrimSpace(query.Get("displayIndex")); raw != "" {
+		req.DisplayIndex = parseBoundedInt(raw, req.DisplayIndex, -1)
+	}
+	if raw := strings.TrimSpace(query.Get("start")); raw != "" {
+		req.Start = parseBoundedInt(raw, req.Start, -1)
+	}
+	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
+		req.Limit = parseBoundedInt(raw, req.Limit, -1)
+	}
+	if raw := strings.TrimSpace(query.Get("pageSize")); raw != "" {
+		req.PageSize = parseBoundedInt(raw, req.PageSize, -1)
+	}
+	if raw := strings.TrimSpace(query.Get("delta")); raw != "" {
+		req.Delta = parseBoundedInt(raw, req.Delta, -1)
+	}
+}
+
+func (s *AppState) executeCandidateAction(session *engine.Engine, req candidateActionRequest) (candidateActionResult, error) {
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	if action == "" {
+		action = "view"
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = req.PageSize
+	}
+	if limit <= 0 {
+		limit = s.config.CandidatePageSize
+	}
+	if limit <= 0 {
+		limit = engine.DefaultConfig().CandidatePageSize
+	}
+	if limit > 64 {
+		limit = 64
+	}
+	start := req.Start
+	if start < 0 {
+		start = 0
+	}
+	total := len(session.State().Candidates)
+	if start > total {
+		start = total
+	}
+
+	switch action {
+	case "view", "page", "candidates", "candidate-page":
+		return buildCandidateActionResult(session, action, start, limit, ""), nil
+	case "next", "next-page", "page-next":
+		step := limit
+		if req.Delta > 0 {
+			step = req.Delta * limit
+		}
+		start += step
+		if start >= total {
+			start = maxCandidatePageStart(total, limit)
+		}
+		return buildCandidateActionResult(session, action, start, limit, ""), nil
+	case "prev", "previous", "previous-page", "prev-page", "page-prev":
+		step := limit
+		if req.Delta > 0 {
+			step = req.Delta * limit
+		}
+		start -= step
+		if start < 0 {
+			start = 0
+		}
+		return buildCandidateActionResult(session, action, start, limit, ""), nil
+	case "home", "first-page":
+		return buildCandidateActionResult(session, action, 0, limit, ""), nil
+	case "end", "last-page":
+		return buildCandidateActionResult(session, action, maxCandidatePageStart(total, limit), limit, ""), nil
+	case "select", "commit", "commit-candidate":
+		index := candidateActionIndex(req, start)
+		state, err := session.Select(index)
+		if err != nil {
+			return candidateActionResult{}, err
+		}
+		if err := s.saveUserScores(session.UserScores()); err != nil {
+			return candidateActionResult{}, err
+		}
+		return buildCandidateActionResultWithState(session, action, 0, limit, state.Committed, state), nil
+	case "first-char", "commit-first-char":
+		return executeCandidateCharAction(session, req, start, limit, action, "first")
+	case "last-char", "commit-last-char":
+		return executeCandidateCharAction(session, req, start, limit, action, "last")
+	case "select-char", "commit-char", "commit-candidate-char":
+		return executeCandidateCharAction(session, req, start, limit, action, req.Side)
+	default:
+		return candidateActionResult{}, fmt.Errorf("unknown candidate action: %s", action)
+	}
+}
+
+func executeCandidateCharAction(session *engine.Engine, req candidateActionRequest, start int, limit int, action string, side string) (candidateActionResult, error) {
+	index := candidateActionIndex(req, start)
+	state, err := session.SelectChar(index, side)
+	if err != nil {
+		return candidateActionResult{}, err
+	}
+	return buildCandidateActionResultWithState(session, action, 0, limit, state.Committed, state), nil
+}
+
+func candidateActionIndex(req candidateActionRequest, start int) int {
+	if req.DisplayIndex > 0 {
+		return start + req.DisplayIndex - 1
+	}
+	return req.Index
+}
+
+func buildCandidateActionResult(session *engine.Engine, action string, start int, limit int, committed string) candidateActionResult {
+	return buildCandidateActionResultWithState(session, action, start, limit, committed, session.State())
+}
+
+func buildCandidateActionResultWithState(session *engine.Engine, action string, start int, limit int, committed string, state engine.State) candidateActionResult {
+	candidates := buildCandidatePagePayload(session, start, limit)
+	return candidateActionResult{
+		OK:         true,
+		Action:     action,
+		Start:      candidates.Start,
+		Limit:      candidates.Limit,
+		Total:      candidates.Total,
+		Committed:  committed,
+		State:      state,
+		Candidates: candidates,
+		UpdatedAt:  time.Now().UTC(),
+	}
+}
+
+func buildCandidatePagePayload(session *engine.Engine, start int, limit int) candidatePagePayload {
+	state := session.State()
+	if start < 0 {
+		start = 0
+	}
+	if start > len(state.Candidates) {
+		start = len(state.Candidates)
+	}
+	if limit <= 0 || limit > 64 {
+		limit = 64
+	}
+	end := start + limit
+	if end > len(state.Candidates) {
+		end = len(state.Candidates)
+	}
+	items := make([]candidatePageItem, 0, end-start)
+	for i, candidate := range state.Candidates[start:end] {
+		index := start + i
+		items = append(items, candidatePageItem{
+			Index:        index,
+			DisplayIndex: i + 1,
+			Text:         candidate.Text,
+			Reading:      candidate.Reading,
+			Kind:         candidate.Kind,
+			Source:       candidate.Source,
+			Comment:      candidate.Comment,
+			Weight:       candidate.Weight,
+			UserScore:    candidate.UserScore,
+			Score:        candidate.Weight + candidate.UserScore,
+		})
+	}
+	return candidatePagePayload{
+		OK:        true,
+		Start:     start,
+		Limit:     limit,
+		Total:     len(state.Candidates),
+		Items:     items,
+		UpdatedAt: time.Now().UTC(),
+	}
+}
+
+func maxCandidatePageStart(total int, limit int) int {
+	if total <= 0 || limit <= 0 {
+		return 0
+	}
+	return ((total - 1) / limit) * limit
 }
 
 func parseBoundedInt(raw string, fallback int, upper int) int {

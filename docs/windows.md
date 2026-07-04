@@ -273,6 +273,7 @@ The TSF layer renders a native Win32 candidate window and reads skin data from t
 ```text
 GET /ime/skin
 GET /ime/candidates?start=0&limit=7
+POST /ime/candidate-action
 ```
 
 `/ime/candidates` returns the same tab-separated payload shape as the C ABI:
@@ -280,6 +281,9 @@ GET /ime/candidates?start=0&limit=7
 The `start` and `limit` query parameters let the native window request only the
 visible page, so HTTP fallback keeps the same paging, emoji, kaomoji, symbol
 badge, and candidate comment behavior as the in-process core path.
+`/ime/candidate-action` mirrors the generic ABI action bus for page navigation,
+candidate commit, and first/last-character actions, giving React/Wails and
+daemon fallback clients the same event contract as packaged native builds.
 Candidate type badges are intentionally short localized labels (`表情`, `颜`, `符`,
 `短`, `时`, `AI`) so emoji, kaomoji, symbol, phrase, dynamic datetime, and agent candidates stay readable without
 making the native strip feel like a debug surface. Candidate comments are drawn

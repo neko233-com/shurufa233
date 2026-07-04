@@ -16,6 +16,7 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /ime/mode`
 - `POST /ime/mode`
 - `POST /ime/select-char`
+- `POST /ime/candidate-action`
 - `GET /ime/candidates`
 - `POST /agent/compose`
 
@@ -81,6 +82,20 @@ saved default input mode in `config.json`.
 candidate, while `side=last` commits the last character. This mirrors Rime's
 common first/last-character candidate action without forcing the Windows TSF
 layer to sacrifice its current bracket paging shortcut.
+
+`POST /ime/candidate-action` accepts the same JSON action shape as the native
+ABI command bus:
+
+```json
+{ "action": "next-page", "start": 0, "limit": 7 }
+```
+
+Supported actions include `view`, `next-page`, `prev-page`, `first-page`,
+`last-page`, `select`, `first-char`, `last-char`, and `select-char`. Selection
+can use either an absolute `index` or page-relative `displayIndex` plus `start`.
+The response includes `state`, optional `committed`, and a rich `candidates`
+page with metadata. This keeps React/Wails previews, daemon fallback clients,
+and native C++ glue aligned on the same candidate event model.
 
 `GET /ime/candidates?start=0&limit=7` returns tab-separated candidate rows:
 `display_index`, `text`, `reading`, `score`, `kind`, `source`, and `comment`.

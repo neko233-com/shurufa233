@@ -658,6 +658,44 @@ h2 {
   padding-left: 14px;
 }
 
+.candidatePager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 10px;
+}
+
+.candidatePager .pageIndicator {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.candidatePageButton {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--candidate-border, #d1d5db), var(--candidate-surface, #ffffff) 24%);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--candidate-surface, #ffffff), var(--candidate-accent, #2563eb) 5%);
+  color: var(--candidate-muted, #64748b);
+  cursor: pointer;
+}
+
+.candidatePageButton:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.candidateBand.vertical .candidatePager {
+  width: 100%;
+  justify-content: flex-end;
+  margin-left: 0;
+  padding-left: 0;
+}
+
 .promptTabs {
   display: flex;
   flex-wrap: wrap;
