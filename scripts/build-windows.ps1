@@ -92,6 +92,8 @@ foreach ($Arch in $GoArch) {
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   go build -trimpath -ldflags="-s -w" -o (Join-Path $Out "shurufa-imecli.exe") .\cmd\imecli
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  go build -trimpath -ldflags="-s -w" -o (Join-Path $Out "shurufa-dictimport.exe") .\cmd\dictimport
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   $compiler = Find-MingwCompiler -Arch $Arch
   if ($compiler) {

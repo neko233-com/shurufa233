@@ -88,6 +88,7 @@ function Get-ArtifactRole {
     "^build\\windows\\$([regex]::Escape($NativeArch))\\Shurufa233SmokeEdit\.exe$" { return "smokeedit" }
     "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa-daemon\.exe$" { return "daemon" }
     "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa-imecli\.exe$" { return "cli" }
+    "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa-dictimport\.exe$" { return "dictimport" }
     "^build\\windows\\go-$([regex]::Escape($GoArch))\\shurufa_core\.dll$" { return "go-core" }
     "^apps\\settings\\dist\\index\.html$" { return "settings-ui" }
     "^scripts\\install-windows\.ps1$" { return "installer" }
@@ -115,7 +116,8 @@ foreach ($NativeArch in $Arch) {
     (Join-Path $NativeOut "Shurufa233ProfileCtl.exe"),
     (Join-Path $NativeOut "Shurufa233SmokeEdit.exe"),
     (Join-Path $GoOut "shurufa-daemon.exe"),
-    (Join-Path $GoOut "shurufa-imecli.exe")
+    (Join-Path $GoOut "shurufa-imecli.exe"),
+    (Join-Path $GoOut "shurufa-dictimport.exe")
   )
   $missing = @($required | Where-Object { -not (Test-Path $_) })
   if ($missing.Count -gt 0) {
@@ -138,6 +140,7 @@ foreach ($NativeArch in $Arch) {
   Copy-RequiredFile -Source (Join-Path $NativeOut "Shurufa233SmokeEdit.exe") -Destination (Join-Path $Stage "build\windows\$NativeArch\Shurufa233SmokeEdit.exe")
   Copy-RequiredFile -Source (Join-Path $GoOut "shurufa-daemon.exe") -Destination (Join-Path $Stage "build\windows\go-$GoArch\shurufa-daemon.exe")
   Copy-RequiredFile -Source (Join-Path $GoOut "shurufa-imecli.exe") -Destination (Join-Path $Stage "build\windows\go-$GoArch\shurufa-imecli.exe")
+  Copy-RequiredFile -Source (Join-Path $GoOut "shurufa-dictimport.exe") -Destination (Join-Path $Stage "build\windows\go-$GoArch\shurufa-dictimport.exe")
 
   $CoreSource = Join-Path $GoOut "shurufa_core.dll"
   if (Test-Path $CoreSource) {

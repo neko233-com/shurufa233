@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -34,6 +36,12 @@ type updateCheck struct {
 	LatestVersion   string `json:"latestVersion"`
 	UpdateAvailable bool   `json:"updateAvailable"`
 	ManifestURL     string `json:"manifestUrl"`
+}
+
+type wordbookResponse struct {
+	UserScores map[string]int `json:"userScores"`
+	Count      int            `json:"count"`
+	UpdatedAt  string         `json:"updatedAt"`
 }
 
 type agentResponse struct {
@@ -71,6 +79,8 @@ func main() {
 		err = updateApply(client)
 	case "mode":
 		err = mode(client, os.Args[2:])
+	case "wordbook":
+		err = wordbook(client, os.Args[2:])
 	case "agent":
 		err = agent(client, os.Args[2:])
 	case "repl":
@@ -92,6 +102,11 @@ Usage:
   shurufa-imecli status
   shurufa-imecli preview nihao
   shurufa-imecli mode [zh|en|toggle]
+  shurufa-imecli wordbook list
+  shurufa-imecli wordbook export
+  shurufa-imecli wordbook import user-wordbook.json [--replace]
+  shurufa-imecli wordbook delete "nihao|你好"
+  shurufa-imecli wordbook clear
   shurufa-imecli update-check
   shurufa-imecli update-apply
   shurufa-imecli agent "/rewrite hello"
@@ -169,6 +184,109 @@ func mode(client *http.Client, args []string) error {
 	}
 	fmt.Println(state.Mode)
 	return nil
+}
+
+func wordbook(client *http.Client, args []string) error {
+	action := "list"
+	if len(args) > 0 {
+		action = strings.ToLower(strings.TrimSpace(args[0]))
+		args = args[1:]
+	}
+	switch action {
+	case "list":
+		var response wordbookResponse
+		if err := getJSON(client, "/wordbook", &response); err != nil {
+			return err
+		}
+		printWordbook(response.UserScores)
+		return nil
+	case "export":
+		var response wordbookResponse
+		if err := getJSON(client, "/wordbook", &response); err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(map[string]any{"userScores": response.UserScores}, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	case "import":
+		if len(args) == 0 {
+			return fmt.Errorf("missing import file")
+		}
+		scores, err := readWordbookFile(args[0])
+		if err != nil {
+			return err
+		}
+		payload := map[string]any{"userScores": scores, "merge": true}
+		if len(args) > 1 && args[1] == "--replace" {
+			payload["merge"] = false
+		}
+		var response wordbookResponse
+		if err := putJSON(client, "/wordbook", payload, &response); err != nil {
+			return err
+		}
+		fmt.Printf("imported=%d\n", response.Count)
+		return nil
+	case "delete":
+		if len(args) == 0 {
+			return fmt.Errorf("missing wordbook key")
+		}
+		var response wordbookResponse
+		if err := deleteJSON(client, "/wordbook?key="+urlQueryEscape(args[0]), &response); err != nil {
+			return err
+		}
+		fmt.Printf("remaining=%d\n", response.Count)
+		return nil
+	case "clear":
+		var response wordbookResponse
+		if err := deleteJSON(client, "/wordbook", &response); err != nil {
+			return err
+		}
+		fmt.Printf("remaining=%d\n", response.Count)
+		return nil
+	default:
+		return fmt.Errorf("unknown wordbook action %q", action)
+	}
+}
+
+func printWordbook(scores map[string]int) {
+	keys := make([]string, 0, len(scores))
+	for key := range scores {
+		keys = append(keys, key)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		if scores[keys[i]] == scores[keys[j]] {
+			return keys[i] < keys[j]
+		}
+		return scores[keys[i]] > scores[keys[j]]
+	})
+	for _, key := range keys {
+		fmt.Printf("%s\t%d\n", key, scores[key])
+	}
+}
+
+func readWordbookFile(path string) (map[string]int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var wrapped struct {
+		UserScores map[string]int `json:"userScores"`
+		Scores     map[string]int `json:"scores"`
+	}
+	if err := json.Unmarshal(data, &wrapped); err == nil && (wrapped.UserScores != nil || wrapped.Scores != nil) {
+		if wrapped.UserScores != nil {
+			return wrapped.UserScores, nil
+		}
+		return wrapped.Scores, nil
+	}
+	var scores map[string]int
+	if err := json.Unmarshal(data, &scores); err != nil {
+		return nil, err
+	}
+	return scores, nil
 }
 
 func agent(client *http.Client, args []string) error {
@@ -257,6 +375,18 @@ func postJSON(client *http.Client, path string, payload any, out any) error {
 	return json.Unmarshal(body, out)
 }
 
+func putJSON(client *http.Client, path string, payload any, out any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	body, err := request(client, http.MethodPut, path, data)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, out)
+}
+
 func get(client *http.Client, path string) ([]byte, error) {
 	resp, err := client.Get(apiBase + path)
 	if err != nil {
@@ -267,16 +397,39 @@ func get(client *http.Client, path string) ([]byte, error) {
 }
 
 func post(client *http.Client, path string, body []byte) ([]byte, error) {
+	return request(client, http.MethodPost, path, body)
+}
+
+func deleteJSON(client *http.Client, path string, out any) error {
+	body, err := request(client, http.MethodDelete, path, nil)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, out)
+}
+
+func request(client *http.Client, method string, path string, body []byte) ([]byte, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
-	resp, err := client.Post(apiBase+path, "application/json", reader)
+	req, err := http.NewRequest(method, apiBase+path, reader)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	return readResponse(resp)
+}
+
+func urlQueryEscape(value string) string {
+	return url.QueryEscape(value)
 }
 
 func readResponse(resp *http.Response) ([]byte, error) {

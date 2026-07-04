@@ -6,8 +6,14 @@ Windows is the production target for the first line. The native input method lay
 
 ```text
 build/windows/go-amd64/shurufa-daemon.exe
+build/windows/go-amd64/shurufa-imecli.exe
+build/windows/go-amd64/shurufa-dictimport.exe
 build/windows/go-arm64/shurufa-daemon.exe
+build/windows/go-arm64/shurufa-imecli.exe
+build/windows/go-arm64/shurufa-dictimport.exe
 build/windows/go-386/shurufa-daemon.exe
+build/windows/go-386/shurufa-imecli.exe
+build/windows/go-386/shurufa-dictimport.exe
 build/windows/x64/Shurufa233Tsf.dll
 build/windows/x86/Shurufa233Tsf.dll
 build/windows/arm64/Shurufa233Tsf.dll
@@ -37,7 +43,7 @@ For the in-process Go core DLL, `build-windows.ps1` also needs a matching MinGW-
 - `x86` / `386`: `i686-w64-mingw32-gcc.exe`
 - `arm64`: `aarch64-w64-mingw32-gcc.exe`
 
-If the matching compiler is missing, daemon and CLI artifacts still build, but `shurufa_core.dll` is skipped for that architecture. That package will run through daemon IPC fallback instead of the fastest in-process core path.
+If the matching compiler is missing, daemon, CLI, and dictionary import artifacts still build, but `shurufa_core.dll` is skipped for that architecture. That package will run through daemon IPC fallback instead of the fastest in-process core path.
 
 ## Build
 
@@ -72,7 +78,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 The installer:
 
 - verifies `manifest.json` when present, including platform, real OS architecture, `in-process-core` mode, required production artifact roles, required files, and SHA-256 hashes before changing system state
-- copies daemon, CLI, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
+- copies daemon, CLI, dictionary importer, and TSF DLL to `%LOCALAPPDATA%\Programs\shurufa233`
 - detects the real Windows OS architecture, including 32-bit PowerShell running under WOW64, before choosing x64, arm64, or x86 artifacts
 - copies `Shurufa233ProfileCtl.exe` for current-session enable/activate/probe operations
 - copies `Shurufa233SmokeEdit.exe` for native TSF and typing performance validation
@@ -142,9 +148,17 @@ Current input method tip:
 ```powershell
 shurufa-imecli status
 shurufa-imecli preview nihao
+shurufa-imecli wordbook list
+shurufa-imecli wordbook import .\user-wordbook.json
 shurufa-imecli update-check
 shurufa-imecli update-apply
 shurufa-imecli agent "/rewrite hello world"
+```
+
+Dictionary source conversion:
+
+```powershell
+shurufa-dictimport -language zh-CN -version rime-import -source rime-luna-pinyin -out .\data\dictionaries\zh-CN.rime.json path\to\luna_pinyin.dict.yaml
 ```
 
 ## Native Profile Tool

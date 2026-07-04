@@ -78,7 +78,7 @@ function Test-PackageManifest {
     throw "Package performanceMode is '$($manifest.performanceMode)'. Production install requires in-process-core."
   }
 
-  $requiredRoles = @("tsf-dll", "profilectl", "smokeedit", "daemon", "cli", "go-core", "settings-ui", "installer", "uninstaller")
+  $requiredRoles = @("tsf-dll", "profilectl", "smokeedit", "daemon", "cli", "dictimport", "go-core", "settings-ui", "installer", "uninstaller")
   $presentRoles = @{}
   foreach ($artifact in @($manifest.artifacts)) {
     if ($artifact.required -eq $true -and $artifact.present -eq $true -and $artifact.role) {
@@ -514,6 +514,7 @@ if (-not $SkipBuild -and -not $RegisterOnly) {
 
 $DaemonSource = Join-Path $Root "build\windows\go-$GoArch\shurufa-daemon.exe"
 $CliSource = Join-Path $Root "build\windows\go-$GoArch\shurufa-imecli.exe"
+$DictImportSource = Join-Path $Root "build\windows\go-$GoArch\shurufa-dictimport.exe"
 $CoreSource = Join-Path $Root "build\windows\go-$GoArch\shurufa_core.dll"
 $TsfSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233Tsf.dll"
 $ProfileCtlSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233ProfileCtl.exe"
@@ -522,7 +523,7 @@ $SettingsSource = Join-Path $Root "apps\settings\dist"
 $SmokeEditInstalledPath = Join-Path $InstallDir "Shurufa233SmokeEdit.exe"
 
 if (-not $RegisterOnly) {
-  foreach ($Path in @($DaemonSource, $CliSource, $TsfSource, $ProfileCtlSource, $SmokeEditSource)) {
+  foreach ($Path in @($DaemonSource, $CliSource, $DictImportSource, $TsfSource, $ProfileCtlSource, $SmokeEditSource)) {
     if (-not (Test-Path $Path)) {
       throw "Missing artifact: $Path"
     }
@@ -545,6 +546,7 @@ if (-not $RegisterOnly) {
   }
   Copy-Item -Force $DaemonSource (Join-Path $InstallDir "shurufa-daemon.exe")
   Copy-Item -Force $CliSource (Join-Path $InstallDir "shurufa-imecli.exe")
+  Copy-Item -Force $DictImportSource (Join-Path $InstallDir "shurufa-dictimport.exe")
   $stamp = Get-Date -Format "yyyyMMddHHmmss"
   $TsfDll = Join-Path $InstallDir "Shurufa233Tsf-$NativeArch-$stamp.dll"
   Copy-Item -Force $TsfSource $TsfDll
