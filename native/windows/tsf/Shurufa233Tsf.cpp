@@ -790,39 +790,47 @@ class CandidateWindow {
     return RGB(red, green, blue);
   }
 
+  static int ColorLuminance(COLORREF color) {
+    return (GetRValue(color) * 299 + GetGValue(color) * 587 + GetBValue(color) * 114) / 1000;
+  }
+
+  bool IsDarkSkin() const {
+    return theme_ == "dark" || ColorLuminance(surface_) < 96;
+  }
+
   COLORREF PreeditSurfaceColor() const {
-    return theme_ == "dark" ? RGB(36, 36, 36) : RGB(250, 250, 250);
+    return IsDarkSkin() ? RGB(36, 36, 36) : RGB(250, 250, 250);
   }
 
   COLORREF PreeditTextColor() const {
-    return theme_ == "dark" ? RGB(245, 245, 245) : RGB(30, 30, 30);
+    return IsDarkSkin() ? RGB(245, 245, 245) : RGB(30, 30, 30);
   }
 
   COLORREF PreeditBorderColor() const {
-    return theme_ == "dark" ? RGB(78, 78, 78) : RGB(218, 220, 224);
+    return IsDarkSkin() ? RGB(78, 78, 78) : RGB(218, 220, 224);
   }
 
   COLORREF PreeditUnderlineColor() const {
-    return theme_ == "dark" ? RGB(150, 150, 150) : RGB(95, 99, 104);
+    return IsDarkSkin() ? RGB(150, 150, 150) : RGB(95, 99, 104);
   }
 
   COLORREF CandidateBandColor() const {
-    const COLORREF base = theme_ == "dark" ? RGB(30, 32, 36) : RGB(255, 255, 255);
+    const COLORREF base = IsDarkSkin() ? RGB(30, 32, 36) : RGB(255, 255, 255);
     return MixColor(surface_, base, 18);
   }
 
   COLORREF CandidateIdleColor() const {
-    return theme_ == "dark" ? MixColor(surface_, RGB(255, 255, 255), 5)
+    return IsDarkSkin() ? MixColor(surface_, RGB(255, 255, 255), 5)
                             : MixColor(surface_, accent_, 4);
   }
 
   COLORREF CandidateIdleBorderColor() const {
-    return theme_ == "dark" ? MixColor(border_, RGB(255, 255, 255), 8)
+    return IsDarkSkin() ? MixColor(border_, RGB(255, 255, 255), 8)
                             : MixColor(border_, surface_, 36);
   }
 
   COLORREF CandidateAccentEdgeColor() const {
-    return MixColor(accent_, RGB(255, 255, 255), theme_ == "dark" ? 18 : 10);
+    return MixColor(accent_, RGB(255, 255, 255), IsDarkSkin() ? 18 : 10);
   }
 
   static std::wstring SkinConfigPath() {
