@@ -261,12 +261,13 @@ class CandidateWindow {
     int score = 0;
   };
 
-  void Show(const std::string &payload) {
+  void Show(const std::string &payload, int selectedIndex) {
     candidates_ = ParseCandidates(payload);
     if (candidates_.empty()) {
       Hide();
       return;
     }
+    selectedIndex_ = max(0, min(selectedIndex, static_cast<int>(candidates_.size()) - 1));
     EnsureWindow();
     RefreshSkin();
 
@@ -375,6 +376,7 @@ class CandidateWindow {
 
   HWND hwnd_ = nullptr;
   std::vector<CandidateView> candidates_;
+  int selectedIndex_ = 0;
   std::wstring fontFamily_ = L"Microsoft YaHei UI";
   int fontSize_ = 18;
   COLORREF accent_ = RGB(37, 99, 235);
@@ -390,7 +392,7 @@ class CandidateWindow {
     int width = 30;
     for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
       width += 30 + static_cast<int>(candidates_[i].text.size()) * (fontSize_ + 8);
-      if (!candidates_[i].reading.empty() && i == 0) {
+      if (!candidates_[i].reading.empty() && static_cast<int>(i) == selectedIndex_) {
         width += static_cast<int>(candidates_[i].reading.size()) * 7;
       }
     }
@@ -442,11 +444,12 @@ class CandidateWindow {
     for (size_t i = 0; i < candidates_.size() && i < 7; ++i) {
       const CandidateView &candidate = candidates_[i];
       const int textWidth = 34 + static_cast<int>(candidate.text.size()) * (fontSize_ + 6);
-      const int readingWidth = i == 0 ? static_cast<int>(candidate.reading.size()) * 7 : 0;
+      const bool selected = static_cast<int>(i) == selectedIndex_;
+      const int readingWidth = selected ? static_cast<int>(candidate.reading.size()) * 7 : 0;
       const int itemWidth = max(58, min(210, textWidth + readingWidth));
       RECT itemRect{x, y, x + itemWidth, y + itemHeight};
 
-      if (i == 0) {
+      if (selected) {
         HBRUSH selected = CreateSolidBrush(accent_);
         HPEN selectedPen = CreatePen(PS_SOLID, 1, accent_);
         HGDIOBJ oldBrush = SelectObject(dc, selected);
@@ -460,16 +463,16 @@ class CandidateWindow {
 
       wchar_t number[8]{};
       StringCchPrintfW(number, ARRAYSIZE(number), L"%d", candidate.index);
-      SetTextColor(dc, i == 0 ? highlightText_ : mutedText_);
+      SetTextColor(dc, selected ? highlightText_ : mutedText_);
       RECT numberRect{itemRect.left + 10, itemRect.top, itemRect.left + 28, itemRect.bottom};
       DrawTextW(dc, number, -1, &numberRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
 
-      SetTextColor(dc, i == 0 ? highlightText_ : text_);
+      SetTextColor(dc, selected ? highlightText_ : text_);
       RECT textRect{itemRect.left + 28, itemRect.top, itemRect.right - 8, itemRect.bottom};
       DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
                 DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
 
-      if (i == 0 && !candidate.reading.empty()) {
+      if (selected && !candidate.reading.empty()) {
         SetTextColor(dc, RGB(219, 234, 254));
         RECT readingRect{max(itemRect.left + 72, itemRect.right - readingWidth - 8), itemRect.top,
                          itemRect.right - 8, itemRect.bottom};
@@ -710,6 +713,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       if (ch >= 'A' && ch <= 'Z') {
         ch = static_cast<char>(ch - 'A' + 'a');
       }
+      selectedIndex_ = 0;
       g_core.inputKeyFast(session_, ch);
       UpdateCandidateWindow();
       *eaten = TRUE;
@@ -717,6 +721,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
 
     if (key == VK_BACK) {
+      selectedIndex_ = 0;
       g_core.backspaceFast(session_);
       UpdateCandidateWindow();
       *eaten = TRUE;
@@ -724,14 +729,29 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
 
     if (key == VK_ESCAPE) {
+      selectedIndex_ = 0;
       ClearSession();
       candidateWindow_.Hide();
       *eaten = TRUE;
       return S_OK;
     }
 
+    if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB) {
+      MoveSelection(1);
+      *eaten = TRUE;
+      return S_OK;
+    }
+
+    if (key == VK_LEFT || key == VK_UP) {
+      MoveSelection(-1);
+      *eaten = TRUE;
+      return S_OK;
+    }
+
     if (key == VK_SPACE || key == VK_RETURN || (key >= L'1' && key <= L'9')) {
-      CommitCandidate(context, CandidateIndexFromKey(key));
+      const int index = (key >= L'1' && key <= L'9') ? CandidateIndexFromKey(key) : selectedIndex_;
+      CommitCandidate(context, index);
+      selectedIndex_ = 0;
       candidateWindow_.Hide();
       *eaten = TRUE;
       return S_OK;
@@ -773,6 +793,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return true;
     }
     if (key == VK_ESCAPE) {
+      return g_core.candidateCount(session_) > 0;
+    }
+    if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB || key == VK_LEFT || key == VK_UP) {
       return g_core.candidateCount(session_) > 0;
     }
     if (key == VK_SPACE || key == VK_RETURN) {
@@ -821,7 +844,20 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     wchar_t path[80]{};
     StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/candidates?session=%llu", session_);
     const std::string candidates = HttpRequest(L"GET", path);
-    candidateWindow_.Show(candidates);
+    const int count = g_core.candidateCount(session_);
+    if (count > 0 && selectedIndex_ >= count) {
+      selectedIndex_ = count - 1;
+    }
+    candidateWindow_.Show(candidates, selectedIndex_);
+  }
+
+  void MoveSelection(int delta) {
+    const int count = g_core.candidateCount(session_);
+    if (count <= 0) {
+      return;
+    }
+    selectedIndex_ = (selectedIndex_ + delta + count) % count;
+    UpdateCandidateWindow();
   }
 
   void ClearSession() {
@@ -835,6 +871,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   ITfKeystrokeMgr *keyMgr_ = nullptr;
   TfClientId clientId_ = TF_CLIENTID_NULL;
   uint64_t session_ = 0;
+  int selectedIndex_ = 0;
   CandidateWindow candidateWindow_;
 };
 

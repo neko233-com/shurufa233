@@ -125,3 +125,11 @@ Current skin fields come from the settings UI:
 - theme mode
 
 The candidate window is local-only. It does not fetch remote UI assets or send input text to a cloud service.
+
+Candidate interaction:
+
+- `Space` / `Enter`: commit the highlighted candidate
+- `1`-`9`: commit candidate by number
+- `Right` / `Down` / `Tab`: move highlight to the next candidate
+- `Left` / `Up`: move highlight to the previous candidate
+- `Esc`: clear the active composition and hide the candidate window
