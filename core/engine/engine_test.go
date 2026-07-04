@@ -85,6 +85,77 @@ func TestSegmentedCandidateUsesUserScoresInPath(t *testing.T) {
 	}
 }
 
+func TestAbbreviationCandidates(t *testing.T) {
+	e := New(DefaultConfig())
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "nh", want: "你好"},
+		{input: "wx", want: "微信"},
+		{input: "srf", want: "输入法"},
+		{input: "zw", want: "中文"},
+	}
+
+	for _, tt := range tests {
+		state := e.Preview(tt.input)
+		if len(state.Candidates) == 0 || state.Candidates[0].Text != tt.want {
+			t.Fatalf("expected abbreviation %s -> %s, got %#v", tt.input, tt.want, state.Candidates)
+		}
+	}
+}
+
+func TestAbbreviationCandidatesFromImportedDictionary(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{
+		{Reading: "zhongguoren", Text: "中国人", Weight: 18000},
+		{Reading: "weixinshurufa", Text: "微信输入法", Weight: 19000},
+	})
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "zgr", want: "中国人"},
+		{input: "wxsrf", want: "微信输入法"},
+	}
+
+	for _, tt := range tests {
+		state := e.Preview(tt.input)
+		if len(state.Candidates) == 0 || state.Candidates[0].Text != tt.want {
+			t.Fatalf("expected imported abbreviation %s -> %s, got %#v", tt.input, tt.want, state.Candidates)
+		}
+	}
+}
+
+func TestAbbreviationKeepsFullPinyinExactCandidateFirst(t *testing.T) {
+	e := New(DefaultConfig())
+	state := e.Preview("nihao")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "你好" {
+		t.Fatalf("expected full pinyin exact candidate first, got %#v", state.Candidates)
+	}
+}
+
+func TestAbbreviationUsesUserScores(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{
+		{Reading: "zhongguoren", Text: "中国人", Weight: 18000},
+		{Reading: "zhiguangren", Text: "追光人", Weight: 17000},
+	})
+
+	state := e.Preview("zgr")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "中国人" {
+		t.Fatalf("expected static abbreviation ranking, got %#v", state.Candidates)
+	}
+
+	e.ImportUserScores(map[string]int{"zhiguangren|追光人": 2000})
+	state = e.Preview("zgr")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "追光人" {
+		t.Fatalf("expected learned abbreviation ranking, got %#v", state.Candidates)
+	}
+}
+
 func TestEnglishMode(t *testing.T) {
 	config := DefaultConfig()
 	config.Mode = "en"

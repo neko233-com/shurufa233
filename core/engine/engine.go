@@ -18,6 +18,7 @@ type Engine struct {
 	config        Config
 	dict          map[string][]Entry
 	prefix        map[string][]Entry
+	abbr          map[string][]Entry
 	user          map[string]int
 	buffer        string
 	maxReadingLen int
@@ -27,6 +28,7 @@ const maxPrefixEntries = 256
 const fuzzyCandidatePenalty = 120
 const fuzzyVariantLimit = 64
 const doublePinyinVariantLimit = 64
+const abbreviationCandidatePenalty = 600
 const segmentedCandidatePenalty = 9000
 const segmentedPiecePenalty = 220
 
@@ -75,6 +77,7 @@ func New(config Config) *Engine {
 		config: config,
 		dict:   make(map[string][]Entry),
 		prefix: make(map[string][]Entry),
+		abbr:   make(map[string][]Entry),
 		user:   make(map[string]int),
 	}
 	e.AddEntries(defaultEntries)
@@ -123,16 +126,23 @@ func (e *Engine) addEntriesLocked(entries []Entry) {
 
 func (e *Engine) rebuildPrefixLocked() {
 	e.prefix = make(map[string][]Entry, len(e.dict)*2)
+	e.abbr = make(map[string][]Entry, len(e.dict))
 	e.maxReadingLen = 0
 	for reading, entries := range e.dict {
 		if len(reading) > e.maxReadingLen {
 			e.maxReadingLen = len(reading)
 		}
+		abbreviations := abbreviationsForReading(reading)
 		for _, entry := range entries {
 			for i := 1; i <= len(reading); i++ {
 				prefix := reading[:i]
 				if len(e.prefix[prefix]) < maxPrefixEntries {
 					e.prefix[prefix] = append(e.prefix[prefix], entry)
+				}
+			}
+			for _, abbr := range abbreviations {
+				if len(e.abbr[abbr]) < maxPrefixEntries {
+					e.abbr[abbr] = append(e.abbr[abbr], entry)
 				}
 			}
 		}
@@ -145,6 +155,9 @@ func (e *Engine) sortIndexLocked() {
 	}
 	for key := range e.prefix {
 		sortEntries(e.prefix[key])
+	}
+	for key := range e.abbr {
+		sortEntries(e.abbr[key])
 	}
 }
 
@@ -409,6 +422,17 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 
 	seen = map[string]int{}
 	for _, item := range readings {
+		appendEntries(e.abbr[item.reading], item.penalty+abbreviationCandidatePenalty)
+		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
+			appendEntries(e.abbr[variant], item.penalty+fuzzyCandidatePenalty+abbreviationCandidatePenalty)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+
+	seen = map[string]int{}
+	for _, item := range readings {
 		appendEntries(e.prefix[item.reading], item.penalty)
 		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
 			appendEntries(e.prefix[variant], item.penalty+fuzzyCandidatePenalty)
@@ -577,6 +601,100 @@ func normalizeMode(mode string) string {
 	default:
 		return "zh"
 	}
+}
+
+func abbreviationsForReading(reading string) []string {
+	parts := segmentPinyinReading(reading)
+	if len(parts) < 2 {
+		return nil
+	}
+	var builder strings.Builder
+	for _, part := range parts {
+		if part == "" {
+			return nil
+		}
+		builder.WriteByte(part[0])
+	}
+	abbr := builder.String()
+	if len(abbr) < 2 || abbr == reading {
+		return nil
+	}
+	return []string{abbr}
+}
+
+func segmentPinyinReading(reading string) []string {
+	reading = normalizeReading(reading)
+	if reading == "" {
+		return nil
+	}
+	type state struct {
+		parts []string
+		ok    bool
+	}
+	states := make([]state, len(reading)+1)
+	states[0] = state{ok: true}
+	for i := 0; i < len(reading); i++ {
+		if !states[i].ok {
+			continue
+		}
+		end := len(reading)
+		if i+maxPinyinSyllableLen < end {
+			end = i + maxPinyinSyllableLen
+		}
+		for j := end; j > i; j-- {
+			part := reading[i:j]
+			if !pinyinSyllables[part] {
+				continue
+			}
+			next := append(append([]string{}, states[i].parts...), part)
+			if !states[j].ok || len(next) < len(states[j].parts) {
+				states[j] = state{parts: next, ok: true}
+			}
+		}
+	}
+	if !states[len(reading)].ok {
+		return nil
+	}
+	return states[len(reading)].parts
+}
+
+var pinyinSyllables, maxPinyinSyllableLen = buildPinyinSyllables()
+
+func buildPinyinSyllables() (map[string]bool, int) {
+	initials := []string{
+		"", "b", "p", "m", "f", "d", "t", "n", "l", "g", "k", "h",
+		"j", "q", "x", "zh", "ch", "sh", "r", "z", "c", "s", "y", "w",
+	}
+	finals := []string{
+		"a", "ai", "an", "ang", "ao",
+		"e", "ei", "en", "eng", "er",
+		"o", "ong", "ou",
+		"i", "ia", "ian", "iang", "iao", "ie", "in", "ing", "iong", "iu",
+		"u", "ua", "uai", "uan", "uang", "ue", "ui", "un", "uo",
+		"v", "van", "ve", "vn",
+	}
+	syllables := map[string]bool{
+		"m": true, "n": true, "ng": true,
+	}
+	maxLen := 0
+	for _, initial := range initials {
+		for _, final := range finals {
+			syllable := initial + final
+			if syllable == "" {
+				continue
+			}
+			syllables[syllable] = true
+			if len(syllable) > maxLen {
+				maxLen = len(syllable)
+			}
+		}
+	}
+	for syllable := range syllables {
+		if len(syllable) > maxLen {
+			maxLen = len(syllable)
+		}
+	}
+	return syllables, maxLen
 }
 
 var xiaoheInitials = map[byte]string{
