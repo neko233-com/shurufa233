@@ -652,6 +652,33 @@ func TestBuiltinEmojiCandidateMetadata(t *testing.T) {
 	}
 }
 
+func TestCatalogEntriesFiltersSpecialResources(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{
+		{Reading: "zan", Text: "普通赞", Weight: 90000},
+		{Reading: "zan", Text: "👏🏻", Kind: "emoji", Source: "rime-emoji", Comment: "鼓掌", Weight: 7000},
+		{Reading: "fs", Text: "℃℃", Kind: "symbol", Source: "rime-symbols", Comment: "温度", Weight: 7100},
+	})
+
+	emojis := e.CatalogEntries(CatalogRequest{Kind: "emoji", Query: "zan", Limit: 10})
+	if emojis.Kind != "emoji" || emojis.Count == 0 {
+		t.Fatalf("emoji catalog = %#v", emojis)
+	}
+	for _, entry := range emojis.Entries {
+		if entry.Kind != "emoji" {
+			t.Fatalf("emoji catalog leaked non-emoji entry: %#v", emojis.Entries)
+		}
+		if entry.Text == "普通赞" {
+			t.Fatalf("catalog should not include ordinary words: %#v", emojis.Entries)
+		}
+	}
+
+	symbols := e.CatalogEntries(CatalogRequest{Kind: "symbol", Query: "/fs", Limit: 10})
+	if symbols.Kind != "symbol" || symbols.Count == 0 || symbols.Entries[0].Reading != "fs" {
+		t.Fatalf("symbol catalog slash query = %#v", symbols)
+	}
+}
+
 func TestBuiltinAgentCandidateMetadata(t *testing.T) {
 	e := New(DefaultConfig())
 

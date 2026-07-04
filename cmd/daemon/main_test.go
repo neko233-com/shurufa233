@@ -576,6 +576,32 @@ func TestPhrasesPutAndDeleteManageUserPhrases(t *testing.T) {
 	}
 }
 
+func TestCatalogEndpointReturnsSpecialResources(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{{Reading: "fs", Text: "℃℃", Kind: "symbol", Source: "rime-symbols", Weight: 9000}})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/catalog?kind=symbol&q=/fs&limit=5", nil)
+	rec := httptest.NewRecorder()
+	state.catalog(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got engine.CatalogResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != "symbol" || got.Count == 0 || got.Entries[0].Reading != "fs" {
+		t.Fatalf("catalog = %#v", got)
+	}
+}
+
 func TestAgentComposeReturnsStructuredCandidates(t *testing.T) {
 	got := composeAgentResponse("/rewrite", "这段话有点啰嗦")
 	if got.Context != "这段话有点啰嗦" {

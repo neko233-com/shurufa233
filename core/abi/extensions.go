@@ -50,6 +50,19 @@ func ShurufaCandidateAction(id C.uint64_t, payload *C.char) *C.char {
 	return jsonCString(executeCandidateAction(getSession(uint64(id)), req))
 }
 
+//export ShurufaCatalogJSON
+func ShurufaCatalogJSON(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(getSession(uint64(id)).CatalogEntries(engine.CatalogRequest{
+		Kind:  req.Kind,
+		Query: firstNonEmpty(req.Query, req.Input, req.Reading),
+		Limit: req.Limit,
+	}))
+}
+
 //export ShurufaConfigJSON
 func ShurufaConfigJSON() *C.char {
 	return jsonCString(configEnvelope())

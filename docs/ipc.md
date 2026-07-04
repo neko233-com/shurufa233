@@ -14,6 +14,8 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /phrases`
 - `PUT /phrases`
 - `DELETE /phrases`
+- `GET /catalog`
+- `GET /symbols`
 - `GET /updates/check`
 - `POST /updates/apply`
 - `GET /ime/mode`
@@ -78,6 +80,36 @@ Rime `custom_phrase.txt` expectations. `PUT /phrases` accepts
 or a single `reading`/`text` pair. `DELETE /phrases?key=msd%7C马上到！` deletes
 one phrase; `DELETE /phrases` clears all fixed user phrases. The CLI mirrors
 this through `shurufa-imecli phrases list|add|import|export|delete|clear`.
+
+`GET /catalog` returns the shared emoji, kaomoji, symbol, and agent resource
+catalog. Query parameters are `kind=all|emoji|kaomoji|symbol|agent`,
+`q=<search>`, and `limit=<n>`. `/symbols` is an alias for the same handler.
+Imported Rime `symbols.yaml`, `symbols.custom.yaml`, and OpenCC emoji rows are
+ordinary dictionary entries tagged with `kind`, so they appear here without
+special per-platform code. Slash-prefixed queries such as `q=/fs` are normalized
+to the stored Rime symbol code:
+
+```json
+{
+  "kind": "symbol",
+  "query": "fs",
+  "count": 3,
+  "entries": [
+    {
+      "reading": "fs",
+      "text": "℃",
+      "kind": "symbol",
+      "source": "builtin-symbols",
+      "comment": "符号",
+      "weight": 6200
+    }
+  ],
+  "updatedAt": "2026-07-05T00:00:00Z"
+}
+```
+
+The CLI mirrors this through
+`shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]`.
 
 `GET /updates/check` returns the current and latest dictionary manifest version.
 `POST /updates/apply` downloads the matching language dictionary from configured

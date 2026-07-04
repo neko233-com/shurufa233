@@ -225,6 +225,52 @@ func TestReadPhraseFileAcceptsRawEntries(t *testing.T) {
 	}
 }
 
+func TestParseCatalogArgs(t *testing.T) {
+	kind, query, limit, err := parseCatalogArgs([]string{"emoji", "zan", "--limit", "12"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind != "emoji" || query != "zan" || limit != 12 {
+		t.Fatalf("catalog args = kind:%q query:%q limit:%d", kind, query, limit)
+	}
+}
+
+func TestCatalogCallsEndpoint(t *testing.T) {
+	var called bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/catalog" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		called = true
+		if r.URL.Query().Get("kind") != "symbol" || r.URL.Query().Get("q") != "/fs" || r.URL.Query().Get("limit") != "5" {
+			t.Fatalf("query = %s", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode(catalogResponse{
+			Kind:  "symbol",
+			Query: "/fs",
+			Count: 1,
+			Entries: []phraseEntry{{
+				Reading: "fs",
+				Text:    "℃",
+				Kind:    "symbol",
+				Source:  "builtin-symbols",
+				Weight:  6200,
+			}},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := catalog(server.Client(), []string{"symbol", "/fs", "--limit=5"}); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("catalog endpoint was not called")
+	}
+}
+
 func TestReadWordbookFileAcceptsRawScores(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wordbook.json")
 	if err := os.WriteFile(path, []byte(`{"ceshi|测试":50}`), 0o644); err != nil {

@@ -105,6 +105,14 @@ type phraseResponse struct {
 	UpdatedAt string        `json:"updatedAt"`
 }
 
+type catalogResponse struct {
+	Kind      string        `json:"kind"`
+	Query     string        `json:"query,omitempty"`
+	Count     int           `json:"count"`
+	Entries   []phraseEntry `json:"entries"`
+	UpdatedAt string        `json:"updatedAt"`
+}
+
 type agentResponse struct {
 	Input      string           `json:"input"`
 	Context    string           `json:"context,omitempty"`
@@ -144,6 +152,8 @@ func main() {
 		err = wordbook(client, os.Args[2:])
 	case "phrases", "phrase":
 		err = phrases(client, os.Args[2:])
+	case "catalog", "symbols", "symbol":
+		err = catalog(client, os.Args[2:])
 	case "agent":
 		err = agent(client, os.Args[2:])
 	case "candidates", "candidate-action":
@@ -178,6 +188,7 @@ Usage:
   shurufa-imecli phrases export
   shurufa-imecli phrases delete "msd|马上到！"
   shurufa-imecli phrases clear
+  shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]
   shurufa-imecli update-check
   shurufa-imecli update-apply
   shurufa-imecli candidates nihao [view|next-page|prev-page|select|first-char|last-char] [--start N] [--limit N] [--display-index N] [--index N]
@@ -606,6 +617,91 @@ func readPhraseFile(path string) ([]phraseEntry, error) {
 		return nil, err
 	}
 	return entries, nil
+}
+
+func catalog(client *http.Client, args []string) error {
+	kind, query, limit, err := parseCatalogArgs(args)
+	if err != nil {
+		return err
+	}
+	values := url.Values{}
+	if kind != "" {
+		values.Set("kind", kind)
+	}
+	if query != "" {
+		values.Set("q", query)
+	}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	path := "/catalog"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var response catalogResponse
+	if err := getJSON(client, path, &response); err != nil {
+		return err
+	}
+	printCatalog(response)
+	return nil
+}
+
+func parseCatalogArgs(args []string) (string, string, int, error) {
+	kind := "all"
+	limit := 80
+	var query []string
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		if arg == "" {
+			continue
+		}
+		if arg == "--limit" || arg == "-n" {
+			if i+1 >= len(args) {
+				return "", "", 0, fmt.Errorf("%s requires a value", arg)
+			}
+			value, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return "", "", 0, err
+			}
+			limit = value
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--limit=") {
+			value, err := strconv.Atoi(strings.TrimPrefix(arg, "--limit="))
+			if err != nil {
+				return "", "", 0, err
+			}
+			limit = value
+			continue
+		}
+		if isCatalogKindArg(arg) && len(query) == 0 && kind == "all" {
+			kind = strings.ToLower(arg)
+			continue
+		}
+		query = append(query, arg)
+	}
+	return kind, strings.TrimSpace(strings.Join(query, " ")), limit, nil
+}
+
+func isCatalogKindArg(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "all", "emoji", "kaomoji", "symbol", "symbols", "agent", "ai":
+		return true
+	default:
+		return false
+	}
+}
+
+func printCatalog(response catalogResponse) {
+	fmt.Printf("kind=%s query=%s count=%d\n", response.Kind, response.Query, response.Count)
+	for _, entry := range response.Entries {
+		meta := entry.Kind
+		if entry.Comment != "" {
+			meta += "/" + entry.Comment
+		}
+		fmt.Printf("%s\t%s\t%s\t%d\t%s\n", entry.Reading, entry.Text, meta, entry.Weight, entry.Source)
+	}
 }
 
 func agent(client *http.Client, args []string) error {

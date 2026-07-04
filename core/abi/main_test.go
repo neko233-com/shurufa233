@@ -269,6 +269,15 @@ func TestCapabilitiesIncludeExtensionCommandJSON(t *testing.T) {
 	t.Fatalf("capabilities missing extension-command-json: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeCatalogJSON(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "catalog-json" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing catalog-json: %#v", abiFeatureList)
+}
+
 func TestPreviewPreservesPinyinSeparatorCandidate(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	state := session.Preview("xi'an")
@@ -359,6 +368,20 @@ func TestExecuteExtensionCommandCandidateActionPagingAndSelect(t *testing.T) {
 	commit, ok := selected.(candidateActionResult)
 	if !ok || !commit.OK || commit.Committed != "测试四" || commit.State.Buffer != "" {
 		t.Fatalf("candidate-action select = %#v", selected)
+	}
+}
+
+func TestExecuteExtensionCommandCatalog(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{{Reading: "fs", Text: "℃℃", Kind: "symbol", Source: "rime-symbols", Weight: 9000}})
+
+	got, handled := executeSessionExtensionCommand(session, "catalog-json", `{"kind":"symbol","query":"/fs","limit":5}`)
+	if !handled {
+		t.Fatal("catalog-json command was not handled")
+	}
+	result, ok := got.(engine.CatalogResponse)
+	if !ok || result.Kind != "symbol" || result.Count == 0 || result.Entries[0].Reading != "fs" {
+		t.Fatalf("catalog-json command = %#v", got)
 	}
 }
 

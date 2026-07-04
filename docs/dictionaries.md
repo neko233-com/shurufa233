@@ -157,7 +157,11 @@ go run ./cmd/dictimport `
 ```
 
 This keeps emoji and symbol expansion sourced from maintained Rime GitHub
-projects instead of hand-maintaining a separate shurufa233-only table.
+projects instead of hand-maintaining a separate shurufa233-only table. The same
+imported rows also appear in the shared catalog API (`GET /catalog`,
+`shurufa-imecli symbols`, and `catalog-json` in the C ABI), which is the
+foundation for a WeChat-style emoji/symbol panel in both React/Wails and future
+native candidate windows.
 
 By default, `shurufa-dictimport` resolves Rime `import_tables` recursively, so
 an entry dictionary such as Rime Ice's `rime_ice.dict.yaml` can pull concrete

@@ -103,6 +103,14 @@ type PhraseResponse = {
   updatedAt: string;
 };
 
+type CatalogResponse = {
+  kind: string;
+  query?: string;
+  count: number;
+  entries: PhraseEntry[];
+  updatedAt: string;
+};
+
 type Candidate = {
   text: string;
   reading: string;
@@ -424,6 +432,10 @@ function App() {
   const [phraseReading, setPhraseReading] = useState("msd");
   const [phraseValue, setPhraseValue] = useState("马上到！");
   const [phraseWeight, setPhraseWeight] = useState(60000);
+  const [catalogKind, setCatalogKind] = useState("all");
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogEntries, setCatalogEntries] = useState<PhraseEntry[]>([]);
+  const [catalogText, setCatalogText] = useState("未读取");
   const [error, setError] = useState("");
   const [typingPromptId, setTypingPromptId] = useState(typingPrompts[0].id);
   const [typingText, setTypingText] = useState("");
@@ -440,7 +452,13 @@ function App() {
     void loadConfig();
     void loadWordbook();
     void loadPhrases();
+    void loadCatalog();
   }, []);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void loadCatalog(), 160);
+    return () => window.clearTimeout(timeout);
+  }, [catalogKind, catalogQuery]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void runPreview(preview), 120);
@@ -924,6 +942,33 @@ function App() {
     anchor.download = "shurufa233-user-phrases.json";
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function loadCatalog() {
+    try {
+      const query = new URLSearchParams({
+        kind: catalogKind,
+        limit: "80",
+      });
+      if (catalogQuery.trim()) {
+        query.set("q", catalogQuery.trim());
+      }
+      const res = await fetch(`${apiBase}/catalog?${query.toString()}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as CatalogResponse;
+      setCatalogEntries(data.entries ?? []);
+      setCatalogText(`${data.count ?? data.entries?.length ?? 0} 项资源`);
+      setError("");
+    } catch (err) {
+      setCatalogText("读取失败");
+      setError(err instanceof Error ? err.message : "catalog load failed");
+    }
+  }
+
+  function previewCatalogEntry(entry: PhraseEntry) {
+    const code = entry.reading ? `/${entry.reading}` : entry.text;
+    setPreview(code);
+    void runPreview(code);
   }
 
   function exportTypingReport() {
@@ -1419,6 +1464,56 @@ function App() {
               <button className="secondary danger" onClick={() => void clearPhrases()}>
                 清空
               </button>
+            </div>
+          </section>
+
+          <section className="panel catalogPanel">
+            <div className="panelHeader">
+              <div>
+                <h2>表情与符号</h2>
+                <span>{catalogText}</span>
+              </div>
+              <button className="iconButton" title="刷新资源目录" onClick={() => void loadCatalog()}>
+                <RefreshCw size={18} />
+              </button>
+            </div>
+            <div className="catalogControls">
+              <label className="field">
+                <span>类型</span>
+                <select value={catalogKind} onChange={(event) => setCatalogKind(event.target.value)}>
+                  <option value="all">全部</option>
+                  <option value="emoji">Emoji</option>
+                  <option value="kaomoji">颜文字</option>
+                  <option value="symbol">符号</option>
+                  <option value="agent">Agent</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>搜索</span>
+                <input
+                  value={catalogQuery}
+                  placeholder="zan / fs / 开心 / rewrite"
+                  onChange={(event) => setCatalogQuery(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="catalogGrid">
+              {catalogEntries.slice(0, 36).map((entry, index) => (
+                <button
+                  key={`${entry.kind}-${entry.source}-${entry.reading}-${entry.text}-${index}`}
+                  className="catalogItem"
+                  onClick={() => previewCatalogEntry(entry)}
+                  title={`${entry.reading} · ${entry.source ?? ""}`}
+                >
+                  <strong>{entry.text}</strong>
+                  <span>
+                    {entry.reading}
+                    {entry.comment ? ` · ${entry.comment}` : ""}
+                  </span>
+                  {kindLabel(entry.kind) && <i>{kindLabel(entry.kind)}</i>}
+                </button>
+              ))}
+              {catalogEntries.length === 0 && <div className="emptyWordbook">暂无资源</div>}
             </div>
           </section>
 

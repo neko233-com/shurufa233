@@ -56,6 +56,20 @@ type Entry struct {
 	Weight  int    `json:"weight"`
 }
 
+type CatalogRequest struct {
+	Kind  string `json:"kind,omitempty"`
+	Query string `json:"query,omitempty"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+type CatalogResponse struct {
+	Kind      string    `json:"kind"`
+	Query     string    `json:"query,omitempty"`
+	Count     int       `json:"count"`
+	Entries   []Entry   `json:"entries"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 const (
 	UserPhraseKind   = "phrase"
 	UserPhraseSource = "user-phrase"

@@ -575,6 +575,80 @@ h2 {
   min-height: 118px;
 }
 
+.catalogPanel {
+  background: #ffffff;
+}
+
+.catalogControls {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(180px, 1.4fr);
+  gap: 10px;
+}
+
+.catalogControls .field {
+  margin-bottom: 12px;
+}
+
+.catalogGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 8px;
+}
+
+.catalogItem {
+  position: relative;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 68px;
+  border: 1px solid #e1e7f0;
+  border-radius: 8px;
+  background: #fbfdff;
+  color: #111827;
+  cursor: pointer;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.catalogItem:hover {
+  border-color: color-mix(in srgb, var(--accent), #ffffff 44%);
+  background: color-mix(in srgb, #ffffff, var(--accent) 5%);
+}
+
+.catalogItem strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 20px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalogItem span {
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalogItem i {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  border: 1px solid #dbe3ef;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  padding: 2px 5px;
+}
+
 .candidatePreviewShell {
   display: grid;
   place-items: start;
@@ -1118,6 +1192,10 @@ h2 {
 
   .phraseAddButton {
     width: 100%;
+  }
+
+  .catalogControls {
+    grid-template-columns: 1fr;
   }
 
   .metricsGrid {

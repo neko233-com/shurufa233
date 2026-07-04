@@ -98,6 +98,7 @@ char* ShurufaCapabilities(void);
 char* ShurufaState(uint64_t session);
 char* ShurufaCandidatePayloadV2(uint64_t session, int start, int limit);
 char* ShurufaCandidateAction(uint64_t session, const char* json);
+char* ShurufaCatalogJSON(uint64_t session, const char* json);
 char* ShurufaConfigJSON(void);
 char* ShurufaApplyConfigJSON(char* json);
 char* ShurufaReloadConfig(void);
@@ -126,7 +127,7 @@ comment text remains part of candidate payloads even when the UI hides it.
 `user-scores-json`, `user-phrases-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
-`emoji-kaomoji-symbol-candidates`, and
+`emoji-kaomoji-symbol-candidates`, `catalog-json`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
 `candidate-comments`, `candidate-action-json`, and `extension-command-json`.
 
@@ -149,6 +150,7 @@ mode
 set-mode                {"mode":"en"} or {"toggle":true}
 toggle-mode
 candidate-payload-v2    {"start":0,"limit":7}
+catalog-json            {"kind":"emoji","query":"zan","limit":20}
 candidate-action        {"action":"next-page","start":0,"limit":7}
 select                  {"index":0}
 select-candidate-char   {"index":0,"side":"first"}
@@ -172,6 +174,35 @@ currently include `view`, `next-page`, `prev-page`, `first-page`, `last-page`,
 `select`, `first-char`, `last-char`, and `select-char`. Selection accepts either
 an absolute `index` or a page-relative `displayIndex` plus `start`; paging
 returns the same rich candidate payload used by `candidate-payload-v2`.
+
+`catalog-json` and `ShurufaCatalogJSON` reserve the shared emoji, kaomoji,
+symbol, and agent resource surface for future native panels. The payload accepts
+`kind=all|emoji|kaomoji|symbol|agent`, `query` or `input`, and `limit`; slash
+queries such as `/fs` are normalized to the stored Rime code. The response is:
+
+```json
+{
+  "kind": "symbol",
+  "query": "fs",
+  "count": 3,
+  "entries": [
+    {
+      "reading": "fs",
+      "text": "℃",
+      "kind": "symbol",
+      "source": "builtin-symbols",
+      "comment": "符号",
+      "weight": 6200
+    }
+  ],
+  "updatedAt": "2026-07-05T00:00:00Z"
+}
+```
+
+Imported Rime `symbols.yaml`, `symbols.custom.yaml`, and OpenCC emoji resources
+use the same `kind`/`source` metadata, so Windows and macOS glue can draw a
+WeChat-style symbol/emoji panel from this API without knowing where a row came
+from.
 
 `ShurufaCandidatePayloadV2` is the future rich candidate contract for native
 renderers, React/Wails diagnostics, esports typing labs, and mouse/skin

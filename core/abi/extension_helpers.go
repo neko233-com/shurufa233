@@ -27,6 +27,7 @@ var abiFeatureList = []string{
 	"pinyin-separators",
 	"rime-symbol-prefix",
 	"emoji-kaomoji-symbol-candidates",
+	"catalog-json",
 	"dynamic-datetime-candidates",
 	"candidate-char-commit",
 	"candidate-comments",
@@ -104,6 +105,8 @@ type extensionCommandPayload struct {
 	Side         string           `json:"side,omitempty"`
 	Reading      string           `json:"reading,omitempty"`
 	Text         string           `json:"text,omitempty"`
+	Kind         string           `json:"kind,omitempty"`
+	Query        string           `json:"query,omitempty"`
 	Config       *engine.Config   `json:"config,omitempty"`
 	UserScores   map[string]int   `json:"userScores,omitempty"`
 	Scores       map[string]int   `json:"scores,omitempty"`
@@ -333,6 +336,15 @@ func maxCandidatePageStart(total int, limit int) int {
 	return ((total - 1) / limit) * limit
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func decodeExtensionCommandPayload(payload string) (extensionCommandPayload, error) {
 	var out extensionCommandPayload
 	payload = strings.TrimSpace(payload)
@@ -385,6 +397,12 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return buildCandidatePayloadV2(session, req.Start, req.Limit), true
 	case "candidate-action", "candidate-action-json":
 		return executeCandidateAction(session, req), true
+	case "catalog", "catalog-json", "symbols", "symbols-json":
+		return session.CatalogEntries(engine.CatalogRequest{
+			Kind:  req.Kind,
+			Query: firstNonEmpty(req.Query, req.Input, req.Reading),
+			Limit: req.Limit,
+		}), true
 	case "select", "commit-candidate":
 		state, err := session.Select(req.Index)
 		if err != nil {

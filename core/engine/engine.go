@@ -259,6 +259,48 @@ func (e *Engine) UserPhrases() []Entry {
 	return out
 }
 
+func (e *Engine) CatalogEntries(req CatalogRequest) CatalogResponse {
+	kind := normalizeCatalogKind(req.Kind)
+	query := normalizeCatalogQuery(req.Query)
+	limit := normalizeCatalogLimit(req.Limit)
+
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	out := make([]Entry, 0, limit)
+	seen := map[string]bool{}
+	for _, entries := range e.dict {
+		for _, entry := range entries {
+			if !isCatalogEntryKind(entry.Kind) {
+				continue
+			}
+			if kind != "all" && entry.Kind != kind {
+				continue
+			}
+			if query != "" && !entryMatchesCatalogQuery(entry, query) {
+				continue
+			}
+			key := entry.Kind + "\x00" + entry.Source + "\x00" + entry.Reading + "\x00" + entry.Text
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, entry)
+		}
+	}
+	sortCatalogEntries(out, query)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return CatalogResponse{
+		Kind:      kind,
+		Query:     query,
+		Count:     len(out),
+		Entries:   out,
+		UpdatedAt: nowFunc().UTC(),
+	}
+}
+
 func normalizeUserPhraseEntries(entries []Entry) []Entry {
 	out := make([]Entry, 0, len(entries))
 	seen := map[string]int{}
@@ -1309,4 +1351,123 @@ func sortEntries(entries []Entry) {
 		}
 		return entries[i].Weight > entries[j].Weight
 	})
+}
+
+func normalizeCatalogKind(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "", "all", "special":
+		return "all"
+	case "emoji", "emojis":
+		return "emoji"
+	case "kaomoji", "kaomojis", "yan", "emoticon", "emoticons":
+		return "kaomoji"
+	case "symbol", "symbols", "punctuation":
+		return "symbol"
+	case "agent", "agents", "ai":
+		return "agent"
+	default:
+		return "all"
+	}
+}
+
+func normalizeCatalogQuery(query string) string {
+	query = strings.TrimSpace(strings.ToLower(query))
+	query = strings.TrimLeft(query, "/")
+	if len([]rune(query)) > 64 {
+		return string([]rune(query)[:64])
+	}
+	return query
+}
+
+func normalizeCatalogLimit(limit int) int {
+	if limit <= 0 {
+		return 80
+	}
+	if limit > 500 {
+		return 500
+	}
+	return limit
+}
+
+func isCatalogEntryKind(kind string) bool {
+	switch kind {
+	case "emoji", "kaomoji", "symbol", "agent":
+		return true
+	default:
+		return false
+	}
+}
+
+func entryMatchesCatalogQuery(entry Entry, query string) bool {
+	if query == "" {
+		return true
+	}
+	fields := []string{
+		entry.Reading,
+		entry.Text,
+		entry.Kind,
+		entry.Source,
+		entry.Comment,
+	}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func sortCatalogEntries(entries []Entry, query string) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		leftRank := catalogEntryRank(entries[i], query)
+		rightRank := catalogEntryRank(entries[j], query)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		leftKind := catalogKindOrder(entries[i].Kind)
+		rightKind := catalogKindOrder(entries[j].Kind)
+		if leftKind != rightKind {
+			return leftKind < rightKind
+		}
+		if entries[i].Reading != entries[j].Reading {
+			return entries[i].Reading < entries[j].Reading
+		}
+		if entries[i].Weight != entries[j].Weight {
+			return entries[i].Weight > entries[j].Weight
+		}
+		return entries[i].Text < entries[j].Text
+	})
+}
+
+func catalogEntryRank(entry Entry, query string) int {
+	if query == "" {
+		return 2
+	}
+	switch {
+	case entry.Reading == query:
+		return 0
+	case strings.HasPrefix(entry.Reading, query):
+		return 1
+	case strings.Contains(strings.ToLower(entry.Comment), query):
+		return 2
+	case strings.Contains(strings.ToLower(entry.Text), query):
+		return 3
+	default:
+		return 4
+	}
+}
+
+func catalogKindOrder(kind string) int {
+	switch kind {
+	case "emoji":
+		return 0
+	case "kaomoji":
+		return 1
+	case "symbol":
+		return 2
+	case "agent":
+		return 3
+	default:
+		return 4
+	}
 }

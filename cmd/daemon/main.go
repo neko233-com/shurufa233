@@ -208,6 +208,8 @@ func main() {
 	mux.HandleFunc("GET /phrases", state.withCORS(state.phrases))
 	mux.HandleFunc("PUT /phrases", state.withCORS(state.phrases))
 	mux.HandleFunc("DELETE /phrases", state.withCORS(state.phrases))
+	mux.HandleFunc("GET /catalog", state.withCORS(state.catalog))
+	mux.HandleFunc("GET /symbols", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /updates/check", state.withCORS(state.checkUpdates))
 	mux.HandleFunc("POST /updates/apply", state.withCORS(state.applyUpdates))
 	mux.HandleFunc("POST /ime/key", state.withCORS(state.imeKey))
@@ -466,6 +468,18 @@ func (s *AppState) phrases(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *AppState) catalog(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	req := engine.CatalogRequest{
+		Kind:  query.Get("kind"),
+		Query: firstNonEmpty(query.Get("q"), query.Get("query"), query.Get("input")),
+		Limit: parseBoundedInt(query.Get("limit"), 80, 500),
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	writeJSON(w, s.engine.CatalogEntries(req))
 }
 
 func (s *AppState) imeKey(w http.ResponseWriter, r *http.Request) {
@@ -777,6 +791,15 @@ func parseBoundedInt(raw string, fallback int, upper int) int {
 		return upper
 	}
 	return value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func sanitizePayloadField(value string) string {
