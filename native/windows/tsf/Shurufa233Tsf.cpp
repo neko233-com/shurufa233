@@ -2032,8 +2032,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (g_core.inProcess) {
       candidates = BuildCandidatePayloadFromCore(count);
     } else {
-      wchar_t path[80]{};
-      StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/candidates?session=%llu", session_);
+      const int pageCount = min(kCandidatesPerPage, max(0, count - pageOffset_));
+      wchar_t path[120]{};
+      StringCchPrintfW(path, ARRAYSIZE(path),
+                       L"/ime/candidates?session=%llu&start=%d&limit=%d",
+                       session_, pageOffset_, pageCount);
       candidates = HttpRequest(L"GET", path);
     }
     if (candidates.empty()) {

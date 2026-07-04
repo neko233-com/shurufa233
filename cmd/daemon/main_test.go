@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/neko233-com/shurufa233/core/engine"
@@ -129,6 +130,55 @@ func TestNormalizeConfigRejectsInvalidSkinColors(t *testing.T) {
 	}
 	if !isHexColor(got.Skin.Text) || !isHexColor(got.Skin.MutedText) || !isHexColor(got.Skin.HighlightText) {
 		t.Fatalf("normalized skin contains invalid text colors: %#v", got.Skin)
+	}
+}
+
+func TestImeCandidatesReturnsMetadataAndPagedRows(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.MaxCandidates = 42
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{
+		{Reading: "page", Text: "候0", Weight: 100},
+		{Reading: "page", Text: "候1", Weight: 99},
+		{Reading: "page", Text: "候2", Weight: 98},
+		{Reading: "page", Text: "候3", Weight: 97},
+		{Reading: "page", Text: "候4", Weight: 96},
+		{Reading: "page", Text: "候5", Weight: 95},
+		{Reading: "page", Text: "候6", Weight: 94},
+		{Reading: "page", Text: "候7", Weight: 93},
+		{Reading: "page", Text: "候8", Weight: 92},
+	})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	session.Preview("zan")
+	req := httptest.NewRequest(http.MethodGet, "/ime/candidates?start=0&limit=7", nil)
+	rec := httptest.NewRecorder()
+	state.imeCandidates(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); !strings.Contains(got, "1\t👍\tzan\t6400\temoji\tbuiltin-symbols") {
+		t.Fatalf("expected emoji metadata row, got %q", got)
+	}
+
+	session.Preview("page")
+	req = httptest.NewRequest(http.MethodGet, "/ime/candidates?start=7&limit=2", nil)
+	rec = httptest.NewRecorder()
+	state.imeCandidates(rec, req)
+	rows := strings.Split(strings.TrimRight(rec.Body.String(), "\n"), "\n")
+	if len(rows) != 2 {
+		t.Fatalf("rows = %#v, want 2 rows", rows)
+	}
+	if !strings.HasPrefix(rows[0], "1\t候7\tpage\t93\t\t") {
+		t.Fatalf("first paged row = %q", rows[0])
+	}
+	if !strings.HasPrefix(rows[1], "2\t候8\tpage\t92\t\t") {
+		t.Fatalf("second paged row = %q", rows[1])
 	}
 }
 

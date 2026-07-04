@@ -196,8 +196,14 @@ The TSF layer renders a native Win32 candidate window and reads skin data from t
 
 ```text
 GET /ime/skin
-GET /ime/candidates
+GET /ime/candidates?start=0&limit=7
 ```
+
+`/ime/candidates` returns the same tab-separated payload shape as the C ABI:
+`display_index`, `text`, `reading`, `score`, `kind`, and `source`. The `start` and
+`limit` query parameters let the native window request only the visible page, so
+HTTP fallback keeps the same paging, emoji, kaomoji, and symbol badge behavior as
+the in-process core path.
 
 Current skin fields come from the settings UI:
 

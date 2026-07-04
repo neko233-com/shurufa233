@@ -298,17 +298,49 @@ func (s *AppState) imeCount(w http.ResponseWriter, r *http.Request) {
 func (s *AppState) imeCandidates(w http.ResponseWriter, r *http.Request) {
 	session := s.sessionForRequest(r)
 	state := session.State()
-	parts := make([]string, 0, len(state.Candidates))
-	for i, candidate := range state.Candidates {
-		parts = append(parts, fmt.Sprintf("%d\t%s\t%s\t%d",
+	start := parseBoundedInt(r.URL.Query().Get("start"), 0, len(state.Candidates))
+	limit := parseBoundedInt(r.URL.Query().Get("limit"), len(state.Candidates), 9)
+	if limit <= 0 || limit > 9 {
+		limit = 9
+	}
+	end := start + limit
+	if end > len(state.Candidates) {
+		end = len(state.Candidates)
+	}
+	parts := make([]string, 0, max(0, end-start))
+	for i, candidate := range state.Candidates[start:end] {
+		parts = append(parts, fmt.Sprintf("%d\t%s\t%s\t%d\t%s\t%s",
 			i+1,
-			candidate.Text,
-			candidate.Reading,
+			sanitizePayloadField(candidate.Text),
+			sanitizePayloadField(candidate.Reading),
 			candidate.Weight+candidate.UserScore,
+			sanitizePayloadField(candidate.Kind),
+			sanitizePayloadField(candidate.Source),
 		))
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(strings.Join(parts, "\n")))
+}
+
+func parseBoundedInt(raw string, fallback int, upper int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	if value < 0 {
+		return 0
+	}
+	if upper >= 0 && value > upper {
+		return upper
+	}
+	return value
+}
+
+func sanitizePayloadField(value string) string {
+	value = strings.ReplaceAll(value, "\t", " ")
+	value = strings.ReplaceAll(value, "\r", " ")
+	value = strings.ReplaceAll(value, "\n", " ")
+	return value
 }
 
 func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
