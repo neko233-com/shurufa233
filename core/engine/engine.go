@@ -67,7 +67,8 @@ func DefaultConfig() Config {
 			Theme:         "system",
 		},
 		Update: Update{
-			Channel: "stable",
+			SourcePreset: "shurufa233-github",
+			Channel:      "stable",
 			ManifestURLs: []string{
 				"https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json",
 			},

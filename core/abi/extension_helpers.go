@@ -17,6 +17,7 @@ var abiFeatureList = []string{
 	"reload-config",
 	"reload-dictionaries",
 	"dictionary-manifest-json",
+	"dictionary-source-presets",
 	"user-scores-json",
 	"user-phrases-json",
 	"user-rejects-json",
@@ -425,6 +426,12 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return buildCandidatePayloadV2(session, req.Start, req.Limit), true
 	case "associate", "associate-json", "association", "predict", "suggest":
 		return session.Associate(firstNonEmpty(req.Context, req.Input, req.Text), req.Limit), true
+	case "dictionary-sources-json", "dictionary-source-presets", "update-sources":
+		return map[string]any{
+			"ok":        true,
+			"sources":   engine.BuiltinDictionarySources(),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
 	case "candidate-action", "candidate-action-json":
 		return executeCandidateAction(session, req), true
 	case "catalog", "catalog-json", "symbols", "symbols-json":

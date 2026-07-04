@@ -163,6 +163,8 @@ shurufa-imecli rejects add ceshi "错词"
 shurufa-imecli candidates ceshi forget --index 0
 shurufa-imecli symbols emoji zan --limit 12
 shurufa-imecli symbols symbol /fs
+shurufa-imecli update-sources
+shurufa-imecli update-source shurufa233-github
 shurufa-imecli update-check
 shurufa-imecli update-apply
 shurufa-imecli agent "/rewrite hello world"

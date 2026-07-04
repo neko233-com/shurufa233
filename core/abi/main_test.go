@@ -296,6 +296,15 @@ func TestCapabilitiesIncludeAssociationCandidates(t *testing.T) {
 	t.Fatalf("capabilities missing association-candidates: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeDictionarySourcePresets(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "dictionary-source-presets" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing dictionary-source-presets: %#v", abiFeatureList)
+}
+
 func TestPreviewPreservesPinyinSeparatorCandidate(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	state := session.Preview("xi'an")
@@ -445,6 +454,23 @@ func TestExecuteExtensionCommandAssociate(t *testing.T) {
 	state, ok := got.(engine.State)
 	if !ok || len(state.Candidates) == 0 || state.Candidates[0].Text != "世界" {
 		t.Fatalf("associate command = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandDictionarySources(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "dictionary-sources-json", `{}`)
+	if !handled {
+		t.Fatal("dictionary-sources-json command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("dictionary-sources-json = %#v", got)
+	}
+	sources, ok := result["sources"].([]engine.DictionarySourcePreset)
+	if !ok || len(sources) == 0 {
+		t.Fatalf("dictionary sources = %#v", result["sources"])
 	}
 }
 

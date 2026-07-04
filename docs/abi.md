@@ -135,7 +135,7 @@ comment text remains part of candidate payloads even when the UI hides it.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`user-scores-json`, `user-phrases-json`, `user-rejects-json`, `commit-text`, `agent-compose`,
+`dictionary-source-presets`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -180,6 +180,7 @@ apply-config-json       { ...engine.Config } or {"config":{...}}
 reload-config
 reload-dictionaries
 dictionary-manifest-json
+dictionary-sources-json
 user-scores-json
 import-user-scores-json {"userScores":{"nihao|你好":25}}
 user-phrases-json

@@ -84,6 +84,31 @@ type updateCheck struct {
 	ManifestURL     string `json:"manifestUrl"`
 }
 
+type dictionarySourceResponse struct {
+	Sources  []dictionarySource `json:"sources"`
+	Selected string             `json:"selected"`
+}
+
+type dictionarySource struct {
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Kind           string          `json:"kind"`
+	Description    string          `json:"description"`
+	Homepage       string          `json:"homepage"`
+	License        string          `json:"license"`
+	Installable    bool            `json:"installable"`
+	ManifestURLs   []string        `json:"manifestUrls"`
+	MirrorBaseURLs []string        `json:"mirrorBaseUrls"`
+	RawSources     []dictionaryRaw `json:"rawSources"`
+	ConvertCommand string          `json:"convertCommand"`
+}
+
+type dictionaryRaw struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+	Role  string `json:"role"`
+}
+
 type wordbookResponse struct {
 	UserScores map[string]int `json:"userScores"`
 	Count      int            `json:"count"`
@@ -156,6 +181,10 @@ func main() {
 		err = updateCheckCmd(client)
 	case "update-apply":
 		err = updateApply(client)
+	case "update-sources":
+		err = updateSources(client)
+	case "update-source":
+		err = updateSource(client, os.Args[2:])
 	case "mode":
 		err = mode(client, os.Args[2:])
 	case "wordbook":
@@ -207,6 +236,8 @@ Usage:
   shurufa-imecli rejects delete "ceshi|错词"
   shurufa-imecli rejects clear
   shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]
+  shurufa-imecli update-sources
+  shurufa-imecli update-source shurufa233-github
   shurufa-imecli update-check
   shurufa-imecli update-apply
   shurufa-imecli candidates nihao [view|next-page|prev-page|select|first-char|last-char] [--start N] [--limit N] [--display-index N] [--index N]
@@ -434,6 +465,48 @@ func updateCheckCmd(client *http.Client) error {
 
 func updateApply(client *http.Client) error {
 	body, err := post(client, "/updates/apply", nil)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(body))
+	return nil
+}
+
+func updateSources(client *http.Client) error {
+	var response dictionarySourceResponse
+	if err := getJSON(client, "/updates/sources", &response); err != nil {
+		return err
+	}
+	for _, source := range response.Sources {
+		marker := " "
+		if source.ID == response.Selected {
+			marker = "*"
+		}
+		installable := "source-only"
+		if source.Installable {
+			installable = "installable"
+		}
+		fmt.Printf("%s %s [%s] %s license=%s\n", marker, source.ID, source.Kind, installable, source.License)
+		fmt.Printf("  %s\n", source.Name)
+		fmt.Printf("  %s\n", source.Homepage)
+		if len(source.ManifestURLs) > 0 {
+			fmt.Printf("  manifest: %s\n", strings.Join(source.ManifestURLs, ", "))
+		}
+		for _, raw := range source.RawSources {
+			fmt.Printf("  raw: %s %s %s\n", raw.Role, raw.Label, raw.URL)
+		}
+		if source.ConvertCommand != "" {
+			fmt.Printf("  convert: %s\n", source.ConvertCommand)
+		}
+	}
+	return nil
+}
+
+func updateSource(client *http.Client, args []string) error {
+	if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+		return fmt.Errorf("missing update source id")
+	}
+	body, err := postJSONBytes(client, "/updates/source", map[string]string{"id": strings.TrimSpace(args[0])})
 	if err != nil {
 		return err
 	}
@@ -935,6 +1008,14 @@ func postJSON(client *http.Client, path string, payload any, out any) error {
 		return err
 	}
 	return json.Unmarshal(body, out)
+}
+
+func postJSONBytes(client *http.Client, path string, payload any) ([]byte, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return post(client, path, data)
 }
 
 func putJSON(client *http.Client, path string, payload any, out any) error {

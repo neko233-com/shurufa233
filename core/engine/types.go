@@ -79,6 +79,7 @@ const (
 )
 
 type Update struct {
+	SourcePreset     string   `json:"sourcePreset,omitempty"`
 	Channel          string   `json:"channel"`
 	ManifestURLs     []string `json:"manifestUrls"`
 	MirrorBaseURLs   []string `json:"mirrorBaseUrls"`

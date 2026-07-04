@@ -23,6 +23,7 @@
     "theme": "system"
   },
   "update": {
+    "sourcePreset": "shurufa233-github",
     "channel": "stable",
     "manifestUrls": [
       "https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json"

@@ -785,6 +785,65 @@ func TestDictionaryURLsPreferConfiguredMirrors(t *testing.T) {
 	}
 }
 
+func TestUpdateSourcesEndpointListsRimeSources(t *testing.T) {
+	config := engine.DefaultConfig()
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/updates/sources", nil)
+	rec := httptest.NewRecorder()
+	state.updateSources(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got dictionarySourceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Selected != "shurufa233-github" {
+		t.Fatalf("selected = %q", got.Selected)
+	}
+	foundIce := false
+	for _, source := range got.Sources {
+		if source.ID == "rime-ice-source" && strings.Contains(source.ConvertCommand, "shurufa-dictimport") {
+			foundIce = true
+		}
+	}
+	if !foundIce {
+		t.Fatalf("expected rime-ice source with convert command, got %#v", got.Sources)
+	}
+}
+
+func TestApplyUpdateSourceUpdatesConfig(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.Update.SourcePreset = ""
+	config.Update.ManifestURLs = []string{"https://example.invalid/old.json"}
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	state.sessions["default"] = state.engine
+
+	req := httptest.NewRequest(http.MethodPost, "/updates/source", strings.NewReader(`{"id":"shurufa233-github"}`))
+	rec := httptest.NewRecorder()
+	state.applyUpdateSource(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if state.config.Update.SourcePreset != "shurufa233-github" {
+		t.Fatalf("source preset = %q", state.config.Update.SourcePreset)
+	}
+	if len(state.config.Update.ManifestURLs) == 0 || !strings.Contains(state.config.Update.ManifestURLs[0], "github.com/neko233-com/shurufa233") {
+		t.Fatalf("manifest URLs = %#v", state.config.Update.ManifestURLs)
+	}
+}
+
 func TestDictionaryAutoUpdateAppliesConfiguredRelease(t *testing.T) {
 	dictionary := `{
 		"language": "zh-CN",

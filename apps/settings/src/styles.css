@@ -661,6 +661,80 @@ h2 {
   padding: 2px 5px;
 }
 
+.sourceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sourceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sourceItem {
+  display: grid;
+  gap: 5px;
+  min-height: 122px;
+  border: 1px solid #e1e7f0;
+  border-radius: 8px;
+  background: #fbfdff;
+  color: #111827;
+  cursor: pointer;
+  padding: 10px;
+  text-align: left;
+}
+
+.sourceItem.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, #ffffff, var(--accent) 7%);
+}
+
+.sourceItem strong,
+.sourceItem span,
+.sourceItem small,
+.sourceItem i,
+.sourceItem code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sourceItem strong {
+  font-size: 14px;
+}
+
+.sourceItem span {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sourceItem small,
+.sourceItem i {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #64748b;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.sourceItem code {
+  white-space: nowrap;
+  color: #475569;
+  font-family: "Cascadia Mono", "JetBrains Mono", monospace;
+  font-size: 10px;
+}
+
 .candidatePreviewShell {
   display: grid;
   place-items: start;

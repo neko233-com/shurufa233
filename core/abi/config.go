@@ -68,6 +68,21 @@ func normalizeConfig(config engine.Config) engine.Config {
 	default:
 		config.Punctuation = engine.DefaultConfig().Punctuation
 	}
+	if config.Update.SourcePreset == "" {
+		config.Update.SourcePreset = engine.DefaultConfig().Update.SourcePreset
+	}
+	if config.Update.Channel == "" {
+		config.Update.Channel = engine.DefaultConfig().Update.Channel
+	}
+	if len(config.Update.ManifestURLs) == 0 {
+		config.Update.ManifestURLs = engine.DefaultConfig().Update.ManifestURLs
+	}
+	if config.Update.MirrorBaseURLs == nil {
+		config.Update.MirrorBaseURLs = engine.DefaultConfig().Update.MirrorBaseURLs
+	}
+	if config.Update.InstalledVersion == "" {
+		config.Update.InstalledVersion = engine.DefaultConfig().Update.InstalledVersion
+	}
 	return config
 }
 

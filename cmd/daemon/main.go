@@ -242,6 +242,8 @@ func main() {
 	mux.HandleFunc("GET /symbols", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /updates/check", state.withCORS(state.checkUpdates))
 	mux.HandleFunc("POST /updates/apply", state.withCORS(state.applyUpdates))
+	mux.HandleFunc("GET /updates/sources", state.withCORS(state.updateSources))
+	mux.HandleFunc("POST /updates/source", state.withCORS(state.applyUpdateSource))
 	mux.HandleFunc("POST /ime/key", state.withCORS(state.imeKey))
 	mux.HandleFunc("POST /ime/backspace", state.withCORS(state.imeBackspace))
 	mux.HandleFunc("POST /ime/clear", state.withCORS(state.imeClear))
@@ -1122,6 +1124,54 @@ func (s *AppState) applyUpdates(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, result)
 }
 
+func (s *AppState) updateSources(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	selected := s.config.Update.SourcePreset
+	s.mu.RUnlock()
+	writeJSON(w, dictionarySourceResponse{
+		Sources:   engine.BuiltinDictionarySources(),
+		Selected:  selected,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	})
+}
+
+func (s *AppState) applyUpdateSource(w http.ResponseWriter, r *http.Request) {
+	var req dictionarySourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	source, ok := engine.DictionarySourceByID(strings.TrimSpace(req.ID))
+	if !ok {
+		http.Error(w, "unknown dictionary source", http.StatusBadRequest)
+		return
+	}
+	if !source.Installable && len(req.ManifestURLs) == 0 {
+		http.Error(w, "source is not directly installable; generate and publish a shurufa233 manifest first", http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := engine.UpdateConfigFromDictionarySource(s.config, source)
+	if len(req.ManifestURLs) > 0 {
+		next.Update.ManifestURLs = req.ManifestURLs
+	}
+	if req.MirrorBaseURLs != nil {
+		next.Update.MirrorBaseURLs = req.MirrorBaseURLs
+	}
+	next = normalizeConfig(next)
+	s.config = next
+	s.engine.Configure(next)
+	for _, session := range s.sessions {
+		session.Configure(next)
+	}
+	if err := s.saveLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, s.config)
+}
+
 func (s *AppState) checkLatestDictionaries() (updateCheck, error) {
 	s.mu.RLock()
 	config := s.config
@@ -1854,6 +1904,9 @@ func normalizeConfig(config engine.Config) engine.Config {
 	config.Skin.HighlightText = ensureReadableColor(config.Skin.HighlightText, config.Skin.Accent, 4.5)
 	if config.Update.Channel == "" {
 		config.Update.Channel = defaults.Update.Channel
+	}
+	if config.Update.SourcePreset == "" {
+		config.Update.SourcePreset = defaults.Update.SourcePreset
 	}
 	if len(config.Update.ManifestURLs) == 0 {
 		config.Update.ManifestURLs = defaults.Update.ManifestURLs

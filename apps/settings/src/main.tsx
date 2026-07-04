@@ -54,6 +54,7 @@ type Config = {
 };
 
 type UpdateConfig = {
+  sourcePreset?: string;
   channel: string;
   manifestUrls: string[];
   mirrorBaseUrls: string[] | null;
@@ -74,6 +75,31 @@ type UpdateApplyResult = {
   manifestUrl: string;
   version: string;
   applied: string[];
+};
+
+type DictionaryRawSource = {
+  label: string;
+  url: string;
+  role: string;
+};
+
+type DictionarySource = {
+  id: string;
+  name: string;
+  kind: string;
+  description: string;
+  homepage: string;
+  license: string;
+  installable: boolean;
+  manifestUrls?: string[];
+  mirrorBaseUrls?: string[];
+  rawSources?: DictionaryRawSource[];
+  convertCommand?: string;
+};
+
+type DictionarySourceResponse = {
+  sources: DictionarySource[];
+  selected: string;
 };
 
 type WordbookResponse = {
@@ -225,6 +251,7 @@ const defaultConfig: Config = {
     theme: "system",
   },
   update: {
+    sourcePreset: "shurufa233-github",
     channel: "stable",
     manifestUrls: ["https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json"],
     mirrorBaseUrls: [],
@@ -443,6 +470,8 @@ function App() {
   const [status, setStatus] = useState<"loading" | "ready" | "offline" | "saved">("loading");
   const [updateText, setUpdateText] = useState("未检查");
   const [updateBusy, setUpdateBusy] = useState<"idle" | "checking" | "applying">("idle");
+  const [dictionarySources, setDictionarySources] = useState<DictionarySource[]>([]);
+  const [dictionarySourceText, setDictionarySourceText] = useState("未读取");
   const [wordbook, setWordbook] = useState<WordbookEntry[]>([]);
   const [wordbookDraft, setWordbookDraft] = useState("{}");
   const [wordbookText, setWordbookText] = useState("未读取");
@@ -481,6 +510,7 @@ function App() {
     void loadPhrases();
     void loadRejects();
     void loadCatalog();
+    void loadDictionarySources();
   }, []);
 
   useEffect(() => {
@@ -782,6 +812,49 @@ function App() {
       setError(err instanceof Error ? err.message : "update apply failed");
     } finally {
       setUpdateBusy("idle");
+    }
+  }
+
+  async function loadDictionarySources() {
+    try {
+      const res = await fetch(`${apiBase}/updates/sources`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as DictionarySourceResponse;
+      setDictionarySources(data.sources ?? []);
+      setConfig((current) => ({
+        ...current,
+        update: {
+          ...current.update,
+          sourcePreset: data.selected || current.update.sourcePreset,
+        },
+      }));
+      setDictionarySourceText(`${data.sources?.length ?? 0} 个来源`);
+      setError("");
+    } catch (err) {
+      setDictionarySourceText("读取失败");
+      setError(err instanceof Error ? err.message : "dictionary sources failed");
+    }
+  }
+
+  async function applyDictionarySource(source: DictionarySource) {
+    if (!source.installable) {
+      setDictionarySourceText("需先转换发布");
+      setError("该来源是 Rime/OpenCC 上游源码，需要先用转换命令生成 shurufa233 manifest");
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/updates/source`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: source.id }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setConfig(hydrateConfig(await res.json()));
+      setDictionarySourceText(`已选择 ${source.name}`);
+      setError("");
+    } catch (err) {
+      setDictionarySourceText("选择失败");
+      setError(err instanceof Error ? err.message : "dictionary source apply failed");
     }
   }
 
@@ -1411,6 +1484,30 @@ function App() {
             <div className="panelHeader">
               <h2>词库热更</h2>
               <span>{updateText}</span>
+            </div>
+            <div className="sourceHeader">
+              <span>{dictionarySourceText}</span>
+              <button className="smallButton" onClick={() => void loadDictionarySources()}>
+                刷新来源
+              </button>
+            </div>
+            <div className="sourceGrid">
+              {dictionarySources.map((source) => (
+                <button
+                  className={`sourceItem ${config.update.sourcePreset === source.id ? "selected" : ""}`}
+                  key={source.id}
+                  onClick={() => void applyDictionarySource(source)}
+                  title={source.homepage}
+                >
+                  <strong>{source.name}</strong>
+                  <span>{source.installable ? "可直接热更" : "上游转换源"} · {source.license}</span>
+                  <small>{source.description}</small>
+                  {source.rawSources && source.rawSources.length > 0 && (
+                    <i>{source.rawSources.slice(0, 2).map((item) => item.label).join(", ")}</i>
+                  )}
+                  {source.convertCommand && <code>{source.convertCommand}</code>}
+                </button>
+              ))}
             </div>
             <label className="field">
               <span>GitHub Manifest</span>

@@ -187,6 +187,68 @@ func TestCandidateActionAssociateSkipsPreview(t *testing.T) {
 	}
 }
 
+func TestUpdateSourcesCallsEndpoint(t *testing.T) {
+	var sourcesCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/updates/sources" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		sourcesCalled = true
+		_ = json.NewEncoder(w).Encode(dictionarySourceResponse{
+			Selected: "shurufa233-github",
+			Sources: []dictionarySource{{
+				ID:          "rime-ice-source",
+				Name:        "雾凇拼音 Rime Ice",
+				Kind:        "rime-source",
+				License:     "GPL-3.0",
+				Homepage:    "https://github.com/iDvel/rime-ice",
+				Description: "source",
+				RawSources:  []dictionaryRaw{{Label: "rime_ice.dict.yaml", URL: "https://example.test/rime_ice.dict.yaml", Role: "entry-dictionary"}},
+			}},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := updateSources(server.Client()); err != nil {
+		t.Fatal(err)
+	}
+	if !sourcesCalled {
+		t.Fatal("updates sources endpoint was not called")
+	}
+}
+
+func TestUpdateSourcePostsSelectedID(t *testing.T) {
+	var sourceCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/updates/source" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		sourceCalled = true
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode source request: %v", err)
+		}
+		if req["id"] != "shurufa233-github" {
+			t.Fatalf("source request = %#v", req)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := updateSource(server.Client(), []string{"shurufa233-github"}); err != nil {
+		t.Fatal(err)
+	}
+	if !sourceCalled {
+		t.Fatal("update source endpoint was not called")
+	}
+}
+
 func TestCandidateActionAcceptsForgetAction(t *testing.T) {
 	input, req, err := parseCandidateActionArgs([]string{"ceshi", "forget", "--index", "0"})
 	if err != nil {

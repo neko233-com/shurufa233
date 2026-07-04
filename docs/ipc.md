@@ -22,6 +22,8 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /symbols`
 - `GET /updates/check`
 - `POST /updates/apply`
+- `GET /updates/sources`
+- `POST /updates/source`
 - `GET /ime/mode`
 - `POST /ime/mode`
 - `POST /ime/select-char`
@@ -246,6 +248,34 @@ The default source is GitHub Releases:
 ```text
 https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json
 ```
+
+`GET /updates/sources` returns the built-in dictionary source catalog. It
+separates directly installable shurufa233 manifests from upstream Rime/OpenCC
+source repositories that must be converted first:
+
+```json
+{
+  "selected": "shurufa233-github",
+  "sources": [
+    {
+      "id": "rime-ice-source",
+      "name": "雾凇拼音 Rime Ice",
+      "kind": "rime-source",
+      "installable": false,
+      "homepage": "https://github.com/iDvel/rime-ice",
+      "rawSources": [
+        { "label": "rime_ice.dict.yaml", "role": "entry-dictionary" }
+      ],
+      "convertCommand": "shurufa-dictimport ..."
+    }
+  ]
+}
+```
+
+`POST /updates/source` accepts `{"id":"shurufa233-github"}` and applies the
+manifest/mirror settings from an installable source to `config.json`. Source-only
+Rime presets intentionally return a 400 until a generated shurufa233 manifest is
+provided, keeping upstream YAML conversion explicit and license-auditable.
 
 For China-region acceleration, keep GitHub as the canonical source and publish the same release artifacts to one or more configured mirror/CDN base URLs. The daemon tries mirror base URLs before the original dictionary URL.
 When `autoCheck` is enabled, the daemon checks the configured manifest in the background after startup and then periodically. When `autoApply` is also enabled, a newer manifest is downloaded, SHA-256 verified when hashes are present, loaded into all active IME sessions, and persisted under the local dictionary directory without requiring the settings panel to stay open.

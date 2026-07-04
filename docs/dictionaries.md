@@ -8,11 +8,36 @@ be generated from reviewed open-source sources and user-provided imports.
 
 - Rime Luna Pinyin: `https://github.com/rime/rime-luna-pinyin`
 - Rime Ice: `https://github.com/iDvel/rime-ice`
+- Rime Emoji: `https://github.com/rime/rime-emoji`
+- OpenCC Emoji: `https://github.com/rime-aca/OpenCC_Emoji`
 - Rime Plum package manager and recipes: `https://github.com/rime/plum`
 
 Check each upstream repository's license before redistributing generated JSON
 artifacts. Prefer storing source URL, commit, license, and conversion command in
 release notes or dictionary manifests.
+
+## Built-In Source Catalog
+
+The daemon and CLI expose a small source catalog so production builds do not
+depend on hand-maintained URLs scattered through the UI:
+
+```powershell
+shurufa-imecli update-sources
+shurufa-imecli update-source shurufa233-github
+```
+
+`shurufa233-github` is directly installable because it points at a shurufa233
+Release manifest. Rime Luna, Rime Ice, and Rime Emoji entries are marked
+source-only: they list upstream GitHub raw files and the conversion command, but
+they are not applied directly until a generated shurufa233 dictionary manifest is
+published. This keeps Rime/OpenCC license review, source commit pinning, and
+hash generation explicit while still making the maintained upstreams discoverable
+from the settings UI and CLI.
+
+For China-region access, keep the upstream GitHub URLs as provenance and publish
+the generated shurufa233 manifest/artifacts to a user-controlled mirror or CDN.
+Put that mirror in `mirrorBaseUrls`; the daemon tries mirror dictionary URLs
+before falling back to the canonical artifact URL.
 
 ## Rime Import
 
