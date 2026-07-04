@@ -24,6 +24,7 @@ type candidate struct {
 	Comment   string `json:"comment,omitempty"`
 	Weight    int    `json:"weight"`
 	UserScore int    `json:"userScore"`
+	Pinned    bool   `json:"pinned,omitempty"`
 }
 
 type candidatePageItem struct {
@@ -36,6 +37,7 @@ type candidatePageItem struct {
 	Comment      string `json:"comment,omitempty"`
 	Weight       int    `json:"weight"`
 	UserScore    int    `json:"userScore"`
+	Pinned       bool   `json:"pinned,omitempty"`
 	Score        int    `json:"score"`
 }
 
@@ -59,13 +61,15 @@ type candidateActionRequest struct {
 }
 
 type candidateActionResponse struct {
-	OK         bool        `json:"ok"`
-	Action     string      `json:"action"`
-	Start      int         `json:"start"`
-	Limit      int         `json:"limit"`
-	Total      int         `json:"total"`
-	Committed  string      `json:"committed,omitempty"`
-	State      engineState `json:"state"`
+	OK         bool         `json:"ok"`
+	Action     string       `json:"action"`
+	Start      int          `json:"start"`
+	Limit      int          `json:"limit"`
+	Total      int          `json:"total"`
+	Committed  string       `json:"committed,omitempty"`
+	State      engineState  `json:"state"`
+	Rejected   *phraseEntry `json:"rejected,omitempty"`
+	Pinned     *phraseEntry `json:"pinned,omitempty"`
 	Candidates struct {
 		OK        bool                `json:"ok"`
 		Start     int                 `json:"start"`
@@ -163,6 +167,13 @@ type rejectResponse struct {
 	UpdatedAt string        `json:"updatedAt"`
 }
 
+type pinResponse struct {
+	Pins      []phraseEntry `json:"pins"`
+	Entries   []phraseEntry `json:"entries"`
+	Count     int           `json:"count"`
+	UpdatedAt string        `json:"updatedAt"`
+}
+
 type catalogResponse struct {
 	Kind      string        `json:"kind"`
 	Query     string        `json:"query,omitempty"`
@@ -229,6 +240,8 @@ func main() {
 		err = phrases(client, os.Args[2:])
 	case "rejects", "reject":
 		err = rejects(client, os.Args[2:])
+	case "pins", "pin":
+		err = pins(client, os.Args[2:])
 	case "catalog", "symbols", "symbol":
 		err = catalog(client, os.Args[2:])
 	case "reverse", "lookup", "fancha":
@@ -273,6 +286,12 @@ Usage:
   shurufa-imecli rejects import user-rejects.json [--replace]
   shurufa-imecli rejects delete "ceshi|错词"
   shurufa-imecli rejects clear
+  shurufa-imecli pins list
+  shurufa-imecli pins add nihao "你好"
+  shurufa-imecli pins import user-pins.json [--replace]
+  shurufa-imecli pins export
+  shurufa-imecli pins delete "nihao|你好"
+  shurufa-imecli pins clear
   shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]
   shurufa-imecli reverse "你好" [--limit N]
   shurufa-imecli update-sources
@@ -281,7 +300,7 @@ Usage:
   shurufa-imecli schema [current|apply <id>]
   shurufa-imecli update-check
   shurufa-imecli update-apply
-  shurufa-imecli candidates nihao [view|next-page|prev-page|select|first-char|last-char] [--start N] [--limit N] [--display-index N] [--index N]
+  shurufa-imecli candidates nihao [view|next-page|prev-page|select|pin|forget|first-char|last-char] [--start N] [--limit N] [--display-index N] [--index N]
   shurufa-imecli agent "/rewrite hello"
   shurufa-imecli agent --context "selected text" "/rewrite"
   shurufa-imecli repl`)
@@ -316,6 +335,9 @@ func preview(client *http.Client, input string) error {
 		if item.Comment != "" {
 			meta += " comment=" + item.Comment
 		}
+		if item.Pinned {
+			meta += " pinned=true"
+		}
 		fmt.Printf("%d. %s [%s] score=%d%s\n", i+1, item.Text, item.Reading, item.Weight+item.UserScore, meta)
 	}
 	return nil
@@ -341,6 +363,9 @@ func associate(client *http.Client, args []string) error {
 		}
 		if item.Comment != "" {
 			meta += " comment=" + item.Comment
+		}
+		if item.Pinned {
+			meta += " pinned=true"
 		}
 		fmt.Printf("%d. %s [%s] score=%d%s\n", i+1, item.Text, item.Reading, item.Weight+item.UserScore, meta)
 	}
@@ -374,6 +399,12 @@ func printCandidateAction(response candidateActionResponse) {
 	if response.Committed != "" {
 		fmt.Printf("committed: %s\n", response.Committed)
 	}
+	if response.Rejected != nil {
+		fmt.Printf("rejected: %s|%s\n", response.Rejected.Reading, response.Rejected.Text)
+	}
+	if response.Pinned != nil {
+		fmt.Printf("pinned: %s|%s\n", response.Pinned.Reading, response.Pinned.Text)
+	}
 	fmt.Printf("action=%s range=%d-%d/%d\n", response.Action, response.Start+1, response.Start+len(response.Candidates.Items), response.Total)
 	for _, item := range response.Candidates.Items {
 		meta := ""
@@ -385,6 +416,9 @@ func printCandidateAction(response candidateActionResponse) {
 		}
 		if item.Comment != "" {
 			meta += " comment=" + item.Comment
+		}
+		if item.Pinned {
+			meta += " pinned=true"
 		}
 		fmt.Printf("%d. %s [%s] score=%d index=%d%s\n", item.DisplayIndex, item.Text, item.Reading, item.Score, item.Index, meta)
 	}
@@ -475,6 +509,7 @@ func isCandidateActionName(value string) bool {
 		"home", "first-page", "end", "last-page",
 		"select", "commit", "commit-candidate",
 		"forget", "reject", "delete-candidate", "hide-candidate",
+		"pin", "pin-candidate", "favorite", "top",
 		"associate", "association", "associations", "predict", "suggest",
 		"first-char", "commit-first-char",
 		"last-char", "commit-last-char",
@@ -939,6 +974,96 @@ func rejects(client *http.Client, args []string) error {
 func rejectEntries(response rejectResponse) []phraseEntry {
 	if response.Rejects != nil {
 		return response.Rejects
+	}
+	return response.Entries
+}
+
+func pins(client *http.Client, args []string) error {
+	action := "list"
+	if len(args) > 0 {
+		action = strings.ToLower(strings.TrimSpace(args[0]))
+		args = args[1:]
+	}
+	switch action {
+	case "list":
+		var response pinResponse
+		if err := getJSON(client, "/pins", &response); err != nil {
+			return err
+		}
+		printPhrases(pinEntries(response))
+		return nil
+	case "export":
+		var response pinResponse
+		if err := getJSON(client, "/pins", &response); err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(map[string]any{"entries": pinEntries(response)}, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	case "add":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: pins add <reading> <text> [weight]")
+		}
+		entry := phraseEntry{Reading: args[0], Text: args[1], Comment: "已置顶"}
+		if len(args) > 2 {
+			weight, err := strconv.Atoi(args[2])
+			if err != nil {
+				return err
+			}
+			entry.Weight = weight
+		}
+		var response pinResponse
+		if err := putJSON(client, "/pins", map[string]any{"entries": []phraseEntry{entry}, "merge": true}, &response); err != nil {
+			return err
+		}
+		fmt.Printf("pins=%d\n", response.Count)
+		return nil
+	case "import":
+		if len(args) == 0 {
+			return fmt.Errorf("missing import file")
+		}
+		entries, err := readPhraseFile(args[0])
+		if err != nil {
+			return err
+		}
+		payload := map[string]any{"entries": entries, "merge": true}
+		if len(args) > 1 && args[1] == "--replace" {
+			payload["merge"] = false
+		}
+		var response pinResponse
+		if err := putJSON(client, "/pins", payload, &response); err != nil {
+			return err
+		}
+		fmt.Printf("pins=%d\n", response.Count)
+		return nil
+	case "delete":
+		if len(args) == 0 {
+			return fmt.Errorf("missing pin key")
+		}
+		var response pinResponse
+		if err := deleteJSON(client, "/pins?key="+urlQueryEscape(args[0]), &response); err != nil {
+			return err
+		}
+		fmt.Printf("pins=%d\n", response.Count)
+		return nil
+	case "clear":
+		var response pinResponse
+		if err := deleteJSON(client, "/pins", &response); err != nil {
+			return err
+		}
+		fmt.Printf("pins=%d\n", response.Count)
+		return nil
+	default:
+		return fmt.Errorf("unknown pins action %q", action)
+	}
+}
+
+func pinEntries(response pinResponse) []phraseEntry {
+	if response.Pins != nil {
+		return response.Pins
 	}
 	return response.Entries
 }

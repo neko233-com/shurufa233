@@ -255,6 +255,18 @@ func ShurufaUserRejectsJSON(id C.uint64_t) *C.char {
 	})
 }
 
+//export ShurufaUserPinsJSON
+func ShurufaUserPinsJSON(id C.uint64_t) *C.char {
+	pins := getSession(uint64(id)).UserPins()
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"pins":      pins,
+		"entries":   pins,
+		"count":     len(pins),
+		"updatedAt": time.Now().UTC(),
+	})
+}
+
 //export ShurufaImportUserScoresJSON
 func ShurufaImportUserScoresJSON(id C.uint64_t, payload *C.char) *C.char {
 	scores, err := decodeUserScoresPayload(C.GoString(payload))
@@ -324,6 +336,34 @@ func ShurufaImportUserRejectsJSON(id C.uint64_t, payload *C.char) *C.char {
 		"imported":  len(entries),
 		"total":     len(rejects),
 		"rejects":   rejects,
+		"updatedAt": time.Now().UTC(),
+	})
+}
+
+//export ShurufaImportUserPinsJSON
+func ShurufaImportUserPinsJSON(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	entries := req.Entries
+	if len(entries) == 0 {
+		entries = req.Pins
+	}
+	session := getSession(uint64(id))
+	if req.Merge {
+		merged := session.UserPins()
+		merged = append(merged, entries...)
+		entries = merged
+	}
+	session.ReplaceUserPins(entries)
+	pins := session.UserPins()
+	persistUserPins(pins)
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"imported":  len(entries),
+		"total":     len(pins),
+		"pins":      pins,
 		"updatedAt": time.Now().UTC(),
 	})
 }

@@ -745,6 +745,49 @@ func TestRejectsEndpointAndCandidateActionHideCandidates(t *testing.T) {
 	}
 }
 
+func TestPinsEndpointAndCandidateActionPromoteCandidates(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{
+		{Reading: "ceshi", Text: "测试", Weight: 30000},
+		{Reading: "ceshi", Text: "侧室", Weight: 1000},
+	})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	session.Preview("ceshi")
+
+	req := httptest.NewRequest(http.MethodPost, "/ime/candidate-action", strings.NewReader(`{"action":"pin","index":1}`))
+	rec := httptest.NewRecorder()
+	state.imeCandidateAction(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pin status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var result candidateActionResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Pinned == nil || result.Pinned.Text != "侧室" {
+		t.Fatalf("pin result = %#v", result)
+	}
+	if got := session.Preview("ceshi"); len(got.Candidates) == 0 || got.Candidates[0].Text != "侧室" || !got.Candidates[0].Pinned {
+		t.Fatalf("expected pinned candidate to rank first, got %#v", got.Candidates)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/pins?key=ceshi%7C%E4%BE%A7%E5%AE%A4", nil)
+	rec = httptest.NewRecorder()
+	state.pins(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete pin status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := session.Preview("ceshi"); len(got.Candidates) == 0 || got.Candidates[0].Text != "测试" || got.Candidates[0].Pinned {
+		t.Fatalf("expected unpinned ranking to restore, got %#v", got.Candidates)
+	}
+}
+
 func TestCatalogEndpointReturnsSpecialResources(t *testing.T) {
 	config := engine.DefaultConfig()
 	session := engine.New(config)

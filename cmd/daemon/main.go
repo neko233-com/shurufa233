@@ -80,6 +80,7 @@ type candidateActionResult struct {
 	Total      int                  `json:"total"`
 	Committed  string               `json:"committed,omitempty"`
 	Rejected   *engine.Entry        `json:"rejected,omitempty"`
+	Pinned     *engine.Entry        `json:"pinned,omitempty"`
 	State      engine.State         `json:"state"`
 	Candidates candidatePagePayload `json:"candidates"`
 	UpdatedAt  time.Time            `json:"updatedAt"`
@@ -105,6 +106,7 @@ type candidatePageItem struct {
 	Weight       int    `json:"weight"`
 	UserScore    int    `json:"userScore"`
 	Score        int    `json:"score"`
+	Pinned       bool   `json:"pinned,omitempty"`
 }
 
 type agentRequest struct {
@@ -187,6 +189,12 @@ type userRejectStore struct {
 	Entries   []engine.Entry `json:"entries"`
 }
 
+type userPinStore struct {
+	Version   int            `json:"version"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	Entries   []engine.Entry `json:"entries"`
+}
+
 type wordbookRequest struct {
 	UserScores map[string]int `json:"userScores,omitempty"`
 	Scores     map[string]int `json:"scores,omitempty"`
@@ -206,6 +214,18 @@ type phraseRequest struct {
 type rejectRequest struct {
 	Entries []engine.Entry `json:"entries,omitempty"`
 	Rejects []engine.Entry `json:"rejects,omitempty"`
+	Reading string         `json:"reading,omitempty"`
+	Text    string         `json:"text,omitempty"`
+	Kind    string         `json:"kind,omitempty"`
+	Source  string         `json:"source,omitempty"`
+	Comment string         `json:"comment,omitempty"`
+	Weight  int            `json:"weight,omitempty"`
+	Merge   bool           `json:"merge,omitempty"`
+}
+
+type pinRequest struct {
+	Entries []engine.Entry `json:"entries,omitempty"`
+	Pins    []engine.Entry `json:"pins,omitempty"`
 	Reading string         `json:"reading,omitempty"`
 	Text    string         `json:"text,omitempty"`
 	Kind    string         `json:"kind,omitempty"`
@@ -260,6 +280,9 @@ func main() {
 	mux.HandleFunc("GET /rejects", state.withCORS(state.rejects))
 	mux.HandleFunc("PUT /rejects", state.withCORS(state.rejects))
 	mux.HandleFunc("DELETE /rejects", state.withCORS(state.rejects))
+	mux.HandleFunc("GET /pins", state.withCORS(state.pins))
+	mux.HandleFunc("PUT /pins", state.withCORS(state.pins))
+	mux.HandleFunc("DELETE /pins", state.withCORS(state.pins))
 	mux.HandleFunc("GET /catalog", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /symbols", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /updates/check", state.withCORS(state.checkUpdates))
@@ -353,6 +376,7 @@ func (s *AppState) load() error {
 	}
 	s.engine.AddUserPhrases(s.loadUserPhrases())
 	s.engine.AddUserRejects(s.loadUserRejects())
+	s.engine.AddUserPins(s.loadUserPins())
 	return s.saveLocked()
 }
 
@@ -674,6 +698,74 @@ func (s *AppState) rejects(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *AppState) pins(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		writeJSON(w, pinResponse(s.engine.UserPins()))
+	case http.MethodPut:
+		var req pinRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		entries := req.Entries
+		if len(entries) == 0 {
+			entries = req.Pins
+		}
+		if len(entries) == 0 && strings.TrimSpace(req.Reading) != "" && strings.TrimSpace(req.Text) != "" {
+			entries = []engine.Entry{{
+				Reading: req.Reading,
+				Text:    req.Text,
+				Kind:    req.Kind,
+				Source:  req.Source,
+				Comment: req.Comment,
+				Weight:  req.Weight,
+			}}
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if req.Merge {
+			merged := s.engine.UserPins()
+			merged = append(merged, entries...)
+			entries = merged
+		}
+		s.replaceUserPinsLocked(entries)
+		pins := s.engine.UserPins()
+		if err := s.writeUserPins(pins); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, pinResponse(pins))
+	case http.MethodDelete:
+		reading := strings.TrimSpace(r.URL.Query().Get("reading"))
+		text := strings.TrimSpace(r.URL.Query().Get("text"))
+		if key := strings.TrimSpace(r.URL.Query().Get("key")); key != "" {
+			parts := strings.SplitN(key, "|", 2)
+			reading = parts[0]
+			if len(parts) > 1 {
+				text = parts[1]
+			}
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, session := range s.sessions {
+			if session != nil {
+				session.DeleteUserPin(reading, text)
+			}
+		}
+		pins := s.engine.UserPins()
+		if err := s.writeUserPins(pins); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, pinResponse(pins))
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func (s *AppState) catalog(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	req := engine.CatalogRequest{
@@ -783,14 +875,15 @@ func (s *AppState) imeCandidates(w http.ResponseWriter, r *http.Request) {
 	}
 	parts := make([]string, 0, max(0, end-start))
 	for i, candidate := range state.Candidates[start:end] {
-		parts = append(parts, fmt.Sprintf("%d\t%s\t%s\t%d\t%s\t%s\t%s",
+		parts = append(parts, fmt.Sprintf("%d\t%s\t%s\t%d\t%s\t%s\t%s\t%t",
 			i+1,
 			sanitizePayloadField(candidate.Text),
 			sanitizePayloadField(candidate.Reading),
-			candidate.Weight+candidate.UserScore,
+			candidateScore(candidate),
 			sanitizePayloadField(candidate.Kind),
 			sanitizePayloadField(candidate.Source),
 			sanitizePayloadField(candidate.Comment),
+			candidate.Pinned,
 		))
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -909,6 +1002,17 @@ func (s *AppState) executeCandidateAction(session *engine.Engine, req candidateA
 			return candidateActionResult{}, err
 		}
 		return buildCandidateActionResultWithRejected(action, start, limit, state, rejected), nil
+	case "pin", "pin-candidate", "favorite", "top":
+		index := candidateActionIndex(req, start)
+		state, pinned, err := session.PinCandidate(index)
+		if err != nil {
+			return candidateActionResult{}, err
+		}
+		pins := session.UserPins()
+		if err := s.writeUserPins(pins); err != nil {
+			return candidateActionResult{}, err
+		}
+		return buildCandidateActionResultWithPinned(action, start, limit, state, pinned), nil
 	case "first-char", "commit-first-char":
 		return executeCandidateCharAction(session, req, start, limit, action, "first")
 	case "last-char", "commit-last-char":
@@ -941,14 +1045,18 @@ func buildCandidateActionResult(session *engine.Engine, action string, start int
 }
 
 func buildCandidateActionResultWithState(action string, start int, limit int, committed string, state engine.State) candidateActionResult {
-	return buildCandidateActionResultFull(action, start, limit, committed, state, nil)
+	return buildCandidateActionResultFull(action, start, limit, committed, state, nil, nil)
 }
 
 func buildCandidateActionResultWithRejected(action string, start int, limit int, state engine.State, rejected engine.Entry) candidateActionResult {
-	return buildCandidateActionResultFull(action, start, limit, "", state, &rejected)
+	return buildCandidateActionResultFull(action, start, limit, "", state, &rejected, nil)
 }
 
-func buildCandidateActionResultFull(action string, start int, limit int, committed string, state engine.State, rejected *engine.Entry) candidateActionResult {
+func buildCandidateActionResultWithPinned(action string, start int, limit int, state engine.State, pinned engine.Entry) candidateActionResult {
+	return buildCandidateActionResultFull(action, start, limit, "", state, nil, &pinned)
+}
+
+func buildCandidateActionResultFull(action string, start int, limit int, committed string, state engine.State, rejected *engine.Entry, pinned *engine.Entry) candidateActionResult {
 	candidates := buildCandidatePagePayload(state, start, limit)
 	return candidateActionResult{
 		OK:         true,
@@ -958,6 +1066,7 @@ func buildCandidateActionResultFull(action string, start int, limit int, committ
 		Total:      candidates.Total,
 		Committed:  committed,
 		Rejected:   rejected,
+		Pinned:     pinned,
 		State:      state,
 		Candidates: candidates,
 		UpdatedAt:  time.Now().UTC(),
@@ -991,7 +1100,8 @@ func buildCandidatePagePayload(state engine.State, start int, limit int) candida
 			Comment:      candidate.Comment,
 			Weight:       candidate.Weight,
 			UserScore:    candidate.UserScore,
-			Score:        candidate.Weight + candidate.UserScore,
+			Score:        candidateScore(candidate),
+			Pinned:       candidate.Pinned,
 		})
 	}
 	return candidatePagePayload{
@@ -1002,6 +1112,14 @@ func buildCandidatePagePayload(state engine.State, start int, limit int) candida
 		Items:     items,
 		UpdatedAt: time.Now().UTC(),
 	}
+}
+
+func candidateScore(candidate engine.Candidate) int {
+	score := candidate.Weight + candidate.UserScore
+	if candidate.Pinned {
+		score += 1000000
+	}
+	return score
 }
 
 func maxCandidatePageStart(total int, limit int) int {
@@ -1115,6 +1233,7 @@ func (s *AppState) sessionForRequest(r *http.Request) *engine.Engine {
 		}
 		session.AddUserPhrases(s.loadUserPhrases())
 		session.AddUserRejects(s.loadUserRejects())
+		session.AddUserPins(s.loadUserPins())
 		s.sessions[id] = session
 	}
 	return session
@@ -1621,6 +1740,10 @@ func (s *AppState) userRejectsPath() string {
 	return filepath.Join(filepath.Dir(s.path), "user-rejects.json")
 }
 
+func (s *AppState) userPinsPath() string {
+	return filepath.Join(filepath.Dir(s.path), "user-pins.json")
+}
+
 func (s *AppState) loadUserScores() map[string]int {
 	data, err := os.ReadFile(s.userScoresPath())
 	if err != nil {
@@ -1651,6 +1774,18 @@ func (s *AppState) loadUserRejects() []engine.Entry {
 		return nil
 	}
 	var store userRejectStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		return nil
+	}
+	return store.Entries
+}
+
+func (s *AppState) loadUserPins() []engine.Entry {
+	data, err := os.ReadFile(s.userPinsPath())
+	if err != nil {
+		return nil
+	}
+	var store userPinStore
 	if err := json.Unmarshal(data, &store); err != nil {
 		return nil
 	}
@@ -1692,6 +1827,18 @@ func rejectResponse(entries []engine.Entry) map[string]any {
 	}
 }
 
+func pinResponse(entries []engine.Entry) map[string]any {
+	if entries == nil {
+		entries = []engine.Entry{}
+	}
+	return map[string]any{
+		"pins":      entries,
+		"entries":   entries,
+		"count":     len(entries),
+		"updatedAt": time.Now().UTC(),
+	}
+}
+
 func (s *AppState) replaceUserScoresLocked(scores map[string]int) {
 	for _, session := range s.sessions {
 		if session != nil {
@@ -1712,6 +1859,14 @@ func (s *AppState) replaceUserRejectsLocked(entries []engine.Entry) {
 	for _, session := range s.sessions {
 		if session != nil {
 			session.ReplaceUserRejects(entries)
+		}
+	}
+}
+
+func (s *AppState) replaceUserPinsLocked(entries []engine.Entry) {
+	for _, session := range s.sessions {
+		if session != nil {
+			session.ReplaceUserPins(entries)
 		}
 	}
 }
@@ -1772,6 +1927,34 @@ func (s *AppState) writeUserRejects(entries []engine.Entry) error {
 		return err
 	}
 	store := userRejectStore{
+		Version:   1,
+		UpdatedAt: time.Now().UTC(),
+		Entries:   entries,
+	}
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(path)
+		if retryErr := os.Rename(tmp, path); retryErr != nil {
+			_ = os.Remove(tmp)
+			return retryErr
+		}
+	}
+	return nil
+}
+
+func (s *AppState) writeUserPins(entries []engine.Entry) error {
+	path := s.userPinsPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	store := userPinStore{
 		Version:   1,
 		UpdatedAt: time.Now().UTC(),
 		Entries:   entries,

@@ -35,6 +35,12 @@ type userRejectStore struct {
 	Entries   []engine.Entry `json:"entries"`
 }
 
+type userPinStore struct {
+	Version   int            `json:"version"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	Entries   []engine.Entry `json:"entries"`
+}
+
 func userScoresPath() (string, error) {
 	if override := os.Getenv("SHURUFA233_USER_SCORES"); override != "" {
 		return override, nil
@@ -78,6 +84,21 @@ func userRejectsPath() (string, error) {
 		}
 	}
 	return filepath.Join(base, "shurufa233", "user-rejects.json"), nil
+}
+
+func userPinsPath() (string, error) {
+	if override := os.Getenv("SHURUFA233_USER_PINS"); override != "" {
+		return override, nil
+	}
+	base := os.Getenv("APPDATA")
+	if base == "" {
+		var err error
+		base, err = os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
+	}
+	return filepath.Join(base, "shurufa233", "user-pins.json"), nil
 }
 
 func loadUserScores() map[string]int {
@@ -128,6 +149,24 @@ func loadUserRejects() []engine.Entry {
 		return nil
 	}
 	var store userRejectStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		return nil
+	}
+	return store.Entries
+}
+
+func loadUserPins() []engine.Entry {
+	scoresMu.Lock()
+	defer scoresMu.Unlock()
+	path, err := userPinsPath()
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var store userPinStore
 	if err := json.Unmarshal(data, &store); err != nil {
 		return nil
 	}
@@ -191,6 +230,39 @@ func persistUserRejects(entries []engine.Entry) {
 		return
 	}
 	store := userRejectStore{
+		Version:   1,
+		UpdatedAt: time.Now().UTC(),
+		Entries:   entries,
+	}
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			_ = os.Remove(path)
+			_ = os.Rename(tmp, path)
+		} else {
+			_ = os.Remove(tmp)
+		}
+	}
+}
+
+func persistUserPins(entries []engine.Entry) {
+	scoresMu.Lock()
+	defer scoresMu.Unlock()
+	path, err := userPinsPath()
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	store := userPinStore{
 		Version:   1,
 		UpdatedAt: time.Now().UTC(),
 		Entries:   entries,

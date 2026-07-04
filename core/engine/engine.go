@@ -22,6 +22,7 @@ type Engine struct {
 	abbr          map[string][]Entry
 	user          map[string]int
 	rejects       map[string]Entry
+	pins          map[string]Entry
 	buffer        string
 	maxReadingLen int
 }
@@ -34,6 +35,7 @@ const abbreviationCandidatePenalty = 600
 const segmentedCandidatePenalty = 9000
 const segmentedPiecePenalty = 220
 const dynamicCandidateWeightBase = 8800
+const pinnedCandidateBonus = 1000000
 
 var nowFunc = time.Now
 
@@ -98,6 +100,7 @@ func New(config Config) *Engine {
 		abbr:    make(map[string][]Entry),
 		user:    make(map[string]int),
 		rejects: make(map[string]Entry),
+		pins:    make(map[string]Entry),
 	}
 	e.AddEntries(defaultEntries)
 	return e
@@ -448,7 +451,47 @@ func normalizeRejectEntry(entry Entry) Entry {
 	return entry
 }
 
+func normalizePinEntries(entries []Entry) []Entry {
+	out := make([]Entry, 0, len(entries))
+	seen := map[string]int{}
+	for _, entry := range entries {
+		entry = normalizePinEntry(entry)
+		if entry.Reading == "" || entry.Text == "" {
+			continue
+		}
+		key := pinKey(entry.Reading, entry.Text)
+		if index, ok := seen[key]; ok {
+			if entry.Weight > out[index].Weight {
+				out[index] = entry
+			}
+			continue
+		}
+		seen[key] = len(out)
+		out = append(out, entry)
+	}
+	return out
+}
+
+func normalizePinEntry(entry Entry) Entry {
+	entry.Reading = normalizeReading(entry.Reading)
+	entry.Text = strings.TrimSpace(entry.Text)
+	if entry.Reading == "" || entry.Text == "" {
+		return Entry{}
+	}
+	if entry.Source == "" {
+		entry.Source = UserPinSource
+	}
+	if entry.Comment == "" {
+		entry.Comment = "置顶"
+	}
+	return entry
+}
+
 func rejectKey(reading string, text string) string {
+	return normalizeReading(reading) + "|" + strings.TrimSpace(text)
+}
+
+func pinKey(reading string, text string) string {
 	return normalizeReading(reading) + "|" + strings.TrimSpace(text)
 }
 
@@ -642,6 +685,33 @@ func (e *Engine) RejectCandidate(index int) (State, Entry, error) {
 	return e.stateLocked(""), entry, nil
 }
 
+func (e *Engine) PinCandidate(index int) (State, Entry, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	candidates := e.candidatesLocked()
+	if index < 0 || index >= len(candidates) {
+		return e.stateLocked(""), Entry{}, errors.New("candidate index out of range")
+	}
+	selected := candidates[index]
+	entry := normalizePinEntry(Entry{
+		Reading: selected.Reading,
+		Text:    selected.Text,
+		Kind:    selected.Kind,
+		Source:  selected.Source,
+		Comment: selected.Comment,
+		Weight:  selected.Weight,
+	})
+	if entry.Reading == "" || entry.Text == "" {
+		return e.stateLocked(""), Entry{}, errors.New("candidate cannot be pinned")
+	}
+	if e.pins == nil {
+		e.pins = make(map[string]Entry)
+	}
+	e.pins[pinKey(entry.Reading, entry.Text)] = entry
+	delete(e.rejects, rejectKey(entry.Reading, entry.Text))
+	return e.stateLocked(""), entry, nil
+}
+
 func (e *Engine) State() State {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -691,6 +761,58 @@ func (e *Engine) DeleteUserScore(key string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	delete(e.user, key)
+}
+
+func (e *Engine) UserPins() []Entry {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	out := make([]Entry, 0, len(e.pins))
+	for _, entry := range e.pins {
+		out = append(out, entry)
+	}
+	sortEntries(out)
+	return out
+}
+
+func (e *Engine) AddUserPins(entries []Entry) []Entry {
+	normalized := normalizePinEntries(entries)
+	if len(normalized) == 0 {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.pins == nil {
+		e.pins = make(map[string]Entry, len(normalized))
+	}
+	for _, entry := range normalized {
+		e.pins[pinKey(entry.Reading, entry.Text)] = entry
+		delete(e.rejects, rejectKey(entry.Reading, entry.Text))
+	}
+	return normalized
+}
+
+func (e *Engine) ReplaceUserPins(entries []Entry) []Entry {
+	normalized := normalizePinEntries(entries)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.pins = make(map[string]Entry, len(normalized))
+	for _, entry := range normalized {
+		e.pins[pinKey(entry.Reading, entry.Text)] = entry
+		delete(e.rejects, rejectKey(entry.Reading, entry.Text))
+	}
+	return normalized
+}
+
+func (e *Engine) DeleteUserPin(reading string, text string) {
+	reading = normalizeReading(reading)
+	text = strings.TrimSpace(text)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if reading == "" && text == "" {
+		e.pins = make(map[string]Entry)
+		return
+	}
+	delete(e.pins, pinKey(reading, text))
 }
 
 func (e *Engine) UserRejects() []Entry {
@@ -787,6 +909,7 @@ func (e *Engine) candidatesLocked() []Candidate {
 		if e.isRejectedLocked(entry.Reading, displayText) {
 			continue
 		}
+		pinned := e.isPinnedLocked(entry.Reading, displayText)
 		candidates = append(candidates, Candidate{
 			Text:      displayText,
 			Reading:   entry.Reading,
@@ -795,12 +918,13 @@ func (e *Engine) candidatesLocked() []Candidate {
 			Comment:   entry.Comment,
 			Weight:    entry.Weight,
 			UserScore: e.entryUserScoreLocked(entry),
+			Pinned:    pinned,
 		})
 	}
 
 	sort.SliceStable(candidates, func(i, j int) bool {
-		left := candidates[i].Weight + candidates[i].UserScore
-		right := candidates[j].Weight + candidates[j].UserScore
+		left := candidateScore(candidates[i])
+		right := candidateScore(candidates[j])
 		if left == right {
 			return len([]rune(candidates[i].Text)) > len([]rune(candidates[j].Text))
 		}
@@ -823,6 +947,22 @@ func (e *Engine) isRejectedLocked(reading string, text string) bool {
 	}
 	_, ok := e.rejects[rejectKey(reading, text)]
 	return ok
+}
+
+func (e *Engine) isPinnedLocked(reading string, text string) bool {
+	if len(e.pins) == 0 {
+		return false
+	}
+	_, ok := e.pins[pinKey(reading, text)]
+	return ok
+}
+
+func candidateScore(candidate Candidate) int {
+	score := candidate.Weight + candidate.UserScore
+	if candidate.Pinned {
+		score += pinnedCandidateBonus
+	}
+	return score
 }
 
 func (e *Engine) lookupLocked(reading string) []Entry {
@@ -1205,7 +1345,11 @@ func (e *Engine) bestEntryLocked(entries []Entry) Entry {
 }
 
 func (e *Engine) entryScoreLocked(entry Entry) int {
-	return entry.Weight + e.entryUserScoreLocked(entry)
+	score := entry.Weight + e.entryUserScoreLocked(entry)
+	if e.isPinnedLocked(entry.Reading, entry.Text) || e.isPinnedLocked(entry.Reading, convertScriptText(entry.Text, e.config.Script)) {
+		score += pinnedCandidateBonus
+	}
+	return score
 }
 
 func (e *Engine) entryUserScoreLocked(entry Entry) int {

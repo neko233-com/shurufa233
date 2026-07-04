@@ -70,6 +70,7 @@ using ApplyConfigJsonFn = char *(*)(char *);
 using ImportUserScoresJsonFn = char *(*)(uint64_t, char *);
 using ImportUserPhrasesJsonFn = char *(*)(uint64_t, char *);
 using ImportUserRejectsJsonFn = char *(*)(uint64_t, char *);
+using ImportUserPinsJsonFn = char *(*)(uint64_t, char *);
 using CommitTextFn = char *(*)(uint64_t, char *, char *);
 using AgentComposeFn = char *(*)(char *, char *);
 using ExecuteCommandFn = char *(*)(uint64_t, const char *, const char *);
@@ -112,6 +113,8 @@ struct CoreApi {
   ImportUserPhrasesJsonFn importUserPhrasesJson = nullptr;
   SessionStringFn userRejectsJson = nullptr;
   ImportUserRejectsJsonFn importUserRejectsJson = nullptr;
+  SessionStringFn userPinsJson = nullptr;
+  ImportUserPinsJsonFn importUserPinsJson = nullptr;
   CommitTextFn commitText = nullptr;
   AgentComposeFn agentCompose = nullptr;
   ExecuteCommandFn executeCommand = nullptr;
@@ -437,6 +440,9 @@ bool TryLoadInProcessCore() {
   api.userRejectsJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserRejectsJSON");
   api.importUserRejectsJson =
       LoadCoreProc<ImportUserRejectsJsonFn>(module, "ShurufaImportUserRejectsJSON");
+  api.userPinsJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserPinsJSON");
+  api.importUserPinsJson =
+      LoadCoreProc<ImportUserPinsJsonFn>(module, "ShurufaImportUserPinsJSON");
   api.commitText = LoadCoreProc<CommitTextFn>(module, "ShurufaCommitText");
   api.agentCompose = LoadCoreProc<AgentComposeFn>(module, "ShurufaAgentCompose");
   api.executeCommand = LoadCoreProc<ExecuteCommandFn>(module, "ShurufaExecuteCommand");
@@ -491,6 +497,8 @@ void UseHttpCoreFallback() {
   g_core.importUserPhrasesJson = nullptr;
   g_core.userRejectsJson = nullptr;
   g_core.importUserRejectsJson = nullptr;
+  g_core.userPinsJson = nullptr;
+  g_core.importUserPinsJson = nullptr;
   g_core.commitText = nullptr;
   g_core.agentCompose = nullptr;
   g_core.executeCommand = nullptr;

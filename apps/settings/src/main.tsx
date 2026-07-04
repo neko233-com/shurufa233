@@ -178,6 +178,13 @@ type RejectResponse = {
   updatedAt: string;
 };
 
+type PinResponse = {
+  pins?: PhraseEntry[];
+  entries?: PhraseEntry[];
+  count: number;
+  updatedAt: string;
+};
+
 type CatalogResponse = {
   kind: string;
   query?: string;
@@ -201,6 +208,7 @@ type Candidate = {
   comment?: string;
   weight: number;
   userScore: number;
+  pinned?: boolean;
 };
 
 type CandidatePageItem = Candidate & {
@@ -224,6 +232,7 @@ type CandidateActionResult = {
   total: number;
   committed?: string;
   rejected?: PhraseEntry;
+  pinned?: PhraseEntry;
   state: EngineState;
   candidates: {
     ok: boolean;
@@ -478,6 +487,12 @@ function rejectEntries(response: RejectResponse): PhraseEntry[] {
   );
 }
 
+function pinEntries(response: PinResponse): PhraseEntry[] {
+  return [...(response.pins ?? response.entries ?? [])].sort(
+    (left, right) => left.reading.localeCompare(right.reading) || left.text.localeCompare(right.text),
+  );
+}
+
 function hydrateConfig(config: Config): Config {
   return {
     ...defaultConfig,
@@ -538,6 +553,9 @@ function App() {
   const [rejects, setRejects] = useState<PhraseEntry[]>([]);
   const [rejectDraft, setRejectDraft] = useState("{\n  \"entries\": []\n}");
   const [rejectText, setRejectText] = useState("未读取");
+  const [pins, setPins] = useState<PhraseEntry[]>([]);
+  const [pinDraft, setPinDraft] = useState("{\n  \"entries\": []\n}");
+  const [pinText, setPinText] = useState("未读取");
   const [catalogKind, setCatalogKind] = useState("all");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogEntries, setCatalogEntries] = useState<PhraseEntry[]>([]);
@@ -562,6 +580,7 @@ function App() {
     void loadWordbook();
     void loadPhrases();
     void loadRejects();
+    void loadPins();
     void loadCatalog();
     void loadDictionarySources();
     void loadSchemas();
@@ -782,6 +801,10 @@ function App() {
       if (data.rejected) {
         setRejectText(`已屏蔽 ${data.rejected.reading}|${data.rejected.text}`);
         void loadRejects();
+      }
+      if (data.pinned) {
+        setPinText(`已置顶 ${data.pinned.reading}|${data.pinned.text}`);
+        void loadPins();
       }
       setError("");
     } catch (err) {
@@ -1240,6 +1263,94 @@ function App() {
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = "shurufa233-user-rejects.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadPins() {
+    try {
+      const res = await fetch(`${apiBase}/pins`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as PinResponse;
+      const entries = pinEntries(data);
+      setPins(entries);
+      setPinDraft(JSON.stringify({ entries }, null, 2));
+      setPinText(`${data.count ?? entries.length} 条已置顶`);
+      setError("");
+    } catch (err) {
+      setPinText("读取失败");
+      setError(err instanceof Error ? err.message : "pins load failed");
+    }
+  }
+
+  async function savePinEntries(entries: PhraseEntry[], merge: boolean, statusText: string) {
+    const res = await fetch(`${apiBase}/pins`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entries, merge }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = (await res.json()) as PinResponse;
+    const nextEntries = pinEntries(data);
+    setPins(nextEntries);
+    setPinDraft(JSON.stringify({ entries: nextEntries }, null, 2));
+    setPinText(`${statusText} ${data.count ?? nextEntries.length} 条`);
+    setError("");
+    return nextEntries;
+  }
+
+  async function importPins(merge: boolean) {
+    try {
+      const parsed = JSON.parse(pinDraft) as PhraseEntry[] | { entries?: PhraseEntry[]; pins?: PhraseEntry[] };
+      const entries = Array.isArray(parsed) ? parsed : parsed.entries ?? parsed.pins ?? [];
+      await savePinEntries(entries, merge, merge ? "已合并" : "已替换");
+      void runPreview(preview);
+    } catch (err) {
+      setPinText("导入失败");
+      setError(err instanceof Error ? err.message : "pin import failed");
+    }
+  }
+
+  async function deletePin(entry: PhraseEntry) {
+    try {
+      const key = `${entry.reading}|${entry.text}`;
+      const res = await fetch(`${apiBase}/pins?key=${encodeURIComponent(key)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as PinResponse;
+      const nextEntries = pinEntries(data);
+      setPins(nextEntries);
+      setPinDraft(JSON.stringify({ entries: nextEntries }, null, 2));
+      setPinText(`剩余 ${data.count ?? nextEntries.length} 条`);
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setPinText("取消失败");
+      setError(err instanceof Error ? err.message : "pin delete failed");
+    }
+  }
+
+  async function clearPins() {
+    if (!window.confirm("取消所有置顶候选？")) return;
+    try {
+      const res = await fetch(`${apiBase}/pins`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      setPins([]);
+      setPinDraft("{\n  \"entries\": []\n}");
+      setPinText("已全部取消");
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setPinText("取消失败");
+      setError(err instanceof Error ? err.message : "pin clear failed");
+    }
+  }
+
+  function exportPins() {
+    const blob = new Blob([JSON.stringify({ entries: pins }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "shurufa233-user-pins.json";
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -1916,6 +2027,65 @@ function App() {
             </div>
           </section>
 
+          <section className="panel rejectPanel">
+            <div className="panelHeader">
+              <h2>候选置顶</h2>
+              <span>{pinText}</span>
+            </div>
+            <div className="rejectList">
+              {pins.slice(0, 8).map((entry) => (
+                <div className="phraseRow" key={`${entry.reading}|${entry.text}`}>
+                  <button
+                    className="phrasePreviewButton"
+                    onClick={() => {
+                      setPreview(entry.reading);
+                      void runPreview(entry.reading);
+                    }}
+                  >
+                    <strong>{entry.text}</strong>
+                    <span>
+                      {entry.reading}
+                      {entry.comment ? ` · ${entry.comment}` : ""}
+                    </span>
+                  </button>
+                  <button className="smallButton" title="取消置顶" onClick={() => void deletePin(entry)}>
+                    取消
+                  </button>
+                </div>
+              ))}
+              {pins.length === 0 && <div className="emptyWordbook">暂无置顶候选</div>}
+            </div>
+            <label className="field">
+              <span>批量 JSON</span>
+              <textarea
+                className="wordbookDraft phraseDraft"
+                spellCheck={false}
+                value={pinDraft}
+                onChange={(event) => setPinDraft(event.target.value)}
+              />
+            </label>
+            <div className="rowControls">
+              <button className="secondary" onClick={() => void loadPins()}>
+                <RotateCcw size={18} />
+                刷新
+              </button>
+              <button className="secondary" onClick={exportPins}>
+                <FileDown size={18} />
+                导出
+              </button>
+              <button className="secondary" onClick={() => void importPins(true)}>
+                <FileUp size={18} />
+                合并导入
+              </button>
+              <button className="secondary" onClick={() => void importPins(false)}>
+                替换
+              </button>
+              <button className="secondary danger" onClick={() => void clearPins()}>
+                全部取消
+              </button>
+            </div>
+          </section>
+
           <section className="panel catalogPanel">
             <div className="panelHeader">
               <div>
@@ -2022,15 +2192,20 @@ function App() {
                         key={`${candidate.reading}-${candidate.text}-${index}`}
                         className={index === 0 ? "candidatePill selected" : "candidatePill"}
                         onClick={() => void runCandidateAction("select", index + 1)}
+                        onDoubleClick={(event) => {
+                          event.preventDefault();
+                          void runCandidateAction("pin", index + 1);
+                        }}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           void runCandidateAction("forget", index + 1);
                         }}
-                        title="左键上屏，右键屏蔽候选"
+                        title="左键上屏，双击置顶，右键屏蔽候选"
                       >
                         <b>{index + 1}</b>
                         <span className="candidateText">{candidate.text}</span>
                         {showCandidateComments && candidate.comment && <span className="candidateComment">{candidate.comment}</span>}
+                        {candidate.pinned && <i>顶</i>}
                         {kindLabel(candidate.kind) && <i>{kindLabel(candidate.kind)}</i>}
                       </button>
                     ))
@@ -2129,6 +2304,7 @@ function App() {
                         <b>{index + 1}</b>
                         <span>{candidate.text}</span>
                         {showCandidateComments && candidate.comment && <em>{candidate.comment}</em>}
+                        {candidate.pinned && <i>顶</i>}
                         {kindLabel(candidate.kind) && <i>{kindLabel(candidate.kind)}</i>}
                       </span>
                     ))

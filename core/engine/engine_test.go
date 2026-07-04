@@ -324,6 +324,57 @@ func TestRejectCandidateHidesAndRestoresCandidate(t *testing.T) {
 	}
 }
 
+func TestPinCandidatePromotesAndCanBeRemoved(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{
+		{Reading: "ceshi", Text: "测试", Weight: 30000},
+		{Reading: "ceshi", Text: "侧室", Weight: 1000},
+	})
+
+	state := e.Preview("ceshi")
+	if len(state.Candidates) < 2 || state.Candidates[0].Text != "测试" {
+		t.Fatalf("expected default high-weight candidate first, got %#v", state.Candidates)
+	}
+	state, pinned, err := e.PinCandidate(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pinned.Reading != "ceshi" || pinned.Text != "侧室" {
+		t.Fatalf("pinned = %#v", pinned)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "侧室" || !state.Candidates[0].Pinned {
+		t.Fatalf("expected pinned candidate to rank first, got %#v", state.Candidates)
+	}
+	pins := e.UserPins()
+	if len(pins) != 1 || pins[0].Text != "侧室" {
+		t.Fatalf("user pins = %#v", pins)
+	}
+
+	e.DeleteUserPin("ceshi", "侧室")
+	state = e.Preview("ceshi")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "测试" || state.Candidates[0].Pinned {
+		t.Fatalf("expected unpinned ranking to restore, got %#v", state.Candidates)
+	}
+}
+
+func TestPinCandidateRemovesMatchingReject(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddEntries([]Entry{{Reading: "ceshi", Text: "错词", Weight: 20000}})
+	e.AddUserRejects([]Entry{{Reading: "ceshi", Text: "错词"}})
+	if state := e.Preview("ceshi"); len(state.Candidates) != 0 {
+		t.Fatalf("expected rejected candidate hidden, got %#v", state.Candidates)
+	}
+
+	e.AddUserPins([]Entry{{Reading: "ceshi", Text: "错词"}})
+	state := e.Preview("ceshi")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "错词" || !state.Candidates[0].Pinned {
+		t.Fatalf("expected pin to restore and promote candidate, got %#v", state.Candidates)
+	}
+	if rejects := e.UserRejects(); len(rejects) != 0 {
+		t.Fatalf("expected matching reject removed, got %#v", rejects)
+	}
+}
+
 func TestTraditionalScriptConvertsCandidateText(t *testing.T) {
 	config := DefaultConfig()
 	config.Script = "traditional"

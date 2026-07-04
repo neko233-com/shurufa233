@@ -24,6 +24,7 @@ var abiFeatureList = []string{
 	"user-scores-json",
 	"user-phrases-json",
 	"user-rejects-json",
+	"user-pins-json",
 	"commit-text",
 	"agent-compose",
 	"rime-compatible-dictionaries",
@@ -67,6 +68,7 @@ type candidatePayloadV2Item struct {
 	Weight       int    `json:"weight"`
 	UserScore    int    `json:"userScore"`
 	Score        int    `json:"score"`
+	Pinned       bool   `json:"pinned,omitempty"`
 }
 
 type agentComposeResult struct {
@@ -92,6 +94,7 @@ type candidateActionResult struct {
 	Total      int                `json:"total"`
 	Committed  string             `json:"committed,omitempty"`
 	Rejected   *engine.Entry      `json:"rejected,omitempty"`
+	Pinned     *engine.Entry      `json:"pinned,omitempty"`
 	State      engine.State       `json:"state"`
 	Candidates candidatePayloadV2 `json:"candidates"`
 	UpdatedAt  time.Time          `json:"updatedAt"`
@@ -122,6 +125,7 @@ type extensionCommandPayload struct {
 	Entries      []engine.Entry   `json:"entries,omitempty"`
 	Phrases      []engine.Entry   `json:"phrases,omitempty"`
 	Rejects      []engine.Entry   `json:"rejects,omitempty"`
+	Pins         []engine.Entry   `json:"pins,omitempty"`
 	Merge        bool             `json:"merge,omitempty"`
 	Raw          *json.RawMessage `json:"raw,omitempty"`
 }
@@ -157,7 +161,8 @@ func buildCandidatePayloadV2FromState(state engine.State, start int, limit int) 
 			Comment:      candidate.Comment,
 			Weight:       candidate.Weight,
 			UserScore:    candidate.UserScore,
-			Score:        candidate.Weight + candidate.UserScore,
+			Score:        candidateScore(candidate),
+			Pinned:       candidate.Pinned,
 		})
 	}
 	return candidatePayloadV2{
@@ -168,6 +173,14 @@ func buildCandidatePayloadV2FromState(state engine.State, start int, limit int) 
 		Items:     items,
 		UpdatedAt: time.Now().UTC(),
 	}
+}
+
+func candidateScore(candidate engine.Candidate) int {
+	score := candidate.Weight + candidate.UserScore
+	if candidate.Pinned {
+		score += 1000000
+	}
+	return score
 }
 
 func decodeUserScoresPayload(payload string) (map[string]int, error) {
@@ -308,6 +321,14 @@ func executeCandidateAction(session *engine.Engine, req extensionCommandPayload)
 		persistUserScoresReplaceSync(session.UserScores())
 		persistUserRejects(session.UserRejects())
 		return buildCandidateActionResultWithRejected(action, start, limit, state, rejected)
+	case "pin", "pin-candidate", "favorite", "top":
+		index := candidateActionIndex(req, start)
+		state, pinned, err := session.PinCandidate(index)
+		if err != nil {
+			return errorEnvelope(err.Error())
+		}
+		persistUserPins(session.UserPins())
+		return buildCandidateActionResultWithPinned(action, start, limit, state, pinned)
 	case "first-char", "commit-first-char":
 		return executeCandidateCharAction(session, req, start, limit, action, "first")
 	case "last-char", "commit-last-char":
@@ -340,14 +361,18 @@ func buildCandidateActionResult(session *engine.Engine, action string, start int
 }
 
 func buildCandidateActionResultWithState(action string, start int, limit int, committed string, state engine.State) candidateActionResult {
-	return buildCandidateActionResultFull(action, start, limit, committed, state, nil)
+	return buildCandidateActionResultFull(action, start, limit, committed, state, nil, nil)
 }
 
 func buildCandidateActionResultWithRejected(action string, start int, limit int, state engine.State, rejected engine.Entry) candidateActionResult {
-	return buildCandidateActionResultFull(action, start, limit, "", state, &rejected)
+	return buildCandidateActionResultFull(action, start, limit, "", state, &rejected, nil)
 }
 
-func buildCandidateActionResultFull(action string, start int, limit int, committed string, state engine.State, rejected *engine.Entry) candidateActionResult {
+func buildCandidateActionResultWithPinned(action string, start int, limit int, state engine.State, pinned engine.Entry) candidateActionResult {
+	return buildCandidateActionResultFull(action, start, limit, "", state, nil, &pinned)
+}
+
+func buildCandidateActionResultFull(action string, start int, limit int, committed string, state engine.State, rejected *engine.Entry, pinned *engine.Entry) candidateActionResult {
 	candidates := buildCandidatePayloadV2FromState(state, start, limit)
 	return candidateActionResult{
 		OK:         true,
@@ -357,6 +382,7 @@ func buildCandidateActionResultFull(action string, start int, limit int, committ
 		Total:      candidates.Total,
 		Committed:  committed,
 		Rejected:   rejected,
+		Pinned:     pinned,
 		State:      state,
 		Candidates: candidates,
 		UpdatedAt:  time.Now().UTC(),
@@ -505,6 +531,15 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"count":     len(rejects),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
+	case "user-pins-json", "user-pins", "pins":
+		pins := session.UserPins()
+		return map[string]any{
+			"ok":        true,
+			"pins":      pins,
+			"entries":   pins,
+			"count":     len(pins),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
 	case "import-user-scores-json", "import-user-scores":
 		scores := req.UserScores
 		if scores == nil {
@@ -587,6 +622,38 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"ok":        true,
 			"total":     len(rejects),
 			"rejects":   rejects,
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "import-user-pins-json", "import-user-pins":
+		entries := req.Entries
+		if len(entries) == 0 {
+			entries = req.Pins
+		}
+		if req.Merge {
+			merged := session.UserPins()
+			merged = append(merged, entries...)
+			entries = merged
+		}
+		session.ReplaceUserPins(entries)
+		pins := session.UserPins()
+		persistUserPins(pins)
+		return map[string]any{
+			"ok":        true,
+			"imported":  len(entries),
+			"total":     len(pins),
+			"pins":      pins,
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "delete-user-pin":
+		reading := normalizeABIReading(firstNonEmpty(req.Reading, req.Input))
+		text := strings.TrimSpace(req.Text)
+		session.DeleteUserPin(reading, text)
+		pins := session.UserPins()
+		persistUserPins(pins)
+		return map[string]any{
+			"ok":        true,
+			"total":     len(pins),
+			"pins":      pins,
 			"updatedAt": session.State().UpdatedAt,
 		}, true
 	case "commit-text":

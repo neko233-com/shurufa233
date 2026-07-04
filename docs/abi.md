@@ -83,10 +83,10 @@ char* ShurufaRejectCandidate(uint64_t session, int index);
 Each row is:
 
 ```text
-display_index<TAB>text<TAB>reading<TAB>score<TAB>kind<TAB>source<TAB>comment
+display_index<TAB>text<TAB>reading<TAB>score<TAB>kind<TAB>source<TAB>comment<TAB>pinned
 ```
 
-`kind`, `source`, and `comment` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, `phrase`, `dynamic`, and `agent`; renderers must tolerate older four-column or six-column payloads. Built-in examples include `zan` -> `👍` (`emoji`, comment `赞`), `kaixin` -> `ヽ(・∀・)ﾉ` (`kaomoji`), `shengluehao` -> `……` (`symbol`), `rq` -> today's date (`dynamic`, comment `动态`), and `rewrite` -> `/rewrite ` (`agent`, comment `润色`).
+`kind`, `source`, `comment`, and `pinned` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, `phrase`, `dynamic`, and `agent`; renderers must tolerate older four-column, six-column, or seven-column payloads. Built-in examples include `zan` -> `👍` (`emoji`, comment `赞`), `kaixin` -> `ヽ(・∀・)ﾉ` (`kaomoji`), `shengluehao` -> `……` (`symbol`), `rq` -> today's date (`dynamic`, comment `动态`), and `rewrite` -> `/rewrite ` (`agent`, comment `润色`). `pinned=true` marks candidates promoted by `user-pins.json`.
 
 The Windows glue calls `ShurufaFree` after copying the returned payload. Older per-candidate getters remain available as a compatibility fallback.
 
@@ -122,6 +122,8 @@ char* ShurufaUserPhrasesJSON(uint64_t session);
 char* ShurufaImportUserPhrasesJSON(uint64_t session, char* json);
 char* ShurufaUserRejectsJSON(uint64_t session);
 char* ShurufaImportUserRejectsJSON(uint64_t session, char* json);
+char* ShurufaUserPinsJSON(uint64_t session);
+char* ShurufaImportUserPinsJSON(uint64_t session, char* json);
 char* ShurufaCommitText(uint64_t session, char* reading, char* text);
 char* ShurufaAgentCompose(char* input, char* context);
 char* ShurufaSelectCandidateChar(uint64_t session, int index, const char* side);
@@ -147,7 +149,7 @@ C++ export on developer machines that only consume packaged builds.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `commit-text`, `agent-compose`,
+`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `user-pins-json`, `commit-text`, `agent-compose`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -185,6 +187,7 @@ catalog-json            {"kind":"emoji","query":"zan","limit":20}
 reverse-lookup-json     {"query":"你好","limit":20}
 candidate-action        {"action":"next-page","start":0,"limit":7}
 candidate-action        {"action":"associate","context":"微信","limit":7}
+candidate-action        {"action":"pin","index":0}
 candidate-action        {"action":"forget","index":0}
 select                  {"index":0}
 select-candidate-char   {"index":0,"side":"first"}
@@ -204,6 +207,9 @@ delete-user-phrase      {"reading":"msd","text":"马上到！"}
 user-rejects-json
 import-user-rejects-json {"entries":[{"reading":"ceshi","text":"错词"}],"merge":true}
 delete-user-reject      {"reading":"ceshi","text":"错词"}
+user-pins-json
+import-user-pins-json   {"entries":[{"reading":"nihao","text":"你好"}],"merge":true}
+delete-user-pin         {"reading":"nihao","text":"你好"}
 commit-text             {"reading":"nihao","text":"你好"}
 agent-compose           {"input":"/rewrite","context":"optional text"}
 ```
@@ -211,9 +217,12 @@ agent-compose           {"input":"/rewrite","context":"optional text"}
 `candidate-action` and `ShurufaCandidateAction` reserve a richer Rime/WeChat-style
 candidate event surface without requiring new C++ callbacks. Supported actions
 currently include `view`, `next-page`, `prev-page`, `first-page`, `last-page`,
-`select`, `forget`, `first-char`, `last-char`, and `select-char`. Selection accepts either
+`select`, `pin`, `forget`, `first-char`, `last-char`, and `select-char`. Selection accepts either
 an absolute `index` or a page-relative `displayIndex` plus `start`; paging
 returns the same rich candidate payload used by `candidate-payload-v2`.
+`pin`/`pin-candidate` persists a pinned candidate row in `user-pins.json`,
+removes any matching reject, keeps the composition buffer active, returns a
+`pinned` object for UI feedback, and marks pinned rows in candidate payloads.
 `forget`/`reject`/`delete-candidate` persists a hidden candidate row in
 `user-rejects.json`, removes any learned score for that candidate, keeps the
 composition buffer active, and returns a `rejected` object for UI feedback.

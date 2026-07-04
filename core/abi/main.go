@@ -44,6 +44,7 @@ func ShurufaDestroySession(id C.uint64_t) {
 	if session != nil {
 		persistUserScoresSync(session.UserScores())
 		persistUserRejects(session.UserRejects())
+		persistUserPins(session.UserPins())
 	}
 }
 
@@ -179,13 +180,15 @@ func ShurufaCandidatePayloadRange(id C.uint64_t, start C.int, limit C.int) *C.ch
 		out.WriteByte('\t')
 		out.WriteString(sanitizePayloadField(candidate.Reading))
 		out.WriteByte('\t')
-		out.WriteString(strconv.Itoa(candidate.Weight + candidate.UserScore))
+		out.WriteString(strconv.Itoa(candidateScore(candidate)))
 		out.WriteByte('\t')
 		out.WriteString(sanitizePayloadField(candidate.Kind))
 		out.WriteByte('\t')
 		out.WriteString(sanitizePayloadField(candidate.Source))
 		out.WriteByte('\t')
 		out.WriteString(sanitizePayloadField(candidate.Comment))
+		out.WriteByte('\t')
+		out.WriteString(strconv.FormatBool(candidate.Pinned))
 	}
 	return C.CString(out.String())
 }
@@ -342,6 +345,7 @@ func newEngine() *engine.Engine {
 	}
 	session.AddUserPhrases(loadUserPhrases())
 	session.AddUserRejects(loadUserRejects())
+	session.AddUserPins(loadUserPins())
 	session.ImportUserScores(loadUserScores())
 	return session
 }

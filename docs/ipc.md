@@ -18,6 +18,9 @@ The background daemon listens on `127.0.0.1:23333`.
 - `GET /rejects`
 - `PUT /rejects`
 - `DELETE /rejects`
+- `GET /pins`
+- `PUT /pins`
+- `DELETE /pins`
 - `GET /catalog`
 - `GET /symbols`
 - `GET /updates/check`
@@ -118,6 +121,15 @@ filtered out by the Go core before ranking candidates. `PUT /rejects` accepts
 candidate; `DELETE /rejects` restores all hidden candidates. The CLI mirrors
 this through `shurufa-imecli rejects list|add|import|export|delete|clear`.
 
+`GET /pins` returns pinned candidate rows stored in `user-pins.json`. These rows
+use the same `reading`/`text` shape and receive a large ranking bonus in the Go
+core, so a user-preferred candidate stays near the top without rewriting the
+dictionary. Pinning a candidate removes any matching reject row. `PUT /pins`
+accepts `{"entries":[{"reading":"nihao","text":"你好"}],"merge":true}` or a
+single `reading`/`text` pair. `DELETE /pins?key=nihao%7C你好` cancels one pin;
+`DELETE /pins` cancels all pins. The CLI mirrors this through
+`shurufa-imecli pins list|add|import|export|delete|clear`.
+
 `GET /catalog` returns the shared emoji, kaomoji, symbol, and agent resource
 catalog. Query parameters are `kind=all|emoji|kaomoji|symbol|agent`,
 `q=<search>`, and `limit=<n>`. `/symbols` is an alias for the same handler.
@@ -185,11 +197,14 @@ ABI command bus:
 ```
 
 Supported actions include `view`, `next-page`, `prev-page`, `first-page`,
-`last-page`, `select`, `associate`, `forget`, `first-char`, `last-char`, and `select-char`. Selection
+`last-page`, `select`, `associate`, `pin`, `forget`, `first-char`, `last-char`, and `select-char`. Selection
 can use either an absolute `index` or page-relative `displayIndex` plus `start`.
 The response includes `state`, optional `committed`, and a rich `candidates`
 page with metadata. This keeps React/Wails previews, daemon fallback clients,
 and native C++ glue aligned on the same candidate event model.
+`pin`/`pin-candidate` writes `user-pins.json`, returns `pinned`, marks matching
+candidate rows with `pinned=true`, and leaves the active composition buffer
+visible for continued editing.
 `forget`/`reject`/`delete-candidate` hides the selected candidate, writes
 `user-rejects.json`, removes any learned score for the same `reading|text`, and
 returns `rejected` plus the refreshed candidate page.
@@ -201,9 +216,10 @@ For association-only checks, use `shurufa-imecli associate "你好"` or
 `shurufa-imecli candidates associate --context "微信"`.
 
 `GET /ime/candidates?start=0&limit=7` returns tab-separated candidate rows:
-`display_index`, `text`, `reading`, `score`, `kind`, `source`, and `comment`.
-The final three fields are optional metadata; older six-column rows remain valid
-for clients that have not adopted candidate comments yet.
+`display_index`, `text`, `reading`, `score`, `kind`, `source`, `comment`, and
+`pinned`. The final four fields are optional metadata; older six-column or
+seven-column rows remain valid for clients that have not adopted candidate
+comments or pin markers yet.
 
 `GET /ime/skin` returns a compact pipe-separated native-renderer payload:
 `fontFamily|fontSize|accent|surface|text|mutedText|border|highlightText|theme|candidatePageSize|candidateLayout|showCandidateComments`.

@@ -260,6 +260,15 @@ func TestCapabilitiesIncludeUserRejectsJSON(t *testing.T) {
 	t.Fatalf("capabilities missing user-rejects-json: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeUserPinsJSON(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "user-pins-json" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing user-pins-json: %#v", abiFeatureList)
+}
+
 func TestCapabilitiesIncludeCandidateActionJSON(t *testing.T) {
 	for _, feature := range abiFeatureList {
 		if feature == "candidate-action-json" {
@@ -393,6 +402,38 @@ func TestExecuteExtensionCommandRejectsCandidate(t *testing.T) {
 	listResult, ok := list.(map[string]any)
 	if !ok || listResult["count"] != 1 {
 		t.Fatalf("user-rejects = %#v", list)
+	}
+}
+
+func TestExecuteExtensionCommandPinsCandidate(t *testing.T) {
+	t.Setenv("SHURUFA233_USER_PINS", filepath.Join(t.TempDir(), "user-pins.json"))
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{
+		{Reading: "ceshi", Text: "测试", Weight: 30000},
+		{Reading: "ceshi", Text: "侧室", Weight: 1000},
+	})
+	session.Preview("ceshi")
+
+	got, handled := executeSessionExtensionCommand(session, "candidate-action", `{"action":"pin","index":1}`)
+	if !handled {
+		t.Fatal("candidate-action pin was not handled")
+	}
+	result, ok := got.(candidateActionResult)
+	if !ok || !result.OK || result.Pinned == nil || result.Pinned.Text != "侧室" {
+		t.Fatalf("candidate-action pin = %#v", got)
+	}
+	state := session.Preview("ceshi")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "侧室" || !state.Candidates[0].Pinned {
+		t.Fatalf("expected pinned candidate first, got %#v", state.Candidates)
+	}
+
+	list, handled := executeSessionExtensionCommand(session, "user-pins", `{}`)
+	if !handled {
+		t.Fatal("user-pins command was not handled")
+	}
+	listResult, ok := list.(map[string]any)
+	if !ok || listResult["count"] != 1 {
+		t.Fatalf("user-pins = %#v", list)
 	}
 }
 

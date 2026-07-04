@@ -40,6 +40,7 @@ type Candidate struct {
 	Comment   string `json:"comment,omitempty"`
 	Weight    int    `json:"weight"`
 	UserScore int    `json:"userScore"`
+	Pinned    bool   `json:"pinned,omitempty"`
 }
 
 type State struct {
@@ -90,6 +91,7 @@ const (
 	UserPhraseKind   = "phrase"
 	UserPhraseSource = "user-phrase"
 	UserRejectSource = "user-reject"
+	UserPinSource    = "user-pin"
 )
 
 type Update struct {
