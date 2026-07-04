@@ -13,6 +13,7 @@ type Config struct {
 	Language              string   `json:"language"`
 	Mode                  string   `json:"mode"`
 	Punctuation           string   `json:"punctuation"`
+	Script                string   `json:"script"`
 	Skin                  Skin     `json:"skin"`
 	Update                Update   `json:"update"`
 }

@@ -47,6 +47,7 @@ type Config = {
   language: string;
   mode: "zh" | "en";
   punctuation: "full" | "half";
+  script: "simplified" | "traditional";
   skin: Skin;
   update: UpdateConfig;
 };
@@ -209,6 +210,7 @@ const defaultConfig: Config = {
   language: "zh-CN",
   mode: "zh",
   punctuation: "full",
+  script: "simplified",
   skin: {
     fontFamily: "Microsoft YaHei UI",
     fontSize: 15,
@@ -405,6 +407,7 @@ function hydrateConfig(config: Config): Config {
     ...config,
     candidatePageSize: Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize)),
     candidateLayout: normalizeCandidateLayout(config.candidateLayout),
+    script: normalizeScript(config.script),
     showCandidateComments: config.showCandidateComments ?? defaultConfig.showCandidateComments,
     skin: {
       ...defaultConfig.skin,
@@ -422,6 +425,10 @@ function hydrateConfig(config: Config): Config {
 function normalizeCandidateLayout(layout?: string): Config["candidateLayout"] {
   if (layout === "vertical" || layout === "auto") return layout;
   return "horizontal";
+}
+
+function normalizeScript(script?: string): Config["script"] {
+  return script === "traditional" ? "traditional" : "simplified";
 }
 
 function App() {
@@ -1169,6 +1176,20 @@ function App() {
                 onClick={() => setConfig({ ...config, punctuation: "half" })}
               >
                 半角标点
+              </button>
+            </div>
+            <div className="segmented">
+              <button
+                className={(config.script ?? "simplified") === "simplified" ? "selected" : ""}
+                onClick={() => setConfig({ ...config, script: "simplified" })}
+              >
+                简体输出
+              </button>
+              <button
+                className={config.script === "traditional" ? "selected" : ""}
+                onClick={() => setConfig({ ...config, script: "traditional" })}
+              >
+                繁体输出
               </button>
             </div>
             <label className="field">

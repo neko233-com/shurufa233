@@ -274,6 +274,46 @@ func TestRejectCandidateHidesAndRestoresCandidate(t *testing.T) {
 	}
 }
 
+func TestTraditionalScriptConvertsCandidateText(t *testing.T) {
+	config := DefaultConfig()
+	config.Script = "traditional"
+	e := New(config)
+	e.AddEntries([]Entry{{Reading: "zhongguo", Text: "中国", Weight: 20000}})
+
+	state := e.Preview("zhongguo")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "中國" {
+		t.Fatalf("expected traditional candidate text, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Reading != "zhongguo" {
+		t.Fatalf("candidate reading should stay unchanged, got %#v", state.Candidates[0])
+	}
+}
+
+func TestTraditionalRejectUsesConvertedCandidateText(t *testing.T) {
+	config := DefaultConfig()
+	config.Script = "traditional"
+	e := New(config)
+	e.AddEntries([]Entry{
+		{Reading: "ceshi", Text: "错词", Weight: 20000},
+		{Reading: "ceshi", Text: "测试", Weight: 10000},
+	})
+
+	state := e.Preview("ceshi")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "錯詞" {
+		t.Fatalf("expected converted wrong candidate first, got %#v", state.Candidates)
+	}
+	state, rejected, err := e.RejectCandidate(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejected.Reading != "ceshi" || rejected.Text != "錯詞" {
+		t.Fatalf("rejected = %#v", rejected)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text == "錯詞" {
+		t.Fatalf("expected converted rejected candidate to disappear, got %#v", state.Candidates)
+	}
+}
+
 func TestReplaceUserPhrasesClearsOldPhrases(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddUserPhrases([]Entry{{Reading: "aaa", Text: "旧短语"}})

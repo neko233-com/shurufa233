@@ -60,6 +60,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	if config.Mode == "" {
 		config.Mode = engine.DefaultConfig().Mode
 	}
+	config.Script = normalizeScript(config.Script, engine.DefaultConfig().Script)
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	switch strings.ToLower(strings.TrimSpace(config.Punctuation)) {
 	case "half":
@@ -68,6 +69,23 @@ func normalizeConfig(config engine.Config) engine.Config {
 		config.Punctuation = engine.DefaultConfig().Punctuation
 	}
 	return config
+}
+
+func normalizeScript(script string, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(script)) {
+	case "", "simplified", "simp", "s", "zh-cn", "cn":
+		if strings.TrimSpace(script) == "" && fallback != "" {
+			return fallback
+		}
+		return "simplified"
+	case "traditional", "trad", "t", "zh-tw", "zh-hk", "tw", "hk":
+		return "traditional"
+	default:
+		if fallback == "" {
+			return "simplified"
+		}
+		return fallback
+	}
 }
 
 func normalizeCandidateLayout(layout string) string {

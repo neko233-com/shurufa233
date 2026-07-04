@@ -53,6 +53,7 @@ func DefaultConfig() Config {
 		Language:           "zh-CN",
 		Mode:               "zh",
 		Punctuation:        "full",
+		Script:             "simplified",
 		Skin: Skin{
 			FontFamily:    "Microsoft YaHei UI",
 			FontSize:      15,
@@ -85,6 +86,7 @@ func New(config Config) *Engine {
 	config.CandidateLayout = normalizeCandidateLayout(config.CandidateLayout)
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
+	config.Script = normalizeScript(config.Script)
 	e := &Engine{
 		config:  config,
 		dict:    make(map[string][]Entry),
@@ -107,6 +109,7 @@ func (e *Engine) Configure(config Config) {
 	config.CandidateLayout = normalizeCandidateLayout(config.CandidateLayout)
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
 	config.Mode = normalizeMode(config.Mode)
+	config.Script = normalizeScript(config.Script)
 	e.config = config
 }
 
@@ -684,11 +687,12 @@ func (e *Engine) candidatesLocked() []Candidate {
 	entries := e.lookupLocked(e.buffer)
 	candidates := make([]Candidate, 0, len(entries))
 	for _, entry := range entries {
-		if e.isRejectedLocked(entry) {
+		displayText := convertScriptText(entry.Text, e.config.Script)
+		if e.isRejectedLocked(entry.Reading, displayText) {
 			continue
 		}
 		candidates = append(candidates, Candidate{
-			Text:      entry.Text,
+			Text:      displayText,
 			Reading:   entry.Reading,
 			Kind:      entry.Kind,
 			Source:    entry.Source,
@@ -717,11 +721,11 @@ func (e *Engine) candidatesLocked() []Candidate {
 	return candidates
 }
 
-func (e *Engine) isRejectedLocked(entry Entry) bool {
+func (e *Engine) isRejectedLocked(reading string, text string) bool {
 	if len(e.rejects) == 0 {
 		return false
 	}
-	_, ok := e.rejects[rejectKey(entry.Reading, entry.Text)]
+	_, ok := e.rejects[rejectKey(reading, text)]
 	return ok
 }
 
@@ -1154,6 +1158,17 @@ func normalizeMode(mode string) string {
 		return "en"
 	default:
 		return "zh"
+	}
+}
+
+func normalizeScript(script string) string {
+	switch strings.ToLower(strings.TrimSpace(script)) {
+	case "", "simplified", "simp", "s", "zh-cn", "cn":
+		return "simplified"
+	case "traditional", "trad", "t", "zh-tw", "zh-hk", "tw", "hk":
+		return "traditional"
+	default:
+		return "simplified"
 	}
 }
 

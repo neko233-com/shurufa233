@@ -43,6 +43,12 @@ Example response:
 choice. Switching modes clears the active composition buffer, matching Microsoft
 IME-style Chinese/English toggling.
 
+Candidate `text` is returned in the configured output script. `script` is read
+from the shared config and normalized to `simplified` or `traditional`; readings,
+weights, kinds, sources, and comments remain tied to the original dictionary
+rows. Native renderers should display and commit the returned `text` directly
+instead of doing their own simplified/traditional conversion.
+
 `ShurufaPreview` and `ShurufaInputKey` preserve apostrophe pinyin separators in
 the returned `buffer`. The Go core collapses separators for dictionary lookup
 and emits an explicit `kind=phrase`, `source=separator` candidate when the
@@ -84,7 +90,7 @@ display_index<TAB>text<TAB>reading<TAB>score<TAB>kind<TAB>source<TAB>comment
 
 The Windows glue calls `ShurufaFree` after copying the returned payload. Older per-candidate getters remain available as a compatibility fallback.
 
-The in-process core reads the same local config file as the daemon (`%APPDATA%\shurufa233\config.json`, or `SHURUFA233_CONFIG` when set) when creating a session. This keeps TSF hot-path behavior such as fuzzy initials and the selected `doublePinyinScheme` aligned with the settings UI and daemon IPC.
+The in-process core reads the same local config file as the daemon (`%APPDATA%\shurufa233\config.json`, or `SHURUFA233_CONFIG` when set) when creating a session. This keeps TSF hot-path behavior such as fuzzy initials, simplified/traditional `script`, and the selected `doublePinyinScheme` aligned with the settings UI and daemon IPC.
 The Windows TSF layer also reads the same config file for `punctuation` (`full` or `half`) so punctuation-mode changes from the settings UI can take effect without routing every key through the daemon.
 
 ## Reserved Extension ABI

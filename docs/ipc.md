@@ -54,6 +54,13 @@ The settings UI uses this IPC directly in development. A Wails v3 shell can host
 ASCII punctuation while preserving candidate-first commit behavior during active
 composition.
 
+They also include `script`, normalized to `simplified` or `traditional`.
+Candidate text returned by preview, paging, selection, and candidate-action
+endpoints is already converted for display/commit, while readings and dictionary
+metadata stay unchanged. The current converter is a compact built-in mapping so
+full OpenCC data can later be hot-updated or swapped in without changing daemon,
+CLI, Wails, or native TSF IPC contracts.
+
 They also include `candidatePageSize`, which controls the visible candidates per
 page in the native strip and React previews. The default is `7`; values are
 clamped to `3..9` so number-key selection remains predictable. `candidateLayout`
