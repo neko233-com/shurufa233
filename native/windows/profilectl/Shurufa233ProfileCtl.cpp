@@ -34,14 +34,34 @@ int main(int argc, char **argv) {
   }
 
   if (_stricmp(command, "activate") == 0) {
+    ITfInputProcessorProfiles *profiles = nullptr;
+    hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                          IID_ITfInputProcessorProfiles,
+                          reinterpret_cast<void **>(&profiles));
+    if (SUCCEEDED(hr) && profiles) {
+      profiles->EnableLanguageProfile(kClsidTextService, kLanguage, kProfileGuid, TRUE);
+      profiles->ChangeCurrentLanguage(kLanguage);
+      profiles->ActivateLanguageProfile(kClsidTextService, kLanguage, kProfileGuid);
+      profiles->Release();
+    }
+
     ITfInputProcessorProfileMgr *mgr = nullptr;
     hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
                           IID_ITfInputProcessorProfileMgr,
                           reinterpret_cast<void **>(&mgr));
     if (SUCCEEDED(hr) && mgr) {
+      DWORD flags = TF_IPPMF_FORSESSION | TF_IPPMF_ENABLEPROFILE;
+#ifdef TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE
+      flags |= TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE;
+#endif
       hr = mgr->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, kLanguage,
                                 kClsidTextService, kProfileGuid, nullptr,
-                                TF_IPPMF_FORSESSION);
+                                flags);
+      if (FAILED(hr)) {
+        hr = mgr->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, kLanguage,
+                                  kClsidTextService, kProfileGuid, nullptr,
+                                  TF_IPPMF_FORSESSION);
+      }
       mgr->Release();
     }
     if (didCoInit) {

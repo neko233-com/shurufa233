@@ -12,6 +12,43 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path "$PSScriptRoot\.."
 
+function Find-MingwCompiler {
+  param([string]$Arch)
+
+  $preferred = switch ($Arch) {
+    "amd64" { @("x86_64-w64-mingw32-gcc.exe", "gcc.exe") }
+    "386" { @("i686-w64-mingw32-gcc.exe") }
+    "arm64" { @("aarch64-w64-mingw32-gcc.exe") }
+    default { @() }
+  }
+
+  foreach ($name in $preferred) {
+    $found = Get-Command $name -ErrorAction SilentlyContinue
+    if ($found) {
+      return $found.Source
+    }
+  }
+
+  $packageRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+  if (Test-Path $packageRoot) {
+    $winlibs = Get-ChildItem $packageRoot -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -like "BrechtSanders.WinLibs.POSIX.UCRT*" } |
+      Select-Object -First 1
+    if ($winlibs) {
+      $bin = Join-Path $winlibs.FullName "mingw64\bin"
+      foreach ($name in $preferred) {
+        $candidate = Join-Path $bin $name
+        if (Test-Path $candidate) {
+          $env:Path = "$bin;$env:Path"
+          return $candidate
+        }
+      }
+    }
+  }
+
+  return $null
+}
+
 if (-not $SkipFrontend) {
   Push-Location (Join-Path $Root "apps\settings")
   npm install
@@ -30,6 +67,17 @@ foreach ($Arch in $GoArch) {
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   go build -trimpath -ldflags="-s -w" -o (Join-Path $Out "shurufa-imecli.exe") .\cmd\imecli
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  $compiler = Find-MingwCompiler -Arch $Arch
+  if ($compiler) {
+    $env:CGO_ENABLED = "1"
+    $env:CC = $compiler
+    $env:CXX = $compiler -replace "gcc(\.exe)?$", "g++`$1"
+    go build -buildmode=c-shared -trimpath -ldflags="-s -w" -o (Join-Path $Out "shurufa_core.dll") .\core\abi
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  } else {
+    Write-Warning "Skipping shurufa_core.dll for GOARCH=$Arch because a matching MinGW-w64 compiler was not found."
+  }
   Pop-Location
 }
 

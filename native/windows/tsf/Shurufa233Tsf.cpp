@@ -39,28 +39,36 @@ using InputKeyFastFn = int (*)(uint64_t, char);
 using BackspaceFastFn = int (*)(uint64_t);
 using CandidateCountFn = int (*)(uint64_t);
 using CandidateTextFn = char *(*)(uint64_t, int);
+using CandidateReadingFn = char *(*)(uint64_t, int);
+using CandidateScoreFn = int (*)(uint64_t, int);
+using ClearSessionFn = char *(*)(uint64_t);
 using CommitCandidateFn = char *(*)(uint64_t, int);
 using FreeFn = void (*)(char *);
 
 struct CoreApi {
   bool initialized = false;
+  bool inProcess = false;
   CreateSessionFn createSession = nullptr;
   DestroySessionFn destroySession = nullptr;
   InputKeyFastFn inputKeyFast = nullptr;
   BackspaceFastFn backspaceFast = nullptr;
   CandidateCountFn candidateCount = nullptr;
   CandidateTextFn candidateText = nullptr;
+  CandidateReadingFn candidateReading = nullptr;
+  CandidateScoreFn candidateScore = nullptr;
+  ClearSessionFn clearSession = nullptr;
   CommitCandidateFn commitCandidate = nullptr;
   FreeFn freeValue = nullptr;
 
   bool Ready() const {
     return initialized && createSession && destroySession && inputKeyFast &&
-           backspaceFast && candidateCount && candidateText && commitCandidate &&
-           freeValue;
+           backspaceFast && candidateCount && candidateText && candidateReading &&
+           candidateScore && clearSession && commitCandidate && freeValue;
   }
 };
 
 CoreApi g_core;
+HMODULE g_coreModule = nullptr;
 HINTERNET g_httpSession = nullptr;
 HINTERNET g_httpConnect = nullptr;
 CRITICAL_SECTION g_httpLock;
@@ -225,6 +233,20 @@ char *HttpCandidateText(uint64_t, int) {
   return AllocCString("");
 }
 
+char *HttpCandidateReading(uint64_t, int) {
+  return AllocCString("");
+}
+
+int HttpCandidateScore(uint64_t, int) {
+  return 0;
+}
+
+char *HttpClearSessionValue(uint64_t session) {
+  wchar_t path[64]{};
+  StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/clear?session=%llu", session);
+  return AllocCString(HttpRequest(L"POST", path));
+}
+
 char *HttpCommitCandidate(uint64_t session, int index) {
   wchar_t path[64]{};
   StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/select?index=%d&session=%llu", index, session);
@@ -235,19 +257,78 @@ void HttpFree(char *value) {
   CoTaskMemFree(value);
 }
 
-bool EnsureCoreLoaded() {
-  if (g_core.Ready()) {
+template <typename Fn>
+Fn LoadCoreProc(HMODULE module, const char *name) {
+  return reinterpret_cast<Fn>(GetProcAddress(module, name));
+}
+
+bool TryLoadInProcessCore() {
+  if (g_coreModule) {
     return true;
   }
+
+  std::wstring corePath = ModuleDir() + L"shurufa_core.dll";
+  HMODULE module = LoadLibraryW(corePath.c_str());
+  if (!module) {
+    wchar_t message[256]{};
+    StringCchPrintfW(message, ARRAYSIZE(message),
+                     L"In-process core unavailable error=%lu path=%s",
+                     GetLastError(), corePath.c_str());
+    LogLine(message);
+    return false;
+  }
+
+  CoreApi api{};
+  api.initialized = true;
+  api.inProcess = true;
+  api.createSession = LoadCoreProc<CreateSessionFn>(module, "ShurufaCreateSession");
+  api.destroySession = LoadCoreProc<DestroySessionFn>(module, "ShurufaDestroySession");
+  api.inputKeyFast = LoadCoreProc<InputKeyFastFn>(module, "ShurufaInputKeyFast");
+  api.backspaceFast = LoadCoreProc<BackspaceFastFn>(module, "ShurufaBackspaceFast");
+  api.candidateCount = LoadCoreProc<CandidateCountFn>(module, "ShurufaCandidateCount");
+  api.candidateText = LoadCoreProc<CandidateTextFn>(module, "ShurufaCandidateText");
+  api.candidateReading = LoadCoreProc<CandidateReadingFn>(module, "ShurufaCandidateReading");
+  api.candidateScore = LoadCoreProc<CandidateScoreFn>(module, "ShurufaCandidateScore");
+  api.clearSession = LoadCoreProc<ClearSessionFn>(module, "ShurufaClear");
+  api.commitCandidate = LoadCoreProc<CommitCandidateFn>(module, "ShurufaCommitCandidate");
+  api.freeValue = LoadCoreProc<FreeFn>(module, "ShurufaFree");
+  if (!api.Ready()) {
+    LogLine(L"In-process core missing required exports; falling back to daemon IPC");
+    FreeLibrary(module);
+    return false;
+  }
+
+  g_coreModule = module;
+  g_core = api;
+  LogLine(L"In-process Go core loaded");
+  return true;
+}
+
+void UseHttpCoreFallback() {
   g_core.initialized = true;
+  g_core.inProcess = false;
   g_core.createSession = HttpCreateSession;
   g_core.destroySession = HttpDestroySession;
   g_core.inputKeyFast = HttpInputKeyFast;
   g_core.backspaceFast = HttpBackspaceFast;
   g_core.candidateCount = HttpCandidateCount;
   g_core.candidateText = HttpCandidateText;
+  g_core.candidateReading = HttpCandidateReading;
+  g_core.candidateScore = HttpCandidateScore;
+  g_core.clearSession = HttpClearSessionValue;
   g_core.commitCandidate = HttpCommitCandidate;
   g_core.freeValue = HttpFree;
+}
+
+bool EnsureCoreLoaded() {
+  if (g_core.Ready()) {
+    return true;
+  }
+  if (TryLoadInProcessCore()) {
+    return true;
+  }
+  UseHttpCoreFallback();
+  LogLine(L"Using daemon HTTP core fallback");
   return g_core.Ready();
 }
 
@@ -730,6 +811,10 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   STDMETHODIMP Deactivate() override {
     LogLine(L"Deactivate called");
     candidateWindow_.Hide();
+    if (session_ && g_core.Ready()) {
+      g_core.destroySession(session_);
+      session_ = 0;
+    }
     if (keyMgr_) {
       keyMgr_->UnadviseKeyEventSink(clientId_);
       keyMgr_->Release();
@@ -921,18 +1006,60 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
   }
 
+  std::string BuildCandidatePayloadFromCore(int count) {
+    std::string payload;
+    for (int i = 0; i < count && i < 9; ++i) {
+      char *text = g_core.candidateText(session_, i);
+      char *reading = g_core.candidateReading(session_, i);
+      const int score = g_core.candidateScore(session_, i);
+
+      char prefix[32]{};
+      sprintf_s(prefix, "%d\t", i + 1);
+      if (!payload.empty()) {
+        payload += "\n";
+      }
+      payload += prefix;
+      payload += text ? text : "";
+      payload += "\t";
+      payload += reading ? reading : "";
+      payload += "\t";
+      char scoreText[32]{};
+      sprintf_s(scoreText, "%d", score);
+      payload += scoreText;
+
+      if (text) {
+        g_core.freeValue(text);
+      }
+      if (reading) {
+        g_core.freeValue(reading);
+      }
+    }
+    return payload;
+  }
+
   void UpdateCandidateWindow() {
-    wchar_t path[80]{};
-    StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/candidates?session=%llu", session_);
-    const std::string candidates = HttpRequest(L"GET", path);
     const int count = g_core.candidateCount(session_);
-    if (count <= 0 && candidates.empty()) {
-      wchar_t message[128]{};
-      StringCchPrintfW(message, ARRAYSIZE(message), L"UpdateCandidateWindow empty session=%llu", session_);
-      LogLine(message);
+    if (count <= 0) {
+      candidateWindow_.Hide();
+      return;
     }
     if (count > 0 && selectedIndex_ >= count) {
       selectedIndex_ = count - 1;
+    }
+    std::string candidates;
+    if (g_core.inProcess) {
+      candidates = BuildCandidatePayloadFromCore(count);
+    } else {
+      wchar_t path[80]{};
+      StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/candidates?session=%llu", session_);
+      candidates = HttpRequest(L"GET", path);
+    }
+    if (candidates.empty()) {
+      wchar_t message[128]{};
+      StringCchPrintfW(message, ARRAYSIZE(message), L"UpdateCandidateWindow empty session=%llu", session_);
+      LogLine(message);
+      candidateWindow_.Hide();
+      return;
     }
     candidateWindow_.Show(candidates, selectedIndex_);
   }
@@ -947,9 +1074,13 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   }
 
   void ClearSession() {
-    wchar_t path[80]{};
-    StringCchPrintfW(path, ARRAYSIZE(path), L"/ime/clear?session=%llu", session_);
-    HttpRequest(L"POST", path);
+    if (!session_ || !g_core.clearSession) {
+      return;
+    }
+    char *cleared = g_core.clearSession(session_);
+    if (cleared) {
+      g_core.freeValue(cleared);
+    }
   }
 
   void ToggleAsciiMode() {

@@ -1,13 +1,15 @@
 param(
   [switch]$SkipBuild,
   [switch]$RegisterOnly,
-  [string]$TsfDllPath
+  [string]$TsfDllPath,
+  [string]$CoreDllPath
 )
 
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path "$PSScriptRoot\.."
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\shurufa233"
+$NativeInstallDir = Join-Path $env:ProgramFiles "shurufa233"
 $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $Tip = "0804:{3D7B8D06-9872-4C31-B77D-3B87327CBF64}{B68911A2-4478-491C-A624-978441648E20}"
 
@@ -43,6 +45,7 @@ if (-not $SkipBuild -and -not $RegisterOnly) {
 
 $DaemonSource = Join-Path $Root "build\windows\go-$GoArch\shurufa-daemon.exe"
 $CliSource = Join-Path $Root "build\windows\go-$GoArch\shurufa-imecli.exe"
+$CoreSource = Join-Path $Root "build\windows\go-$GoArch\shurufa_core.dll"
 $TsfSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233Tsf.dll"
 $ProfileCtlSource = Join-Path $Root "build\windows\$NativeArch\Shurufa233ProfileCtl.exe"
 
@@ -65,12 +68,22 @@ if (-not $RegisterOnly) {
   }
   Copy-Item -Force $DaemonSource (Join-Path $InstallDir "shurufa-daemon.exe")
   Copy-Item -Force $CliSource (Join-Path $InstallDir "shurufa-imecli.exe")
+  if (Test-Path $CoreSource) {
+    $LocalCoreDll = Join-Path $InstallDir "shurufa_core.dll"
+    Copy-Item -Force $CoreSource $LocalCoreDll
+  } else {
+    Remove-Item -Force (Join-Path $InstallDir "shurufa_core.dll") -ErrorAction SilentlyContinue
+    Write-Warning "shurufa_core.dll was not found for $GoArch; TSF will use daemon IPC fallback."
+  }
   Copy-Item -Force $ProfileCtlSource (Join-Path $InstallDir "Shurufa233ProfileCtl.exe")
   $stamp = Get-Date -Format "yyyyMMddHHmmss"
   $TsfDll = Join-Path $InstallDir "Shurufa233Tsf-$NativeArch-$stamp.dll"
   Copy-Item -Force $TsfSource $TsfDll
 } else {
   $TsfDll = $TsfDllPath
+  if ($CoreDllPath) {
+    $LocalCoreDll = $CoreDllPath
+  }
 }
 
 $Daemon = Join-Path $InstallDir "shurufa-daemon.exe"
@@ -92,9 +105,20 @@ if (-not (Test-IsAdmin)) {
     "-RegisterOnly",
     "-TsfDllPath", "`"$TsfDll`""
   )
+  if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
+    $args += @("-CoreDllPath", "`"$LocalCoreDll`"")
+  }
   Start-Process -FilePath "powershell.exe" -ArgumentList $args -Verb RunAs -Wait
 } else {
-  regsvr32.exe /s $TsfDll
+  New-Item -ItemType Directory -Force $NativeInstallDir | Out-Null
+  $RegisteredTsfDll = Join-Path $NativeInstallDir (Split-Path $TsfDll -Leaf)
+  Copy-Item -Force $TsfDll $RegisteredTsfDll
+  if ($LocalCoreDll -and (Test-Path $LocalCoreDll)) {
+    Copy-Item -Force $LocalCoreDll (Join-Path $NativeInstallDir "shurufa_core.dll")
+  } else {
+    Remove-Item -Force (Join-Path $NativeInstallDir "shurufa_core.dll") -ErrorAction SilentlyContinue
+  }
+  regsvr32.exe /s $RegisteredTsfDll
 }
 
 if (-not $RegisterOnly) {
