@@ -94,6 +94,7 @@ type updateCheck struct {
 type updatePlanResponse struct {
 	SourcePreset         string   `json:"sourcePreset"`
 	Language             string   `json:"language"`
+	TargetLanguage       string   `json:"targetLanguage"`
 	Channel              string   `json:"channel"`
 	ManifestURLs         []string `json:"manifestUrls"`
 	MirrorBaseURLs       []string `json:"mirrorBaseUrls"`
@@ -365,9 +366,9 @@ func main() {
 	case "update-check":
 		err = updateCheckCmd(client)
 	case "update-plan":
-		err = updatePlanCmd(client)
+		err = updatePlanCmd(client, os.Args[2:])
 	case "update-apply":
-		err = updateApply(client)
+		err = updateApply(client, os.Args[2:])
 	case "update-sources":
 		err = updateSources(client)
 	case "update-source":
@@ -468,13 +469,13 @@ Usage:
   shurufa-imecli reverse "你好" [--limit N]
   shurufa-imecli update-sources
   shurufa-imecli update-source shurufa233-github-cn [--mirror URL_OR_TEMPLATE] [--manifest URL]
-  shurufa-imecli update-plan
+  shurufa-imecli update-plan [--language zh-CN|all]
   shurufa-imecli schemas
   shurufa-imecli schema [current|apply <id>]
   shurufa-imecli skin [list|apply <id>]
   shurufa-imecli rime import default.custom.yaml
   shurufa-imecli update-check
-  shurufa-imecli update-apply
+  shurufa-imecli update-apply [--language zh-CN|all]
   shurufa-imecli candidates nihao [view|next-page|prev-page|select|pin|forget|first-char|last-char] [--start N] [--limit N] [--display-index N] [--index N]
   shurufa-imecli agent "/rewrite hello"
   shurufa-imecli agent --context "selected text" "/rewrite"
@@ -714,12 +715,20 @@ func updateCheckCmd(client *http.Client) error {
 	return nil
 }
 
-func updatePlanCmd(client *http.Client) error {
-	var plan updatePlanResponse
-	if err := getJSON(client, "/updates/plan", &plan); err != nil {
+func updatePlanCmd(client *http.Client, args []string) error {
+	language, err := parseUpdateLanguageArgs(args)
+	if err != nil {
 		return err
 	}
-	fmt.Printf("source=%s language=%s channel=%s\n", plan.SourcePreset, plan.Language, plan.Channel)
+	path := "/updates/plan"
+	if language != "" {
+		path += "?language=" + url.QueryEscape(language)
+	}
+	var plan updatePlanResponse
+	if err := getJSON(client, path, &plan); err != nil {
+		return err
+	}
+	fmt.Printf("source=%s language=%s target=%s channel=%s\n", plan.SourcePreset, plan.Language, plan.TargetLanguage, plan.Channel)
 	if len(plan.ManifestURLs) > 0 {
 		fmt.Printf("manifest: %s\n", strings.Join(plan.ManifestURLs, ", "))
 	}
@@ -732,13 +741,50 @@ func updatePlanCmd(client *http.Client) error {
 	return nil
 }
 
-func updateApply(client *http.Client) error {
-	body, err := post(client, "/updates/apply", nil)
+func updateApply(client *http.Client, args []string) error {
+	language, err := parseUpdateLanguageArgs(args)
+	if err != nil {
+		return err
+	}
+	var body []byte
+	if language == "" {
+		body, err = post(client, "/updates/apply", nil)
+	} else {
+		body, err = postJSONBytes(client, "/updates/apply", map[string]string{"language": language})
+	}
 	if err != nil {
 		return err
 	}
 	fmt.Println(string(body))
 	return nil
+}
+
+func parseUpdateLanguageArgs(args []string) (string, error) {
+	language := ""
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		if arg == "" {
+			continue
+		}
+		value := ""
+		if split := strings.IndexByte(arg, '='); split >= 0 {
+			value = strings.TrimSpace(arg[split+1:])
+			arg = strings.TrimSpace(arg[:split])
+		} else {
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("%s requires a value", arg)
+			}
+			value = strings.TrimSpace(args[i+1])
+			i++
+		}
+		switch strings.ToLower(arg) {
+		case "--language", "--lang":
+			language = value
+		default:
+			return "", fmt.Errorf("unknown update language option %q", arg)
+		}
+	}
+	return language, nil
 }
 
 func updateSources(client *http.Client) error {

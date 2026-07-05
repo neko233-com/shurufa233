@@ -66,6 +66,7 @@ type abiUpdatePlan struct {
 	OK                   bool      `json:"ok"`
 	SourcePreset         string    `json:"sourcePreset,omitempty"`
 	Language             string    `json:"language,omitempty"`
+	TargetLanguage       string    `json:"targetLanguage,omitempty"`
 	Channel              string    `json:"channel,omitempty"`
 	ManifestURLs         []string  `json:"manifestUrls"`
 	MirrorBaseURLs       []string  `json:"mirrorBaseUrls"`
@@ -75,10 +76,12 @@ type abiUpdatePlan struct {
 
 func dictionaryUpdatePlanPayload(req extensionCommandPayload) any {
 	config := dictionaryUpdateConfigFromPayload(req)
+	targetLanguage := updateTargetLanguage(req.Language, config.Language)
 	return abiUpdatePlan{
 		OK:                   true,
 		SourcePreset:         config.Update.SourcePreset,
 		Language:             config.Language,
+		TargetLanguage:       updateTargetLanguageLabel(targetLanguage),
 		Channel:              config.Update.Channel,
 		ManifestURLs:         append([]string(nil), config.Update.ManifestURLs...),
 		MirrorBaseURLs:       append([]string(nil), config.Update.MirrorBaseURLs...),
@@ -107,6 +110,7 @@ func dictionaryUpdateCheckPayload(req extensionCommandPayload) any {
 
 func dictionaryUpdateApplyPayload(req extensionCommandPayload) any {
 	config := dictionaryUpdateConfigFromPayload(req)
+	targetLanguage := updateTargetLanguage(req.Language, config.Language)
 	manifest, manifestURL, err := fetchDictionaryUpdateManifest(config, http.DefaultClient)
 	if err != nil {
 		return errorEnvelope(err.Error())
@@ -138,7 +142,7 @@ func dictionaryUpdateApplyPayload(req extensionCommandPayload) any {
 	}
 	downloaded := make([]downloadedDictionary, 0, len(manifest.Dictionaries))
 	for _, item := range manifest.Dictionaries {
-		if config.Language != "" && item.Language != config.Language {
+		if targetLanguage != "" && item.Language != targetLanguage {
 			continue
 		}
 		rawData, err := downloadDictionaryArtifact(config, item, http.DefaultClient)
@@ -164,7 +168,7 @@ func dictionaryUpdateApplyPayload(req extensionCommandPayload) any {
 		downloaded = append(downloaded, downloadedDictionary{item: item, data: data})
 	}
 	if len(downloaded) == 0 {
-		return errorEnvelope(fmt.Sprintf("manifest has no dictionary for language %s", config.Language))
+		return errorEnvelope(fmt.Sprintf("manifest has no dictionary for language %s", updateTargetLanguageLabel(targetLanguage)))
 	}
 
 	applied := make([]string, 0, len(downloaded))
@@ -215,6 +219,26 @@ func dictionaryUpdateConfigFromPayload(req extensionCommandPayload) engine.Confi
 		config.Update.MirrorBaseURLs = append([]string(nil), req.MirrorBaseURLs...)
 	}
 	return normalizeConfig(config)
+}
+
+func updateTargetLanguage(requested string, configured string) string {
+	value := strings.TrimSpace(requested)
+	if value == "" {
+		return strings.TrimSpace(configured)
+	}
+	switch strings.ToLower(value) {
+	case "*", "all", "any":
+		return ""
+	default:
+		return value
+	}
+}
+
+func updateTargetLanguageLabel(language string) string {
+	if strings.TrimSpace(language) == "" {
+		return "all"
+	}
+	return strings.TrimSpace(language)
 }
 
 func fetchDictionaryUpdateManifest(config engine.Config, client *http.Client) (abiDictionaryManifest, string, error) {

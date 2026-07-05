@@ -210,11 +210,16 @@ type updatePlan struct {
 	OK                   bool      `json:"ok"`
 	SourcePreset         string    `json:"sourcePreset,omitempty"`
 	Language             string    `json:"language,omitempty"`
+	TargetLanguage       string    `json:"targetLanguage,omitempty"`
 	Channel              string    `json:"channel,omitempty"`
 	ManifestURLs         []string  `json:"manifestUrls"`
 	MirrorBaseURLs       []string  `json:"mirrorBaseUrls"`
 	ResolvedManifestURLs []string  `json:"resolvedManifestUrls"`
 	UpdatedAt            time.Time `json:"updatedAt"`
+}
+
+type updateRequest struct {
+	Language string `json:"language,omitempty"`
 }
 
 type userScoreStore struct {
@@ -1738,18 +1743,20 @@ func (s *AppState) checkUpdates(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, check)
 }
 
-func (s *AppState) updatePlan(w http.ResponseWriter, _ *http.Request) {
+func (s *AppState) updatePlan(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	config := s.config
 	s.mu.RUnlock()
-	writeJSON(w, updatePlanFromConfig(config))
+	writeJSON(w, updatePlanFromConfig(config, r.URL.Query().Get("language")))
 }
 
-func updatePlanFromConfig(config engine.Config) updatePlan {
+func updatePlanFromConfig(config engine.Config, requestedLanguage string) updatePlan {
+	targetLanguage := updateTargetLanguage(requestedLanguage, config.Language)
 	return updatePlan{
 		OK:                   true,
 		SourcePreset:         config.Update.SourcePreset,
 		Language:             config.Language,
+		TargetLanguage:       updateTargetLanguageLabel(targetLanguage),
 		Channel:              config.Update.Channel,
 		ManifestURLs:         append([]string(nil), config.Update.ManifestURLs...),
 		MirrorBaseURLs:       append([]string(nil), config.Update.MirrorBaseURLs...),
@@ -1762,8 +1769,16 @@ func composeAgentResponse(input string, context string) agentResponse {
 	return engine.ComposeAgent(engine.DefaultConfig(), engine.AgentComposeRequest{Input: input, Context: context})
 }
 
-func (s *AppState) applyUpdates(w http.ResponseWriter, _ *http.Request) {
-	result, err := s.applyLatestDictionaries(true)
+func (s *AppState) applyUpdates(w http.ResponseWriter, r *http.Request) {
+	req := updateRequest{}
+	if r.Body != nil {
+		decoder := json.NewDecoder(r.Body)
+		if err := decoder.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	result, err := s.applyLatestDictionaries(true, req.Language)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -1838,10 +1853,11 @@ func (s *AppState) checkLatestDictionaries() (updateCheck, error) {
 	}, nil
 }
 
-func (s *AppState) applyLatestDictionaries(force bool) (updateApplyResult, error) {
+func (s *AppState) applyLatestDictionaries(force bool, requestedLanguage string) (updateApplyResult, error) {
 	s.mu.RLock()
 	config := s.config
 	s.mu.RUnlock()
+	targetLanguage := updateTargetLanguage(requestedLanguage, config.Language)
 
 	manifest, manifestURL, err := s.fetchManifestWithConfig(config)
 	if err != nil {
@@ -1871,7 +1887,7 @@ func (s *AppState) applyLatestDictionaries(force bool) (updateApplyResult, error
 	downloaded := make([]downloadedDictionary, 0, len(manifest.Dictionaries))
 	applied := make([]string, 0, len(manifest.Dictionaries))
 	for _, item := range manifest.Dictionaries {
-		if config.Language != "" && item.Language != config.Language {
+		if targetLanguage != "" && item.Language != targetLanguage {
 			continue
 		}
 		rawData, err := s.downloadDictionaryWithConfig(config, item)
@@ -1897,7 +1913,7 @@ func (s *AppState) applyLatestDictionaries(force bool) (updateApplyResult, error
 		downloaded = append(downloaded, downloadedDictionary{item: item, data: data})
 	}
 	if len(downloaded) == 0 {
-		return updateApplyResult{}, fmt.Errorf("manifest has no dictionary for language %s", config.Language)
+		return updateApplyResult{}, fmt.Errorf("manifest has no dictionary for language %s", updateTargetLanguageLabel(targetLanguage))
 	}
 
 	s.mu.Lock()
@@ -1959,7 +1975,7 @@ func (s *AppState) runDictionaryAutoUpdateOnce() {
 	if !config.Update.AutoApply {
 		return
 	}
-	result, err := s.applyLatestDictionaries(false)
+	result, err := s.applyLatestDictionaries(false, "")
 	if err != nil {
 		log.Printf("dictionary auto update apply failed: %v", err)
 		return
@@ -2112,6 +2128,26 @@ func renderMirrorDownloadURL(mirror string, rawURL string) string {
 		return out
 	}
 	return strings.TrimRight(mirror, "/") + "/" + name
+}
+
+func updateTargetLanguage(requested string, configured string) string {
+	value := strings.TrimSpace(requested)
+	if value == "" {
+		return strings.TrimSpace(configured)
+	}
+	switch strings.ToLower(value) {
+	case "*", "all", "any":
+		return ""
+	default:
+		return value
+	}
+}
+
+func updateTargetLanguageLabel(language string) string {
+	if strings.TrimSpace(language) == "" {
+		return "all"
+	}
+	return strings.TrimSpace(language)
 }
 
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {

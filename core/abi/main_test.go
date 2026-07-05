@@ -853,6 +853,7 @@ func TestDictionaryUpdatePlanPayloadResolvesMirrors(t *testing.T) {
 	t.Setenv("SHURUFA233_CONFIG", filepath.Join(t.TempDir(), "config.json"))
 
 	got := dictionaryUpdatePlanPayload(extensionCommandPayload{
+		Language:     "all",
 		ManifestURLs: []string{"https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json"},
 		MirrorBaseURLs: []string{
 			"https://gh.example/{escapedUrl}",
@@ -862,6 +863,9 @@ func TestDictionaryUpdatePlanPayloadResolvesMirrors(t *testing.T) {
 	result, ok := got.(abiUpdatePlan)
 	if !ok || !result.OK {
 		t.Fatalf("dictionary update plan = %#v", got)
+	}
+	if result.TargetLanguage != "all" {
+		t.Fatalf("target language = %q", result.TargetLanguage)
 	}
 	want := []string{
 		"https://gh.example/https%3A%2F%2Fgithub.com%2Fneko233-com%2Fshurufa233%2Freleases%2Flatest%2Fdownload%2Fdictionary-manifest.json",

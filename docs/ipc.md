@@ -273,7 +273,7 @@ v-mode queries such as `q=vfs` are normalized to the stored Rime symbol code:
 The CLI mirrors this through
 `shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]`.
 
-`GET /updates/plan` returns the normalized dictionary update plan without
+`GET /updates/plan?language=zh-CN|all` returns the normalized dictionary update plan without
 downloading anything. It includes `manifestUrls`, `mirrorBaseUrls`, and
 `resolvedManifestUrls`, which is the exact order the daemon will try: mirrors
 first, then the canonical GitHub URL. This is the safe way for settings UI,
@@ -284,7 +284,9 @@ before a real update check.
 `POST /updates/apply` downloads the matching language dictionary from configured
 mirror/CDN URLs first and then GitHub, verifies hashes when provided, loads it
 into active IME sessions, persists it locally, and returns the applied language
-versions.
+versions. The optional JSON body `{"language":"all"}` applies every language
+dictionary in the manifest; omitting it keeps the configured language, which is
+`zh-CN` by default for the Chinese pinyin input method.
 
 `POST /updates/source` switches the configured dictionary hot-update source
 with the same JSON accepted by the native ABI:

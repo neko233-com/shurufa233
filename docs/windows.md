@@ -190,9 +190,9 @@ shurufa-imecli sync export --dir D:\Sync\shurufa233
 shurufa-imecli sync import --dir D:\Sync\shurufa233
 shurufa-imecli update-sources
 shurufa-imecli update-source shurufa233-github
-shurufa-imecli update-plan
+shurufa-imecli update-plan --language all
 shurufa-imecli update-check
-shurufa-imecli update-apply
+shurufa-imecli update-apply --language zh-CN
 shurufa-imecli agent "/rewrite hello world"
 ```
 

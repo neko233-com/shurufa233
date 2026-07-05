@@ -215,7 +215,7 @@ Current commands include:
 ```text
 state
 preview                 {"input":"zan"}
-dictionary-update-plan-json {"mirrorBaseUrls":["https://gh-proxy.com/{url}"]}
+dictionary-update-plan-json {"language":"all","mirrorBaseUrls":["https://gh-proxy.com/{url}"]}
 input-key               {"input":"z"}
 backspace
 clear
@@ -262,7 +262,7 @@ dictionary-manifest-json
 dictionary-sources-json
 apply-dictionary-source-json {"id":"shurufa233-github-cn","mirrorBaseUrls":["https://gh-proxy.com/{url}"]}
 dictionary-update-check-json {"manifestUrls":["https://example.com/dictionary-manifest.json"]}
-dictionary-update-apply-json {"manifestUrls":["https://example.com/dictionary-manifest.json"],"force":true}
+dictionary-update-apply-json {"language":"zh-CN","manifestUrls":["https://example.com/dictionary-manifest.json"],"force":true}
 user-scores-json
 import-user-scores-json {"userScores":{"nihao|你好":25}}
 import-user-scores-json {"format":"rime-userdb","data":"cha jian 插件 c=4 d=0.5 t=8\n"}

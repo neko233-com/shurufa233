@@ -1369,7 +1369,7 @@ func TestUpdatePlanEndpointShowsResolvedMirrors(t *testing.T) {
 		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/updates/plan", nil)
+	req := httptest.NewRequest(http.MethodGet, "/updates/plan?language=all", nil)
 	rec := httptest.NewRecorder()
 	state.updatePlan(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1379,7 +1379,7 @@ func TestUpdatePlanEndpointShowsResolvedMirrors(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if !got.OK || got.SourcePreset != "shurufa233-github-cn" || got.Language != config.Language {
+	if !got.OK || got.SourcePreset != "shurufa233-github-cn" || got.Language != config.Language || got.TargetLanguage != "all" {
 		t.Fatalf("update plan = %#v", got)
 	}
 	if len(got.ResolvedManifestURLs) != 2 || !strings.Contains(got.ResolvedManifestURLs[0], "target=https%3A%2F%2Fgithub.com") {
@@ -1579,6 +1579,73 @@ func TestDictionaryAutoUpdateAppliesConfiguredRelease(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(state.path), "dictionaries", "zh-CN.remote-test.json")); err != nil {
 		t.Fatalf("expected downloaded dictionary file: %v", err)
+	}
+}
+
+func TestApplyUpdatesCanApplyAllManifestLanguages(t *testing.T) {
+	zhDictionary := `{
+		"language": "zh-CN",
+		"version": "multi-test",
+		"entries": [
+			{ "reading": "duoyu", "text": "多语", "weight": 20000 }
+		]
+	}`
+	enDictionary := `{
+		"language": "en-US",
+		"version": "multi-test",
+		"entries": [
+			{ "reading": "hello", "text": "hello", "weight": 20000 }
+		]
+	}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/dictionary-manifest.json":
+			_, _ = fmt.Fprintf(w, `{
+				"version": "multi-test",
+				"channel": "stable",
+				"generatedAt": "2026-07-05T00:00:00Z",
+				"dictionaries": [
+					{ "language": "zh-CN", "version": "multi-test", "url": "%s/zh-CN.multi-test.json" },
+					{ "language": "en-US", "version": "multi-test", "url": "%s/en-US.multi-test.json" }
+				]
+			}`, serverURL(r), serverURL(r))
+		case "/zh-CN.multi-test.json":
+			_, _ = w.Write([]byte(zhDictionary))
+		case "/en-US.multi-test.json":
+			_, _ = w.Write([]byte(enDictionary))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	config := engine.DefaultConfig()
+	config.Language = "zh-CN"
+	config.Update.ManifestURLs = []string{server.URL + "/dictionary-manifest.json"}
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+		client:   server.Client(),
+	}
+	state.sessions["default"] = state.engine
+
+	req := httptest.NewRequest(http.MethodPost, "/updates/apply", strings.NewReader(`{"language":"all"}`))
+	rec := httptest.NewRecorder()
+	state.applyUpdates(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got updateApplyResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got.Applied, ",") != "zh-CN@multi-test,en-US@multi-test" {
+		t.Fatalf("applied = %#v", got.Applied)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(state.path), "dictionaries", "en-US.multi-test.json")); err != nil {
+		t.Fatalf("expected en-US dictionary file: %v", err)
 	}
 }
 

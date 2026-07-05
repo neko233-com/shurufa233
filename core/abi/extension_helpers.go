@@ -184,6 +184,7 @@ type extensionCommandPayload struct {
 	Preset               string             `json:"preset,omitempty"`
 	ManifestURLs         []string           `json:"manifestUrls,omitempty"`
 	MirrorBaseURLs       []string           `json:"mirrorBaseUrls,omitempty"`
+	Language             string             `json:"language,omitempty"`
 	YAML                 string             `json:"yaml,omitempty"`
 	Format               string             `json:"format,omitempty"`
 	Data                 string             `json:"data,omitempty"`

@@ -230,15 +230,16 @@ func TestUpdateSourcesCallsEndpoint(t *testing.T) {
 func TestUpdatePlanCallsEndpoint(t *testing.T) {
 	var planCalled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/updates/plan" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
+		if r.URL.Path != "/updates/plan" || r.URL.Query().Get("language") != "all" {
+			t.Fatalf("unexpected request %s?%s", r.URL.Path, r.URL.RawQuery)
 		}
 		planCalled = true
 		_ = json.NewEncoder(w).Encode(updatePlanResponse{
-			SourcePreset: "shurufa233-github-cn",
-			Language:     "zh-CN",
-			Channel:      "stable",
-			ManifestURLs: []string{"https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json"},
+			SourcePreset:   "shurufa233-github-cn",
+			Language:       "zh-CN",
+			TargetLanguage: "all",
+			Channel:        "stable",
+			ManifestURLs:   []string{"https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json"},
 			MirrorBaseURLs: []string{
 				"https://gh-proxy.com/{url}",
 			},
@@ -253,11 +254,42 @@ func TestUpdatePlanCallsEndpoint(t *testing.T) {
 	apiBase = server.URL
 	defer func() { apiBase = previousBase }()
 
-	if err := updatePlanCmd(server.Client()); err != nil {
+	if err := updatePlanCmd(server.Client(), []string{"--language", "all"}); err != nil {
 		t.Fatal(err)
 	}
 	if !planCalled {
 		t.Fatal("updates plan endpoint was not called")
+	}
+}
+
+func TestUpdateApplyPostsLanguageOverride(t *testing.T) {
+	var applyCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/updates/apply" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		applyCalled = true
+		var req struct {
+			Language string `json:"language"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode update apply request: %v", err)
+		}
+		if req.Language != "all" {
+			t.Fatalf("update apply request = %#v", req)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "version": "test", "applied": []string{"zh-CN@test", "en-US@test"}})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := updateApply(server.Client(), []string{"--language", "all"}); err != nil {
+		t.Fatal(err)
+	}
+	if !applyCalled {
+		t.Fatal("updates apply endpoint was not called")
 	}
 }
 
