@@ -1383,6 +1383,7 @@ func TestUpdateSourcesEndpointListsRimeSources(t *testing.T) {
 		if source.ID == "rime-ice-source" &&
 			strings.Contains(source.ConvertCommand, "shurufa-dictimport") &&
 			strings.Contains(source.SyncCommand, "shurufa-dictsync") &&
+			hasRawSourceLabel(source.RawSources, "melt_eng.dict.yaml") &&
 			hasRawSourceLabel(source.RawSources, "symbols_v.yaml") &&
 			hasRawSourceLabel(source.RawSources, "symbols_caps_v.yaml") {
 			foundIce = true

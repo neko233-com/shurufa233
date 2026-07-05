@@ -71,6 +71,7 @@ var builtinDictionarySources = []DictionarySourcePreset{
 		License:     "GPL-3.0",
 		RawSources: []DictionaryRawSource{
 			{Label: "rime_ice.dict.yaml", URL: "https://raw.githubusercontent.com/iDvel/rime-ice/main/rime_ice.dict.yaml", Role: "entry-dictionary"},
+			{Label: "melt_eng.dict.yaml", URL: "https://raw.githubusercontent.com/iDvel/rime-ice/main/melt_eng.dict.yaml", Role: "english-dictionary"},
 			{Label: "symbols_v.yaml", URL: "https://raw.githubusercontent.com/iDvel/rime-ice/main/symbols_v.yaml", Role: "symbols"},
 			{Label: "symbols_caps_v.yaml", URL: "https://raw.githubusercontent.com/iDvel/rime-ice/main/symbols_caps_v.yaml", Role: "symbols"},
 			{Label: "opencc/emoji.txt", URL: "https://raw.githubusercontent.com/iDvel/rime-ice/main/opencc/emoji.txt", Role: "opencc-emoji"},

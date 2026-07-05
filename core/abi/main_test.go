@@ -691,7 +691,10 @@ func TestExecuteExtensionCommandDictionarySources(t *testing.T) {
 			break
 		}
 	}
-	if rimeIce == nil || !dictionarySourceHasRawLabel(*rimeIce, "symbols_v.yaml") || !dictionarySourceHasRawLabel(*rimeIce, "symbols_caps_v.yaml") {
+	if rimeIce == nil ||
+		!dictionarySourceHasRawLabel(*rimeIce, "melt_eng.dict.yaml") ||
+		!dictionarySourceHasRawLabel(*rimeIce, "symbols_v.yaml") ||
+		!dictionarySourceHasRawLabel(*rimeIce, "symbols_caps_v.yaml") {
 		t.Fatalf("rime ice raw sources = %#v", sources)
 	}
 }

@@ -206,7 +206,10 @@ func TestUpdateSourcesCallsEndpoint(t *testing.T) {
 				License:     "GPL-3.0",
 				Homepage:    "https://github.com/iDvel/rime-ice",
 				Description: "source",
-				RawSources:  []dictionaryRaw{{Label: "rime_ice.dict.yaml", URL: "https://example.test/rime_ice.dict.yaml", Role: "entry-dictionary"}},
+				RawSources: []dictionaryRaw{
+					{Label: "rime_ice.dict.yaml", URL: "https://example.test/rime_ice.dict.yaml", Role: "entry-dictionary"},
+					{Label: "melt_eng.dict.yaml", URL: "https://example.test/melt_eng.dict.yaml", Role: "english-dictionary"},
+				},
 				SyncCommand: `shurufa-dictsync -preset rime-ice-source`,
 			}},
 		})
