@@ -581,6 +581,76 @@ bool ModePayloadIsEnglish(const char *value) {
   return payload == "en" || payload.find("\"mode\":\"en\"") != std::string::npos;
 }
 
+std::string JsonEscape(const std::string &value) {
+  std::string out;
+  out.reserve(value.size() + 8);
+  for (char ch : value) {
+    switch (ch) {
+      case '\\':
+        out += "\\\\";
+        break;
+      case '"':
+        out += "\\\"";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
+      default:
+        out.push_back(ch);
+        break;
+    }
+  }
+  return out;
+}
+
+bool JsonBoolFieldValue(const std::string &json, const char *field, bool fallback) {
+  const std::string key = std::string("\"") + field + "\"";
+  size_t pos = json.find(key);
+  if (pos == std::string::npos) {
+    return fallback;
+  }
+  pos = json.find(':', pos + key.size());
+  if (pos == std::string::npos) {
+    return fallback;
+  }
+  size_t start = pos + 1;
+  while (start < json.size() && isspace(static_cast<unsigned char>(json[start]))) {
+    ++start;
+  }
+  size_t end = start;
+  while (end < json.size() && json[end] != ',' && json[end] != '}' &&
+         json[end] != '\n' && json[end] != '\r') {
+    ++end;
+  }
+  std::string value = json.substr(start, end - start);
+  std::string normalized;
+  normalized.reserve(value.size());
+  for (char ch : value) {
+    if (!isspace(static_cast<unsigned char>(ch))) {
+      normalized.push_back(static_cast<char>(tolower(static_cast<unsigned char>(ch))));
+    }
+  }
+  if (normalized == "true" || normalized == "1" || normalized == "yes" || normalized == "on") {
+    return true;
+  }
+  if (normalized == "false" || normalized == "0" || normalized == "no" || normalized == "off") {
+    return false;
+  }
+  return fallback;
+}
+
 std::vector<std::string> SplitTabFields(const std::string &line) {
   std::vector<std::string> fields;
   size_t start = 0;
@@ -1837,6 +1907,98 @@ bool IsChinesePunctuationKey(WPARAM key) {
   }
 }
 
+char RecognizerAsciiCharForKey(WPARAM key) {
+  const bool shifted = IsShiftPressed();
+  if (!shifted && key >= L'A' && key <= L'Z') {
+    return static_cast<char>(key - L'A' + 'a');
+  }
+  if (!shifted && key >= L'a' && key <= L'z') {
+    return static_cast<char>(key);
+  }
+  if (!shifted && key >= L'0' && key <= L'9') {
+    return static_cast<char>(key);
+  }
+  if (key >= VK_NUMPAD0 && key <= VK_NUMPAD9) {
+    return static_cast<char>('0' + (key - VK_NUMPAD0));
+  }
+  if (!shifted) {
+    switch (key) {
+      case VK_OEM_PERIOD:
+      case L'.':
+        return '.';
+      case VK_OEM_2:
+      case L'/':
+        return '/';
+      case VK_OEM_MINUS:
+      case L'-':
+        return '-';
+      case VK_OEM_PLUS:
+      case L'=':
+        return '=';
+      case VK_OEM_1:
+      case L';':
+        return ';';
+      case VK_OEM_7:
+      case L'\'':
+        return '\'';
+      case VK_OEM_COMMA:
+      case L',':
+        return ',';
+      default:
+        return 0;
+    }
+  }
+  switch (key) {
+    case L'2':
+      return '@';
+    case L'5':
+      return '%';
+    case L'6':
+      return '^';
+    case L'7':
+      return '&';
+    case VK_OEM_PLUS:
+    case L'=':
+      return '+';
+    case VK_OEM_1:
+    case L';':
+      return ':';
+    case VK_OEM_2:
+    case L'/':
+      return '?';
+    case VK_OEM_MINUS:
+    case L'-':
+      return '_';
+    default:
+      return 0;
+  }
+}
+
+bool IsRecognizerContinuingChar(char ch) {
+  if (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9') {
+    return true;
+  }
+  switch (ch) {
+    case ';':
+    case '\'':
+    case '/':
+    case '`':
+    case '@':
+    case '.':
+    case '-':
+    case '_':
+    case ':':
+    case '?':
+    case '&':
+    case '=':
+    case '%':
+    case '+':
+      return true;
+    default:
+      return false;
+  }
+}
+
 int CandidateIndexFromKey(WPARAM key) {
   if (key >= L'1' && key <= L'9') {
     return static_cast<int>(key - L'1');
@@ -2133,6 +2295,13 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return S_OK;
     }
 
+    const char recognizerChar = RecognizerAsciiCharForKey(key);
+    if (!asciiMode_ && ShouldUseRecognizerLiteralChar(recognizerChar)) {
+      InputRecognizerLiteralChar(recognizerChar);
+      *eaten = TRUE;
+      return S_OK;
+    }
+
     if (key == VK_BACK) {
       selectedIndex_ = 0;
       pageOffset_ = 0;
@@ -2194,7 +2363,16 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
 
     const std::wstring punctuation = ChinesePunctuationForKey(key);
     if (!asciiMode_ && !punctuation.empty()) {
-      if (cachedCandidateCount_ > 0) {
+      if (!rawBuffer_.empty() && IsRecognizerLiteralCurrent()) {
+        std::wstring suffix;
+        if (recognizerChar != 0) {
+          char ascii[2]{recognizerChar, 0};
+          suffix = Utf8ToWide(ascii);
+        } else {
+          suffix = punctuation;
+        }
+        CommitRawBuffer(context, suffix);
+      } else if (cachedCandidateCount_ > 0) {
         CommitCandidate(context, selectedIndex_);
         selectedIndex_ = 0;
         pageOffset_ = 0;
@@ -2337,6 +2515,53 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     return !asciiMode_ && microsoftDoublePinyin_ && (key == VK_OEM_1 || key == L';');
   }
 
+  bool RecognizerLiteralDecision(const std::string &input) const {
+    if (!session_ || !g_core.executeCommand || input.empty()) {
+      return false;
+    }
+    const std::string payload = std::string("{\"input\":\"") + JsonEscape(input) + "\"}";
+    char *raw = g_core.executeCommand(session_, "recognizer-decision-json", payload.c_str());
+    if (!raw) {
+      return false;
+    }
+    const std::string json(raw);
+    g_core.freeValue(raw);
+    return JsonBoolFieldValue(json, "matched", false) &&
+           JsonBoolFieldValue(json, "passThrough", false);
+  }
+
+  bool IsRecognizerLiteralCurrent() const {
+    return RecognizerLiteralDecision(rawBuffer_);
+  }
+
+  bool IsRecognizerLiteralProspective(char ch) const {
+    if (rawBuffer_.empty() || ch == 0) {
+      return false;
+    }
+    std::string next = rawBuffer_;
+    next.push_back(ch);
+    return RecognizerLiteralDecision(next);
+  }
+
+  bool ShouldUseRecognizerLiteralChar(char ch) const {
+    if (ch == 0 || rawBuffer_.empty() || !IsRecognizerContinuingChar(ch)) {
+      return false;
+    }
+    if (IsRecognizerLiteralCurrent() && IsRecognizerContinuingChar(ch)) {
+      return true;
+    }
+    return IsRecognizerLiteralProspective(ch);
+  }
+
+  void InputRecognizerLiteralChar(char ch) {
+    selectedIndex_ = 0;
+    pageOffset_ = 0;
+    compositionLength_++;
+    rawBuffer_.push_back(ch);
+    const int count = g_core.inputKeyFast(session_, ch);
+    UpdateCandidateWindow(count);
+  }
+
   int ConfiguredQuickSelectIndexFromKey(WPARAM key) const {
     if (IsShiftPressed()) {
       return -1;
@@ -2404,6 +2629,15 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
     if (IsMicrosoftDoublePinyinSemicolonKey(key)) {
       return true;
+    }
+    if (!rawBuffer_.empty()) {
+      const char recognizerChar = RecognizerAsciiCharForKey(key);
+      if (ShouldUseRecognizerLiteralChar(recognizerChar)) {
+        return true;
+      }
+      if (recognizerChar != 0 && IsChinesePunctuationKey(key) && IsRecognizerLiteralCurrent()) {
+        return true;
+      }
     }
     if (key == VK_BACK) {
       return compositionLength_ > 0;

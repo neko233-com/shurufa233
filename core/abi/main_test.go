@@ -370,6 +370,15 @@ func TestCapabilitiesIncludeRimeRecognizerPatterns(t *testing.T) {
 	t.Fatalf("capabilities missing rime-recognizer-patterns-json: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeRecognizerDecision(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "recognizer-decision-json" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing recognizer-decision-json: %#v", abiFeatureList)
+}
+
 func TestCapabilitiesIncludeKeyEventJSON(t *testing.T) {
 	for _, feature := range abiFeatureList {
 		if feature == "key-event-json" {
@@ -758,6 +767,18 @@ func TestExecuteExtensionCommandRimeRecognizerPatterns(t *testing.T) {
 	}
 }
 
+func TestExecuteExtensionCommandRecognizerDecision(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	got, handled := executeSessionExtensionCommand(session, "recognizer-decision-json", `{"input":"www.example.com"}`)
+	if !handled {
+		t.Fatal("recognizer-decision-json command was not handled")
+	}
+	decision, ok := got.(engine.RecognizerDecision)
+	if !ok || !decision.OK || !decision.Matched || decision.Name != "url" || !decision.PassThrough {
+		t.Fatalf("recognizer decision = %#v", got)
+	}
+}
+
 func TestExecuteExtensionCommandAppContextRules(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	got, handled := executeSessionExtensionCommand(session, "app-rules-json", `{}`)
@@ -996,6 +1017,57 @@ func TestExecuteExtensionCommandKeyEventRespectsGameContext(t *testing.T) {
 	result, ok := got.(keyEventResult)
 	if !ok || !result.OK || result.Handled || result.PassThrough != "n" || result.Decision == nil || !result.Decision.DisableCandidates {
 		t.Fatalf("key-event game context = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventRecognizerKeepsURLPunctuationLiteral(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	for _, key := range []string{"w", "w", "w", ".", "e", "x", "a", "m", "p", "l", "e", ".", "c", "o", "m"} {
+		got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"`+key+`","character":"`+key+`"}`)
+		if !handled {
+			t.Fatal("key-event-json command was not handled")
+		}
+		result, ok := got.(keyEventResult)
+		if !ok || !result.OK || !result.Handled {
+			t.Fatalf("key-event URL input %q = %#v", key, got)
+		}
+		if key == "." && result.Action != "input-recognizer-literal" {
+			t.Fatalf("URL dot should remain literal input, got %#v", result)
+		}
+	}
+
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":",","character":","}`)
+	if !handled {
+		t.Fatal("key-event-json comma was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || !result.Handled || result.Action != "commit-recognizer-punctuation" ||
+		result.Committed != "www.example.com," || result.Recognizer == nil || result.Recognizer.Name != "url" || result.State.Buffer != "" {
+		t.Fatalf("recognizer URL comma = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventRecognizerCommitsEmailWithSpace(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	for _, key := range []string{"d", "e", "v", "@", "e", "x", "a", "m", "p", "l", "e", ".", "c", "o", "m"} {
+		got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"`+key+`","character":"`+key+`"}`)
+		if !handled {
+			t.Fatal("key-event-json command was not handled")
+		}
+		result, ok := got.(keyEventResult)
+		if !ok || !result.OK || !result.Handled {
+			t.Fatalf("key-event email input %q = %#v", key, got)
+		}
+	}
+
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"space"}`)
+	if !handled {
+		t.Fatal("key-event-json space was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || !result.Handled || result.Action != "commit-recognizer-literal" ||
+		result.Committed != "dev@example.com " || result.Recognizer == nil || result.Recognizer.Name != "email" || result.State.Buffer != "" {
+		t.Fatalf("recognizer email space = %#v", got)
 	}
 }
 

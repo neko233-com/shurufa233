@@ -156,6 +156,17 @@ type ReverseLookupResponse struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+type RecognizerDecision struct {
+	OK          bool      `json:"ok"`
+	Matched     bool      `json:"matched"`
+	Name        string    `json:"name,omitempty"`
+	Input       string    `json:"input"`
+	Literal     bool      `json:"literal,omitempty"`
+	PassThrough bool      `json:"passThrough,omitempty"`
+	Comment     string    `json:"comment,omitempty"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 type SwitchOption struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`

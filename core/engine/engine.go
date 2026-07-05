@@ -437,6 +437,28 @@ func (e *Engine) ReverseLookup(req ReverseLookupRequest) ReverseLookupResponse {
 	}
 }
 
+func (e *Engine) RecognizerDecision(input string) RecognizerDecision {
+	input = strings.TrimSpace(input)
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	name := e.recognizerPatternNameLocked(input)
+	decision := RecognizerDecision{
+		OK:        true,
+		Matched:   name != "",
+		Name:      name,
+		Input:     input,
+		UpdatedAt: nowFunc().UTC(),
+	}
+	if name != "" {
+		decision.Comment = recognizerComment(name)
+	}
+	if name != "" && name != "reverse_lookup" {
+		decision.Literal = true
+		decision.PassThrough = true
+	}
+	return decision
+}
+
 func normalizeUserPhraseEntries(entries []Entry) []Entry {
 	out := make([]Entry, 0, len(entries))
 	seen := map[string]int{}

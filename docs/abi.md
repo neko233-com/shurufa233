@@ -214,6 +214,7 @@ candidate-action        {"action":"forget","index":0}
 key-event-json          {"key":"n","character":"n"}
 key-event-json          {"key":"space","index":0}
 key-event-json          {"key":"n","character":"n","appContext":{"processName":"WeGame.exe"}}
+recognizer-decision-json {"input":"www.example.com"}
 select                  {"index":0}
 select-candidate-char   {"index":0,"side":"first"}
 config-json
@@ -319,6 +320,11 @@ config file before using its default punctuation table. Rime recognizer patterns
 are exposed as `config.recognizerPatterns` and through
 `rime-recognizer-patterns-json`, so native glue can query or reload URL/email,
 uppercase, reverse-lookup, and future recognizer rules through the command bus.
+`recognizer-decision-json` lets native callers ask whether the current buffer is
+a literal passthrough recognizer match. `key-event-json` uses the same Go-side
+decision before punctuation handling, so URL/email/uppercase buffers keep ASCII
+characters such as `.`, `@`, `-`, and ending `,` instead of being interrupted by
+Chinese punctuation or candidate selection in platform glue.
 Rime `app_options/<app>` patches are converted into shared `appRules`, including
 app-scoped `ascii_mode`, `ascii_punct`, disable-candidate, and disable-learning
 behavior for games, terminals, IDEs, and macOS bundle identifiers.

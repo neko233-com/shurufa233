@@ -319,6 +319,15 @@ func TestRecognizerPatternsPassThroughURLAndEmail(t *testing.T) {
 		emailState.Candidates[0].Source != "recognizer:email" {
 		t.Fatalf("expected email passthrough candidate, got %#v", emailState.Candidates)
 	}
+
+	urlDecision := e.RecognizerDecision("https://example.com/a?q=1")
+	if !urlDecision.OK || !urlDecision.Matched || urlDecision.Name != "url" || !urlDecision.Literal || !urlDecision.PassThrough {
+		t.Fatalf("expected URL recognizer decision, got %#v", urlDecision)
+	}
+	emailDecision := e.RecognizerDecision("dev@example.com")
+	if !emailDecision.OK || !emailDecision.Matched || emailDecision.Name != "email" || !emailDecision.Literal || !emailDecision.PassThrough {
+		t.Fatalf("expected email recognizer decision, got %#v", emailDecision)
+	}
 }
 
 func TestRecognizerReverseLookupUsesExistingDictionary(t *testing.T) {
@@ -330,6 +339,10 @@ func TestRecognizerReverseLookupUsesExistingDictionary(t *testing.T) {
 	}
 	if len(state.Candidates) == 0 || state.Candidates[0].Text != "你好" {
 		t.Fatalf("expected reverse lookup to reuse pinyin candidates, got %#v", state.Candidates)
+	}
+	decision := e.RecognizerDecision("`nihao")
+	if !decision.OK || !decision.Matched || decision.Name != "reverse_lookup" || decision.Literal || decision.PassThrough {
+		t.Fatalf("reverse lookup should not be literal passthrough, got %#v", decision)
 	}
 }
 

@@ -153,6 +153,10 @@ persisted. Rime recognizer patterns are stored as
 `config.recognizerPatterns`; default email, URL, reverse-lookup, and uppercase
 patterns can produce Go-core passthrough or explicit reverse-lookup candidates,
 while unsupported regular expressions are still preserved for future native use.
+The C ABI command bus also exposes `recognizer-decision-json`, and the shared
+`key-event-json` path consults that decision before punctuation: URL/email/
+uppercase literal buffers continue accepting ASCII punctuation and commit ASCII
+ending punctuation, while backtick reverse lookup keeps its candidate behavior.
 Rime `app_options/<app>` entries are converted into shared `config.appRules`:
 `ascii_mode` controls app-scoped Chinese/English default mode, `ascii_punct`
 controls app-scoped full/half punctuation, and explicit disable flags can

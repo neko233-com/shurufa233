@@ -54,6 +54,7 @@ var abiFeatureList = []string{
 	"key-behavior-config",
 	"rime-switches-json",
 	"rime-recognizer-patterns-json",
+	"recognizer-decision-json",
 	"app-context-rules-json",
 	"apply-app-rules-json",
 	"profile-bundle-json",
@@ -119,6 +120,7 @@ type keyEventResult struct {
 	PassThrough string                     `json:"passThrough,omitempty"`
 	Reason      string                     `json:"reason,omitempty"`
 	Decision    *engine.AppContextDecision `json:"decision,omitempty"`
+	Recognizer  *engine.RecognizerDecision `json:"recognizer,omitempty"`
 	State       engine.State               `json:"state"`
 	Candidates  candidatePayloadV2         `json:"candidates"`
 	UpdatedAt   time.Time                  `json:"updatedAt"`
@@ -745,6 +747,7 @@ func executeKeyEvent(session *engine.Engine, req extensionCommandPayload) keyEve
 	if before.Mode == "en" && character != "" {
 		return buildKeyEventResult(session, "pass-through", key, character, "", character, "ascii-mode", decision, false, req.Start, limit)
 	}
+	recognizer := keyEventRecognizerDecision(session, before)
 
 	switch key {
 	case "shift", "leftshift", "rightshift":
@@ -764,6 +767,16 @@ func executeKeyEvent(session *engine.Engine, req extensionCommandPayload) keyEve
 		}
 		return buildKeyEventResultFromState("clear", key, character, "", "", "", decision, true, req.Start, limit, session.Clear())
 	case "space", "enter", "return":
+		if recognizer != nil {
+			committed := before.Buffer
+			if key == "space" {
+				committed += " "
+			}
+			state := session.Clear()
+			result := buildKeyEventResultFromState("commit-recognizer-literal", key, character, committed, "", recognizer.Name, decision, true, 0, limit, state)
+			result.Recognizer = recognizer
+			return result
+		}
 		if len(before.Candidates) > 0 {
 			index := req.Index
 			state, err := session.Select(index)
@@ -784,6 +797,22 @@ func executeKeyEvent(session *engine.Engine, req extensionCommandPayload) keyEve
 		return buildKeyEventResult(session, "pass-through", key, character, "", character, "empty-buffer", decision, false, req.Start, limit)
 	}
 
+	if recognizer != nil && character != "" {
+		runes := []rune(character)
+		if len(runes) == 1 && isABIKeyEventInputRune(runes[0]) {
+			state := session.InputKey(runes[0])
+			result := buildKeyEventResultFromState("input-recognizer-literal", key, character, "", "", recognizer.Name, decision, true, req.Start, limit, state)
+			result.Recognizer = recognizer
+			return result
+		}
+	}
+	if prospective := keyEventProspectiveRecognizerDecision(session, before, character); prospective != nil {
+		runes := []rune(character)
+		state := session.InputKey(runes[0])
+		result := buildKeyEventResultFromState("input-recognizer-literal", key, character, "", "", prospective.Name, decision, true, req.Start, limit, state)
+		result.Recognizer = prospective
+		return result
+	}
 	if quickIndex, ok := keyEventQuickSelectIndex(session, key, character, before); ok {
 		state, err := session.Select(quickIndex)
 		if err != nil {
@@ -807,6 +836,13 @@ func executeKeyEvent(session *engine.Engine, req extensionCommandPayload) keyEve
 		return buildKeyEventResultFromState("commit-candidate", key, character, state.Committed, "", "", decision, true, 0, limit, state)
 	}
 	if punctuation, label, ok := keyEventPunctuation(session, req, key, character); ok {
+		if recognizer != nil {
+			committed := before.Buffer + keyEventRecognizerPunctuation(label, punctuation)
+			state := session.Clear()
+			result := buildKeyEventResultFromState("commit-recognizer-punctuation", key, character, committed, "", label, decision, true, 0, limit, state)
+			result.Recognizer = recognizer
+			return result
+		}
 		if len(before.Candidates) > 0 {
 			index := req.Index
 			state, err := session.Select(index)
@@ -1101,6 +1137,40 @@ func keyEventPunctuationLabel(req extensionCommandPayload, key string, character
 	}
 }
 
+func keyEventRecognizerDecision(session *engine.Engine, state engine.State) *engine.RecognizerDecision {
+	if strings.TrimSpace(state.Buffer) == "" {
+		return nil
+	}
+	decision := session.RecognizerDecision(state.Buffer)
+	if !decision.Matched || !decision.PassThrough {
+		return nil
+	}
+	return &decision
+}
+
+func keyEventProspectiveRecognizerDecision(session *engine.Engine, state engine.State, character string) *engine.RecognizerDecision {
+	if strings.TrimSpace(state.Buffer) == "" || character == "" {
+		return nil
+	}
+	runes := []rune(character)
+	if len(runes) != 1 || !isABIKeyEventInputRune(runes[0]) {
+		return nil
+	}
+	decision := session.RecognizerDecision(state.Buffer + character)
+	if !decision.Matched || !decision.PassThrough {
+		return nil
+	}
+	return &decision
+}
+
+func keyEventRecognizerPunctuation(label string, fallback string) string {
+	label = strings.TrimSpace(label)
+	if label != "" {
+		return label
+	}
+	return fallback
+}
+
 func punctuationShapeValue(shape map[string][]string, label string) string {
 	if len(shape) == 0 {
 		return ""
@@ -1372,6 +1442,8 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"config":    session.Config(),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
+	case "recognizer-decision-json", "recognizer-decision", "recognizer-match-json":
+		return session.RecognizerDecision(firstNonEmpty(req.Input, req.Text, req.Query)), true
 	case "apply-switch-json", "apply-switch", "toggle-switch", "switch":
 		value := false
 		if req.Value != nil {
