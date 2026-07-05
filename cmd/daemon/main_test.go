@@ -321,6 +321,88 @@ func TestProfileEndpointExportsAndImportsBundle(t *testing.T) {
 	}
 }
 
+func TestSyncEndpointsExportAndImportProfileBundle(t *testing.T) {
+	dir := t.TempDir()
+	config := engine.DefaultConfig()
+	config.Sync.Directory = filepath.Join(dir, "sync")
+	state := &AppState{
+		config:   normalizeConfig(config),
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(dir, "shurufa233", "config.json"),
+	}
+	state.sessions["default"] = state.engine
+	state.engine.ImportUserScores(map[string]int{"nihao|你好": 25})
+	state.engine.AddUserPhrases([]engine.Entry{{Reading: "msd", Text: "马上到", Weight: 60000}})
+
+	req := httptest.NewRequest(http.MethodPost, "/sync/export", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	state.exportSyncProfile(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	bundlePath := filepath.Join(config.Sync.Directory, "shurufa233-profile.json")
+	if _, err := os.Stat(bundlePath); err != nil {
+		t.Fatalf("exported sync profile missing: %v", err)
+	}
+
+	state.engine.ReplaceUserScores(map[string]int{})
+	state.engine.ReplaceUserPhrases(nil)
+	req = httptest.NewRequest(http.MethodPost, "/sync/import", strings.NewReader(`{"merge":true}`))
+	rec = httptest.NewRecorder()
+	state.importSyncProfile(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if state.engine.UserScores()["nihao|你好"] != 25 || len(state.engine.UserPhrases()) != 1 {
+		t.Fatalf("sync import did not restore profile: scores=%#v phrases=%#v", state.engine.UserScores(), state.engine.UserPhrases())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/sync", nil)
+	rec = httptest.NewRecorder()
+	state.syncStatus(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var status struct {
+		OK     bool `json:"ok"`
+		Exists bool `json:"exists"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.OK || !status.Exists {
+		t.Fatalf("sync status = %#v", status)
+	}
+}
+
+func TestPutSyncConfigPersistsDirectory(t *testing.T) {
+	config := engine.DefaultConfig()
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	state.sessions["default"] = state.engine
+	req := httptest.NewRequest(http.MethodPut, "/sync", strings.NewReader(`{"sync":{"enabled":true,"provider":"local-directory","directory":"D:/Sync/shurufa233","conflictPolicy":"replace-local"}}`))
+	rec := httptest.NewRecorder()
+	state.putSyncConfig(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !state.config.Sync.Enabled || state.config.Sync.Directory != "D:/Sync/shurufa233" || state.config.Sync.ConflictPolicy != "replace-local" {
+		t.Fatalf("sync config = %#v", state.config.Sync)
+	}
+	saved, err := os.ReadFile(state.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(saved), `"directory": "D:/Sync/shurufa233"`) {
+		t.Fatalf("saved sync config missing directory: %s", saved)
+	}
+}
+
 func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.CandidatePageSize = 5

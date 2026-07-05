@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +33,8 @@ var abiFeatureList = []string{
 	"agent-compose",
 	"agent-config-json",
 	"apply-agent-config-json",
+	"profile-sync-json",
+	"apply-sync-config-json",
 	"rime-compatible-dictionaries",
 	"gzip-dictionaries",
 	"abbreviation-candidates",
@@ -171,6 +175,7 @@ type extensionCommandPayload struct {
 	Query        string             `json:"query,omitempty"`
 	Config       *engine.Config     `json:"config,omitempty"`
 	Agent        *engine.Agent      `json:"agent,omitempty"`
+	Sync         *engine.Sync       `json:"sync,omitempty"`
 	AppContext   *engine.AppContext `json:"appContext,omitempty"`
 	Rules        []engine.AppRule   `json:"rules,omitempty"`
 	UserScores   map[string]int     `json:"userScores,omitempty"`
@@ -180,6 +185,8 @@ type extensionCommandPayload struct {
 	Rejects      []engine.Entry     `json:"rejects,omitempty"`
 	Pins         []engine.Entry     `json:"pins,omitempty"`
 	Merge        bool               `json:"merge,omitempty"`
+	Directory    string             `json:"directory,omitempty"`
+	Path         string             `json:"path,omitempty"`
 	Raw          *json.RawMessage   `json:"raw,omitempty"`
 }
 
@@ -375,6 +382,117 @@ func applyAgentConfigPayload(req extensionCommandPayload) map[string]any {
 	}
 	config = normalizeConfig(config)
 	return applyConfigEnvelope(config)
+}
+
+func syncConfigEnvelope() map[string]any {
+	config := loadConfig()
+	directory := resolveSyncDirectory(config, "")
+	path := filepath.Join(directory, "shurufa233-profile.json")
+	_, statErr := os.Stat(path)
+	return map[string]any{
+		"ok":         true,
+		"sync":       engine.NormalizeSync(config.Sync),
+		"directory":  directory,
+		"bundlePath": path,
+		"exists":     statErr == nil,
+		"updatedAt":  time.Now().UTC(),
+	}
+}
+
+func applySyncConfigPayload(req extensionCommandPayload) map[string]any {
+	config := loadConfig()
+	if req.Sync != nil {
+		config.Sync = *req.Sync
+	}
+	if strings.TrimSpace(req.Directory) != "" {
+		config.Sync.Directory = strings.TrimSpace(req.Directory)
+	}
+	config = normalizeConfig(config)
+	result := applyConfigEnvelope(config)
+	result["sync"] = config.Sync
+	result["directory"] = resolveSyncDirectory(config, "")
+	return result
+}
+
+func exportProfileSyncPayload(session *engine.Engine, req extensionCommandPayload) any {
+	config := loadConfig()
+	path := resolveSyncProfilePath(config, req)
+	bundle := buildProfileBundle(session)
+	if err := writeJSONAtomic(path, bundle); err != nil {
+		return errorEnvelope(err.Error())
+	}
+	return map[string]any{
+		"ok":        true,
+		"exported":  true,
+		"path":      path,
+		"profile":   bundle,
+		"updatedAt": time.Now().UTC(),
+	}
+}
+
+func importProfileSyncPayload(session *engine.Engine, req extensionCommandPayload) any {
+	config := loadConfig()
+	path := resolveSyncProfilePath(config, req)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return errorEnvelope(err.Error())
+	}
+	bundle, err := decodeProfileBundle(string(data))
+	if err != nil {
+		return errorEnvelope(err.Error())
+	}
+	if config.Sync.ConflictPolicy != "replace-local" {
+		bundle.Merge = true
+	}
+	if req.Merge {
+		bundle.Merge = true
+	}
+	result := importProfileBundle(session, bundle)
+	result["path"] = path
+	return result
+}
+
+func resolveSyncProfilePath(config engine.Config, req extensionCommandPayload) string {
+	if strings.TrimSpace(req.Path) != "" {
+		return filepath.Clean(strings.TrimSpace(req.Path))
+	}
+	return filepath.Join(resolveSyncDirectory(config, req.Directory), "shurufa233-profile.json")
+}
+
+func resolveSyncDirectory(config engine.Config, override string) string {
+	if strings.TrimSpace(override) != "" {
+		return filepath.Clean(strings.TrimSpace(override))
+	}
+	if strings.TrimSpace(config.Sync.Directory) != "" {
+		return filepath.Clean(strings.TrimSpace(config.Sync.Directory))
+	}
+	configPath, err := configFile()
+	if err != nil {
+		return filepath.Join(os.TempDir(), "shurufa233", "sync")
+	}
+	return filepath.Join(filepath.Dir(configPath), "sync")
+}
+
+func writeJSONAtomic(path string, value any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(path)
+		if retryErr := os.Rename(tmp, path); retryErr != nil {
+			_ = os.Remove(tmp)
+			return retryErr
+		}
+	}
+	return nil
 }
 
 func decodeRimeCustomText(payload string) (string, error) {
@@ -1184,6 +1302,14 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return agentConfigEnvelope(), true
 	case "apply-agent-config-json", "apply-agent-config":
 		return applyAgentConfigPayload(req), true
+	case "sync-config-json", "profile-sync-json", "sync-json", "sync":
+		return syncConfigEnvelope(), true
+	case "apply-sync-config-json", "apply-sync-config":
+		return applySyncConfigPayload(req), true
+	case "export-profile-sync-json", "profile-sync-export", "sync-export":
+		return exportProfileSyncPayload(session, req), true
+	case "import-profile-sync-json", "profile-sync-import", "sync-import":
+		return importProfileSyncPayload(session, req), true
 	case "dictionary-sources-json", "dictionary-source-presets", "update-sources":
 		return map[string]any{
 			"ok":        true,

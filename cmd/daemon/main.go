@@ -144,6 +144,13 @@ type agentRequest = engine.AgentComposeRequest
 
 type agentResponse = engine.AgentComposeResponse
 
+type syncRequest struct {
+	Sync      *engine.Sync `json:"sync,omitempty"`
+	Directory string       `json:"directory,omitempty"`
+	Path      string       `json:"path,omitempty"`
+	Merge     *bool        `json:"merge,omitempty"`
+}
+
 type dictionaryManifest struct {
 	Version      string                 `json:"version"`
 	Channel      string                 `json:"channel"`
@@ -313,6 +320,10 @@ func main() {
 	mux.HandleFunc("DELETE /pins", state.withCORS(state.pins))
 	mux.HandleFunc("GET /profile", state.withCORS(state.profile))
 	mux.HandleFunc("PUT /profile", state.withCORS(state.profile))
+	mux.HandleFunc("GET /sync", state.withCORS(state.syncStatus))
+	mux.HandleFunc("PUT /sync", state.withCORS(state.putSyncConfig))
+	mux.HandleFunc("POST /sync/export", state.withCORS(state.exportSyncProfile))
+	mux.HandleFunc("POST /sync/import", state.withCORS(state.importSyncProfile))
 	mux.HandleFunc("GET /catalog", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /symbols", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /updates/check", state.withCORS(state.checkUpdates))
@@ -962,6 +973,126 @@ func (s *AppState) profile(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *AppState) syncStatus(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	directory := s.resolveSyncDirectoryLocked(s.config.Sync.Directory)
+	bundlePath := filepath.Join(directory, "shurufa233-profile.json")
+	_, statErr := os.Stat(bundlePath)
+	writeJSON(w, map[string]any{
+		"ok":         true,
+		"sync":       engine.NormalizeSync(s.config.Sync),
+		"directory":  directory,
+		"bundlePath": bundlePath,
+		"exists":     statErr == nil,
+		"profile":    s.profileBundleLocked(),
+		"updatedAt":  time.Now().UTC(),
+	})
+}
+
+func (s *AppState) putSyncConfig(w http.ResponseWriter, r *http.Request) {
+	var req syncRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.config
+	if req.Sync != nil {
+		next.Sync = *req.Sync
+	}
+	if strings.TrimSpace(req.Directory) != "" {
+		next.Sync.Directory = strings.TrimSpace(req.Directory)
+	}
+	next = normalizeConfig(next)
+	s.config = next
+	s.engine.Configure(next)
+	for _, session := range s.sessions {
+		if session != nil {
+			session.Configure(next)
+		}
+	}
+	if err := s.saveLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, s.syncEnvelopeLocked("", false))
+}
+
+func (s *AppState) exportSyncProfile(w http.ResponseWriter, r *http.Request) {
+	var req syncRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.RLock()
+	bundle := s.profileBundleLocked()
+	directory := s.resolveSyncDirectoryLocked(req.Directory)
+	s.mu.RUnlock()
+	if strings.TrimSpace(req.Path) != "" {
+		directory = filepath.Dir(req.Path)
+	}
+	path := filepath.Join(directory, "shurufa233-profile.json")
+	if strings.TrimSpace(req.Path) != "" {
+		path = req.Path
+	}
+	if err := writeJSONFileAtomic(path, bundle); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":        true,
+		"exported":  true,
+		"path":      path,
+		"profile":   bundle,
+		"updatedAt": time.Now().UTC(),
+	})
+}
+
+func (s *AppState) importSyncProfile(w http.ResponseWriter, r *http.Request) {
+	var req syncRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.RLock()
+	directory := s.resolveSyncDirectoryLocked(req.Directory)
+	merge := s.config.Sync.ConflictPolicy != "replace-local"
+	s.mu.RUnlock()
+	if req.Merge != nil {
+		merge = *req.Merge
+	}
+	path := filepath.Join(directory, "shurufa233-profile.json")
+	if strings.TrimSpace(req.Path) != "" {
+		path = req.Path
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	var bundle profileBundle
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	bundle.Merge = merge
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.applyProfileBundleLocked(bundle); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":        true,
+		"imported":  true,
+		"path":      path,
+		"profile":   s.profileBundleLocked(),
+		"updatedAt": time.Now().UTC(),
+	})
 }
 
 func (s *AppState) catalog(w http.ResponseWriter, r *http.Request) {
@@ -2083,6 +2214,34 @@ func (s *AppState) profileBundleLocked() profileBundle {
 	}
 }
 
+func (s *AppState) syncEnvelopeLocked(path string, exists bool) map[string]any {
+	directory := s.resolveSyncDirectoryLocked(s.config.Sync.Directory)
+	if path == "" {
+		path = filepath.Join(directory, "shurufa233-profile.json")
+		_, err := os.Stat(path)
+		exists = err == nil
+	}
+	return map[string]any{
+		"ok":         true,
+		"sync":       engine.NormalizeSync(s.config.Sync),
+		"directory":  directory,
+		"bundlePath": path,
+		"exists":     exists,
+		"profile":    s.profileBundleLocked(),
+		"updatedAt":  time.Now().UTC(),
+	}
+}
+
+func (s *AppState) resolveSyncDirectoryLocked(override string) string {
+	if strings.TrimSpace(override) != "" {
+		return filepath.Clean(strings.TrimSpace(override))
+	}
+	if strings.TrimSpace(s.config.Sync.Directory) != "" {
+		return filepath.Clean(strings.TrimSpace(s.config.Sync.Directory))
+	}
+	return filepath.Join(filepath.Dir(s.path), "sync")
+}
+
 func (s *AppState) applyProfileBundleLocked(bundle profileBundle) error {
 	if bundle.Config != nil {
 		next := normalizeConfig(*bundle.Config)
@@ -2323,6 +2482,28 @@ func (s *AppState) writeUserScores(scores map[string]int) error {
 	return nil
 }
 
+func writeJSONFileAtomic(path string, value any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(path)
+		if retryErr := os.Rename(tmp, path); retryErr != nil {
+			_ = os.Remove(tmp)
+			return retryErr
+		}
+	}
+	return nil
+}
+
 func (s *AppState) withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); isAllowedLocalOrigin(origin) {
@@ -2503,6 +2684,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	config.RecognizerPatterns = engine.NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = engine.NormalizeAppRules(config.AppRules)
 	config.Agent = engine.NormalizeAgent(config.Agent)
+	config.Sync = engine.NormalizeSync(config.Sync)
 	return config
 }
 

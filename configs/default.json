@@ -46,5 +46,15 @@
     "autoCheck": true,
     "autoApply": false,
     "installedVersion": "builtin"
+  },
+  "sync": {
+    "enabled": false,
+    "provider": "local-directory",
+    "directory": "",
+    "remoteUrl": "",
+    "mirrorBaseUrls": [],
+    "autoExport": false,
+    "autoImport": false,
+    "conflictPolicy": "merge-newer"
   }
 }

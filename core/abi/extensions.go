@@ -274,6 +274,38 @@ func ShurufaApplyAgentConfigJSON(payload *C.char) *C.char {
 	return jsonCString(applyAgentConfigPayload(req))
 }
 
+//export ShurufaSyncConfigJSON
+func ShurufaSyncConfigJSON() *C.char {
+	return jsonCString(syncConfigEnvelope())
+}
+
+//export ShurufaApplySyncConfigJSON
+func ShurufaApplySyncConfigJSON(payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(applySyncConfigPayload(req))
+}
+
+//export ShurufaExportProfileSyncJSON
+func ShurufaExportProfileSyncJSON(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(exportProfileSyncPayload(getSession(uint64(id)), req))
+}
+
+//export ShurufaImportProfileSyncJSON
+func ShurufaImportProfileSyncJSON(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(importProfileSyncPayload(getSession(uint64(id)), req))
+}
+
 //export ShurufaReloadConfig
 func ShurufaReloadConfig() *C.char {
 	config := loadConfig()

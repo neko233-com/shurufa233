@@ -115,6 +115,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	config.RecognizerPatterns = engine.NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = engine.NormalizeAppRules(config.AppRules)
 	config.Agent = engine.NormalizeAgent(config.Agent)
+	config.Sync = engine.NormalizeSync(config.Sync)
 	return config
 }
 

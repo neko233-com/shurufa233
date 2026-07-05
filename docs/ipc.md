@@ -23,6 +23,10 @@ The background daemon listens on `127.0.0.1:23333`.
 - `DELETE /pins`
 - `GET /profile`
 - `PUT /profile`
+- `GET /sync`
+- `PUT /sync`
+- `POST /sync/export`
+- `POST /sync/import`
 - `GET /catalog`
 - `GET /symbols`
 - `GET /updates/check`
@@ -185,6 +189,35 @@ the daemon-level contract for Rime-style user data backup, cross-device restore,
 and later cloud sync. The CLI mirrors it through
 `shurufa-imecli profile export [profile.json]` and
 `shurufa-imecli profile import profile.json [--replace]`.
+
+`GET /sync` returns the Rime-style profile sync status. It reports the normalized
+`config.sync`, resolved local sync directory, target bundle path, whether a
+bundle exists, and current profile counts. `PUT /sync` updates only the sync
+configuration:
+
+```json
+{
+  "sync": {
+    "enabled": true,
+    "provider": "local-directory",
+    "directory": "D:/Sync/shurufa233",
+    "remoteUrl": "https://github.com/user/private-sync/releases/latest/download",
+    "mirrorBaseUrls": ["https://gh-proxy.com/{url}"],
+    "autoExport": false,
+    "autoImport": false,
+    "conflictPolicy": "merge-newer"
+  }
+}
+```
+
+`POST /sync/export` writes the current profile bundle to
+`<sync directory>/shurufa233-profile.json` atomically. `POST /sync/import` reads
+that bundle and applies it; pass `{"merge":false}` or set
+`conflictPolicy=replace-local` to replace local sections. The current
+implementation is intentionally local-directory first and never uploads private
+user data by itself. `remoteUrl` and `mirrorBaseUrls` reserve the GitHub/WebDAV
+or China-friendly mirror protocol surface for a later authenticated sync runner.
+The CLI mirrors this through `shurufa-imecli sync status|config|export|import`.
 
 `GET /catalog` returns the shared emoji, kaomoji, symbol, and agent resource
 catalog. Query parameters are `kind=all|emoji|kaomoji|symbol|agent`,

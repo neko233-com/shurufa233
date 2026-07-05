@@ -141,6 +141,10 @@ char* ShurufaImportProfileJSON(uint64_t session, char* json);
 char* ShurufaCommitText(uint64_t session, char* reading, char* text);
 char* ShurufaAgentConfigJSON(void);
 char* ShurufaApplyAgentConfigJSON(char* json);
+char* ShurufaSyncConfigJSON(void);
+char* ShurufaApplySyncConfigJSON(char* json);
+char* ShurufaExportProfileSyncJSON(uint64_t session, char* json);
+char* ShurufaImportProfileSyncJSON(uint64_t session, char* json);
 char* ShurufaAgentCompose(char* input, char* context);
 char* ShurufaSelectCandidateChar(uint64_t session, int index, const char* side);
 char* ShurufaExecuteCommand(uint64_t session, const char* command, const char* json);
@@ -165,7 +169,7 @@ C++ export on developer machines that only consume packaged builds.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
+`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `profile-sync-json`, `apply-sync-config-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -216,6 +220,10 @@ config-json
 apply-config-json       { ...engine.Config } or {"config":{...}}
 agent-config-json
 apply-agent-config-json {"agent":{"provider":"local","model":"qwen","endpoint":"http://127.0.0.1:8787"}}
+sync-config-json
+apply-sync-config-json {"sync":{"enabled":true,"provider":"local-directory","directory":"D:/Sync/shurufa233"}}
+sync-export             {"directory":"D:/Sync/shurufa233"}
+sync-import             {"directory":"D:/Sync/shurufa233","merge":true}
 schema-presets-json
 apply-schema-json       {"id":"double-pinyin-microsoft"}
 rime-custom-json        {"yaml":"patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n"}
@@ -441,6 +449,16 @@ local profile sections when `merge=false`:
   "merge": true
 }
 ```
+
+`ShurufaSyncConfigJSON`, `ShurufaApplySyncConfigJSON`,
+`ShurufaExportProfileSyncJSON`, `ShurufaImportProfileSyncJSON`, and the
+`sync-*` command aliases reserve the Rime-style user-data sync surface. The
+shared config carries `sync.enabled`, `provider`, `directory`, optional
+`remoteUrl`, `mirrorBaseUrls`, `autoExport`, `autoImport`, and
+`conflictPolicy`. The implemented path writes or reads
+`shurufa233-profile.json` from a local sync directory; remote GitHub/WebDAV
+fields are protocol metadata for future authenticated runners and are not used
+by the TSF hot path.
 
 `ShurufaAgentCompose` is the native bridge for agent-style input actions. It
 returns built-in prompt candidates today and keeps the ABI stable for later

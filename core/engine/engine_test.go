@@ -1326,6 +1326,21 @@ func TestNormalizeAgentDefaultsAndClamps(t *testing.T) {
 	}
 }
 
+func TestNormalizeSyncDefaultsAndPolicy(t *testing.T) {
+	got := NormalizeSync(Sync{Enabled: true, Provider: " GitHub ", Directory: " D:/Sync/shurufa233 ", ConflictPolicy: "replace-local", MirrorBaseURLs: []string{" https://mirror.example ", "https://mirror.example"}})
+	if !got.Enabled || got.Provider != "github" || got.Directory != "D:/Sync/shurufa233" || got.ConflictPolicy != "replace-local" || len(got.MirrorBaseURLs) != 1 {
+		t.Fatalf("normalized sync = %#v", got)
+	}
+	fallback := NormalizeSync(Sync{Provider: "wat", ConflictPolicy: "wat"})
+	if fallback.Provider != "local-directory" || fallback.ConflictPolicy != "merge-newer" {
+		t.Fatalf("fallback sync = %#v", fallback)
+	}
+	local := NormalizeSync(Sync{Provider: " directory "})
+	if local.Provider != "local-directory" {
+		t.Fatalf("local alias sync = %#v", local)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

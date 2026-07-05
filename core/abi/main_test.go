@@ -374,6 +374,8 @@ func TestCapabilitiesIncludeApplyAppRulesAndUserDataDelete(t *testing.T) {
 	want := map[string]bool{
 		"agent-config-json":       false,
 		"apply-agent-config-json": false,
+		"profile-sync-json":       false,
+		"apply-sync-config-json":  false,
 		"apply-app-rules-json":    false,
 		"user-data-delete-json":   false,
 	}
@@ -790,6 +792,49 @@ func TestExecuteExtensionCommandProfileBundle(t *testing.T) {
 	}
 	if session.UserScores()["ceshi|测试"] != 50 || len(session.UserPhrases()) != 1 || session.UserPhrases()[0].Reading != "yyds" {
 		t.Fatalf("profile import did not update session: scores=%#v phrases=%#v", session.UserScores(), session.UserPhrases())
+	}
+}
+
+func TestExecuteExtensionCommandProfileSync(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SHURUFA233_CONFIG", filepath.Join(dir, "config.json"))
+	session := engine.New(engine.DefaultConfig())
+	session.ImportUserScores(map[string]int{"nihao|你好": 25})
+	session.AddUserPhrases([]engine.Entry{{Reading: "msd", Text: "马上到", Weight: 60000}})
+	syncDir := filepath.Join(dir, "sync")
+
+	got, handled := executeSessionExtensionCommand(session, "apply-sync-config-json", `{"sync":{"enabled":true,"provider":"local-directory","directory":"`+filepath.ToSlash(syncDir)+`","conflictPolicy":"merge-newer"}}`)
+	if !handled {
+		t.Fatal("apply-sync-config-json command was not handled")
+	}
+	if result, ok := got.(map[string]any); !ok || result["ok"] != true {
+		t.Fatalf("apply sync config = %#v", got)
+	}
+
+	exported, handled := executeSessionExtensionCommand(session, "sync-export", `{}`)
+	if !handled {
+		t.Fatal("sync-export command was not handled")
+	}
+	exportResult, ok := exported.(map[string]any)
+	if !ok || exportResult["ok"] != true {
+		t.Fatalf("sync export = %#v", exported)
+	}
+	if _, err := os.Stat(filepath.Join(syncDir, "shurufa233-profile.json")); err != nil {
+		t.Fatalf("sync profile was not written: %v", err)
+	}
+
+	session.ReplaceUserScores(map[string]int{})
+	session.ReplaceUserPhrases(nil)
+	imported, handled := executeSessionExtensionCommand(session, "sync-import", `{}`)
+	if !handled {
+		t.Fatal("sync-import command was not handled")
+	}
+	importResult, ok := imported.(map[string]any)
+	if !ok || importResult["ok"] != true {
+		t.Fatalf("sync import = %#v", imported)
+	}
+	if session.UserScores()["nihao|你好"] != 25 || len(session.UserPhrases()) != 1 {
+		t.Fatalf("sync import did not restore session: scores=%#v phrases=%#v", session.UserScores(), session.UserPhrases())
 	}
 }
 

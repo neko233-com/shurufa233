@@ -31,6 +31,7 @@ type Config struct {
 	Skin                  Skin                `json:"skin"`
 	Update                Update              `json:"update"`
 	Agent                 Agent               `json:"agent"`
+	Sync                  Sync                `json:"sync"`
 }
 
 type AppRule struct {
@@ -181,6 +182,17 @@ type Agent struct {
 	Triggers     []string `json:"triggers,omitempty"`
 	Actions      []string `json:"actions,omitempty"`
 	TimeoutMs    int      `json:"timeoutMs"`
+}
+
+type Sync struct {
+	Enabled        bool     `json:"enabled"`
+	Provider       string   `json:"provider"`
+	Directory      string   `json:"directory,omitempty"`
+	RemoteURL      string   `json:"remoteUrl,omitempty"`
+	MirrorBaseURLs []string `json:"mirrorBaseUrls,omitempty"`
+	AutoExport     bool     `json:"autoExport"`
+	AutoImport     bool     `json:"autoImport"`
+	ConflictPolicy string   `json:"conflictPolicy"`
 }
 
 type AgentComposeRequest struct {

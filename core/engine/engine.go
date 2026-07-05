@@ -90,6 +90,7 @@ func DefaultConfig() Config {
 			InstalledVersion: "builtin",
 		},
 		Agent: defaultAgentConfig(),
+		Sync:  defaultSyncConfig(),
 	}
 }
 
@@ -107,6 +108,7 @@ func New(config Config) *Engine {
 	config.RecognizerPatterns = NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = NormalizeAppRules(config.AppRules)
 	config.Agent = NormalizeAgent(config.Agent)
+	config.Sync = NormalizeSync(config.Sync)
 	e := &Engine{
 		config:  config,
 		dict:    make(map[string][]Entry),
@@ -136,6 +138,7 @@ func (e *Engine) Configure(config Config) {
 	config.RecognizerPatterns = NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = NormalizeAppRules(config.AppRules)
 	config.Agent = NormalizeAgent(config.Agent)
+	config.Sync = NormalizeSync(config.Sync)
 	e.config = config
 }
 

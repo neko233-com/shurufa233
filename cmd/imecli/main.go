@@ -270,6 +270,30 @@ type profileBundle struct {
 	Counts     map[string]int `json:"counts,omitempty"`
 }
 
+type syncConfig struct {
+	Enabled        bool     `json:"enabled"`
+	Provider       string   `json:"provider"`
+	Directory      string   `json:"directory,omitempty"`
+	RemoteURL      string   `json:"remoteUrl,omitempty"`
+	MirrorBaseURLs []string `json:"mirrorBaseUrls,omitempty"`
+	AutoExport     bool     `json:"autoExport"`
+	AutoImport     bool     `json:"autoImport"`
+	ConflictPolicy string   `json:"conflictPolicy"`
+}
+
+type syncResponse struct {
+	OK         bool          `json:"ok"`
+	Sync       syncConfig    `json:"sync"`
+	Directory  string        `json:"directory"`
+	BundlePath string        `json:"bundlePath"`
+	Exists     bool          `json:"exists"`
+	Profile    profileBundle `json:"profile,omitempty"`
+	Exported   bool          `json:"exported,omitempty"`
+	Imported   bool          `json:"imported,omitempty"`
+	Path       string        `json:"path,omitempty"`
+	UpdatedAt  string        `json:"updatedAt"`
+}
+
 type catalogResponse struct {
 	Kind      string        `json:"kind"`
 	Query     string        `json:"query,omitempty"`
@@ -350,6 +374,8 @@ func main() {
 		err = pins(client, os.Args[2:])
 	case "profile":
 		err = profile(client, os.Args[2:])
+	case "sync":
+		err = syncCmd(client, os.Args[2:])
 	case "catalog", "symbols", "symbol":
 		err = catalog(client, os.Args[2:])
 	case "reverse", "lookup", "fancha":
@@ -406,6 +432,10 @@ Usage:
   shurufa-imecli pins clear
   shurufa-imecli profile export [profile.json]
   shurufa-imecli profile import profile.json [--replace]
+  shurufa-imecli sync status
+  shurufa-imecli sync config [--dir PATH] [--provider local-directory|github|webdav] [--remote URL] [--mirror URL] [--enable|--disable] [--policy merge-newer|replace-local]
+  shurufa-imecli sync export [--dir PATH]
+  shurufa-imecli sync import [--dir PATH] [--replace]
   shurufa-imecli symbols [all|emoji|kaomoji|symbol|agent] [query] [--limit N]
   shurufa-imecli reverse "你好" [--limit N]
   shurufa-imecli update-sources
@@ -1553,6 +1583,199 @@ func readProfileFile(path string) (profileBundle, error) {
 		return profileBundle{}, err
 	}
 	return bundle, nil
+}
+
+func syncCmd(client *http.Client, args []string) error {
+	action := "status"
+	if len(args) > 0 {
+		action = strings.ToLower(strings.TrimSpace(args[0]))
+		args = args[1:]
+	}
+	switch action {
+	case "status", "info":
+		var response syncResponse
+		if err := getJSON(client, "/sync", &response); err != nil {
+			return err
+		}
+		printSyncResponse(response)
+		return nil
+	case "config", "set":
+		payload, err := parseSyncConfigArgs(args)
+		if err != nil {
+			return err
+		}
+		var response syncResponse
+		if err := putJSON(client, "/sync", payload, &response); err != nil {
+			return err
+		}
+		printSyncResponse(response)
+		return nil
+	case "export", "push":
+		payload, err := parseSyncPathArgs(args)
+		if err != nil {
+			return err
+		}
+		var response syncResponse
+		if err := postJSON(client, "/sync/export", payload, &response); err != nil {
+			return err
+		}
+		printSyncResponse(response)
+		return nil
+	case "import", "pull":
+		payload, err := parseSyncPathArgs(args)
+		if err != nil {
+			return err
+		}
+		if hasArg(args, "--replace") {
+			payload["merge"] = false
+		}
+		var response syncResponse
+		if err := postJSON(client, "/sync/import", payload, &response); err != nil {
+			return err
+		}
+		printSyncResponse(response)
+		return nil
+	default:
+		return fmt.Errorf("unknown sync action %q", action)
+	}
+}
+
+func parseSyncConfigArgs(args []string) (map[string]any, error) {
+	sync := map[string]any{}
+	payload := map[string]any{"sync": sync}
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		if arg == "" {
+			continue
+		}
+		value := ""
+		if strings.Contains(arg, "=") {
+			parts := strings.SplitN(arg, "=", 2)
+			arg, value = parts[0], parts[1]
+		} else if optionNeedsValue(arg) {
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("%s requires a value", arg)
+			}
+			i++
+			value = args[i]
+		}
+		switch strings.ToLower(arg) {
+		case "--enable":
+			sync["enabled"] = true
+		case "--disable":
+			sync["enabled"] = false
+		case "--dir", "--directory":
+			sync["directory"] = value
+			payload["directory"] = value
+		case "--provider":
+			sync["provider"] = value
+		case "--remote", "--remote-url":
+			sync["remoteUrl"] = value
+		case "--mirror", "--mirror-url":
+			sync["mirrorBaseUrls"] = appendStringValue(sync["mirrorBaseUrls"], value)
+		case "--policy", "--conflict-policy":
+			sync["conflictPolicy"] = value
+		case "--auto-export":
+			sync["autoExport"] = true
+		case "--auto-import":
+			sync["autoImport"] = true
+		default:
+			return nil, fmt.Errorf("unknown sync config option %q", arg)
+		}
+	}
+	return payload, nil
+}
+
+func parseSyncPathArgs(args []string) (map[string]any, error) {
+	payload := map[string]any{"merge": true}
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		if arg == "" || arg == "--replace" {
+			continue
+		}
+		value := ""
+		if strings.Contains(arg, "=") {
+			parts := strings.SplitN(arg, "=", 2)
+			arg, value = parts[0], parts[1]
+		} else {
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("%s requires a value", arg)
+			}
+			i++
+			value = args[i]
+		}
+		switch strings.ToLower(arg) {
+		case "--dir", "--directory":
+			payload["directory"] = value
+		case "--path":
+			payload["path"] = value
+		default:
+			return nil, fmt.Errorf("unknown sync option %q", arg)
+		}
+	}
+	return payload, nil
+}
+
+func optionNeedsValue(arg string) bool {
+	switch strings.ToLower(strings.TrimSpace(arg)) {
+	case "--dir", "--directory", "--provider", "--remote", "--remote-url", "--mirror", "--mirror-url", "--policy", "--conflict-policy", "--path":
+		return true
+	default:
+		return false
+	}
+}
+
+func appendStringValue(existing any, value string) []string {
+	var out []string
+	if values, ok := existing.([]string); ok {
+		out = append(out, values...)
+	}
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func hasArg(args []string, want string) bool {
+	for _, arg := range args {
+		if strings.EqualFold(strings.TrimSpace(arg), want) {
+			return true
+		}
+	}
+	return false
+}
+
+func printSyncResponse(response syncResponse) {
+	path := response.Path
+	if path == "" {
+		path = response.BundlePath
+	}
+	if response.Sync.Provider != "" || response.Sync.Directory != "" || response.Sync.ConflictPolicy != "" {
+		fmt.Printf("enabled=%v provider=%s policy=%s exists=%v\n", response.Sync.Enabled, response.Sync.Provider, response.Sync.ConflictPolicy, response.Exists)
+	}
+	if response.Directory != "" {
+		fmt.Printf("directory=%s\n", response.Directory)
+	}
+	if path != "" {
+		fmt.Printf("bundle=%s\n", path)
+	}
+	if response.Exported {
+		fmt.Println("exported=true")
+	}
+	if response.Imported {
+		fmt.Println("imported=true")
+	}
+	if response.Profile.Counts != nil {
+		fmt.Printf("scores=%d phrases=%d rejects=%d pins=%d\n",
+			response.Profile.Counts["userScores"],
+			response.Profile.Counts["phrases"],
+			response.Profile.Counts["rejects"],
+			response.Profile.Counts["pins"],
+		)
+	}
 }
 
 func catalog(client *http.Client, args []string) error {

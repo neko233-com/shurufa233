@@ -65,6 +65,7 @@ type Config = {
   skin: Skin;
   update: UpdateConfig;
   agent: AgentConfig;
+  sync: SyncConfig;
 };
 
 type AgentConfig = {
@@ -76,6 +77,17 @@ type AgentConfig = {
   triggers?: string[];
   actions?: string[];
   timeoutMs: number;
+};
+
+type SyncConfig = {
+  enabled: boolean;
+  provider: string;
+  directory?: string;
+  remoteUrl?: string;
+  mirrorBaseUrls?: string[];
+  autoExport: boolean;
+  autoImport: boolean;
+  conflictPolicy: "merge-newer" | "replace-local" | "local-wins" | "remote-wins";
 };
 
 type AppRule = {
@@ -299,6 +311,19 @@ type ProfileBundle = {
   counts?: Record<string, number>;
 };
 
+type SyncResponse = {
+  ok: boolean;
+  sync: SyncConfig;
+  directory: string;
+  bundlePath: string;
+  exists: boolean;
+  profile?: ProfileBundle;
+  exported?: boolean;
+  imported?: boolean;
+  path?: string;
+  updatedAt: string;
+};
+
 type CatalogResponse = {
   kind: string;
   query?: string;
@@ -484,6 +509,16 @@ const defaultConfig: Config = {
     triggers: ["/ask", "/rewrite", "/translate"],
     actions: ["commit", "copy", "open-settings", "handoff"],
     timeoutMs: 12000,
+  },
+  sync: {
+    enabled: false,
+    provider: "local-directory",
+    directory: "",
+    remoteUrl: "",
+    mirrorBaseUrls: [],
+    autoExport: false,
+    autoImport: false,
+    conflictPolicy: "merge-newer",
   },
 };
 
@@ -697,6 +732,17 @@ function hydrateConfig(config: Config): Config {
       actions: config.agent?.actions?.length ? config.agent.actions : defaultConfig.agent.actions,
       timeoutMs: Math.min(120000, Math.max(1000, config.agent?.timeoutMs || defaultConfig.agent.timeoutMs)),
     },
+    sync: {
+      ...defaultConfig.sync,
+      ...config.sync,
+      mirrorBaseUrls: config.sync?.mirrorBaseUrls ?? defaultConfig.sync.mirrorBaseUrls,
+      conflictPolicy:
+        config.sync?.conflictPolicy === "replace-local" ||
+        config.sync?.conflictPolicy === "local-wins" ||
+        config.sync?.conflictPolicy === "remote-wins"
+          ? config.sync.conflictPolicy
+          : "merge-newer",
+    },
   };
 }
 
@@ -800,6 +846,8 @@ function App() {
   const [pinText, setPinText] = useState("未读取");
   const [profileDraft, setProfileDraft] = useState("{}");
   const [profileText, setProfileText] = useState("未导出");
+  const [syncText, setSyncText] = useState("未同步");
+  const [syncPath, setSyncPath] = useState("");
   const [catalogKind, setCatalogKind] = useState("all");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogEntries, setCatalogEntries] = useState<PhraseEntry[]>([]);
@@ -826,6 +874,7 @@ function App() {
     void loadRejects();
     void loadPins();
     void loadProfile(false);
+    void loadSyncStatus();
     void loadCatalog();
     void loadDictionarySources();
     void loadSchemas();
@@ -1781,6 +1830,96 @@ function App() {
     }
   }
 
+  async function loadSyncStatus() {
+    try {
+      const res = await fetch(`${apiBase}/sync`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as SyncResponse;
+      setConfig((current) => hydrateConfig({ ...current, sync: data.sync }));
+      setSyncPath(data.bundlePath);
+      setSyncText(data.exists ? `已发现同步包 · ${data.bundlePath}` : `同步目录 · ${data.directory}`);
+      if (data.profile) {
+        const counts = data.profile.counts ?? {};
+        setProfileText(`同步资料 · 用户词 ${counts.userScores ?? 0} · 短语 ${counts.phrases ?? 0}`);
+      }
+      setError("");
+    } catch (err) {
+      setSyncText("同步状态读取失败");
+      setError(err instanceof Error ? err.message : "sync status failed");
+    }
+  }
+
+  async function saveSyncConfig(nextSync: SyncConfig = config.sync) {
+    try {
+      const res = await fetch(`${apiBase}/sync`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sync: nextSync }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as SyncResponse;
+      setConfig((current) => hydrateConfig({ ...current, sync: data.sync }));
+      setSyncPath(data.bundlePath);
+      setSyncText(`同步设置已保存 · ${data.directory}`);
+      setStatus("saved");
+      window.setTimeout(() => setStatus("ready"), 1000);
+      setError("");
+    } catch (err) {
+      setSyncText("同步设置保存失败");
+      setError(err instanceof Error ? err.message : "sync config failed");
+    }
+  }
+
+  async function exportSyncProfile() {
+    try {
+      const res = await fetch(`${apiBase}/sync/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ directory: config.sync.directory }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as SyncResponse;
+      if (data.profile) {
+        setProfileDraft(JSON.stringify(data.profile, null, 2));
+      }
+      setSyncPath(data.path ?? data.bundlePath);
+      setSyncText(`已导出同步包 · ${data.path ?? data.bundlePath}`);
+      setError("");
+    } catch (err) {
+      setSyncText("同步导出失败");
+      setError(err instanceof Error ? err.message : "sync export failed");
+    }
+  }
+
+  async function importSyncProfile(merge: boolean) {
+    try {
+      const res = await fetch(`${apiBase}/sync/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ directory: config.sync.directory, merge }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as SyncResponse;
+      if (data.profile) {
+        setProfileDraft(JSON.stringify(data.profile, null, 2));
+        if (data.profile.config) {
+          setConfig(hydrateConfig(data.profile.config));
+        }
+      }
+      setSyncPath(data.path ?? data.bundlePath);
+      setSyncText(`${merge ? "已合并同步包" : "已替换为同步包"} · ${data.path ?? data.bundlePath}`);
+      void loadWordbook();
+      void loadPhrases();
+      void loadRejects();
+      void loadPins();
+      void runPreview(preview);
+      setError("");
+    } catch (err) {
+      setSyncText("同步导入失败");
+      setError(err instanceof Error ? err.message : "sync import failed");
+    }
+  }
+
   async function loadCatalog() {
     try {
       const query = new URLSearchParams({
@@ -2491,7 +2630,117 @@ function App() {
           <section className="panel">
             <div className="panelHeader">
               <h2>资料同步</h2>
-              <span>{profileText}</span>
+              <span>{syncText}</span>
+            </div>
+            <div className="syncGrid">
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.sync.enabled}
+                  onChange={(event) => setConfig({ ...config, sync: { ...config.sync, enabled: event.target.checked } })}
+                />
+                <span>启用同步配置</span>
+              </label>
+              <label className="field">
+                <span>Provider</span>
+                <select
+                  value={config.sync.provider}
+                  onChange={(event) => setConfig({ ...config, sync: { ...config.sync, provider: event.target.value } })}
+                >
+                  <option value="local-directory">本地目录</option>
+                  <option value="github">GitHub</option>
+                  <option value="webdav">WebDAV</option>
+                  <option value="none">关闭</option>
+                </select>
+              </label>
+              <label className="field syncWide">
+                <span>同步目录</span>
+                <input
+                  value={config.sync.directory ?? ""}
+                  placeholder="%APPDATA%/shurufa233/sync"
+                  onChange={(event) => setConfig({ ...config, sync: { ...config.sync, directory: event.target.value } })}
+                />
+              </label>
+              <label className="field syncWide">
+                <span>远端 URL</span>
+                <input
+                  value={config.sync.remoteUrl ?? ""}
+                  placeholder="https://github.com/user/private-sync/releases/latest/download"
+                  onChange={(event) => setConfig({ ...config, sync: { ...config.sync, remoteUrl: event.target.value } })}
+                />
+              </label>
+              <label className="field syncWide">
+                <span>镜像/CDN</span>
+                <input
+                  value={(config.sync.mirrorBaseUrls ?? []).join(", ")}
+                  onChange={(event) =>
+                    setConfig({
+                      ...config,
+                      sync: {
+                        ...config.sync,
+                        mirrorBaseUrls: event.target.value.split(",").map((item) => item.trim()).filter(Boolean),
+                      },
+                    })
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>冲突策略</span>
+                <select
+                  value={config.sync.conflictPolicy}
+                  onChange={(event) =>
+                    setConfig({
+                      ...config,
+                      sync: { ...config.sync, conflictPolicy: event.target.value as SyncConfig["conflictPolicy"] },
+                    })
+                  }
+                >
+                  <option value="merge-newer">合并优先</option>
+                  <option value="replace-local">同步包覆盖本机</option>
+                  <option value="local-wins">本机优先</option>
+                  <option value="remote-wins">远端优先</option>
+                </select>
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.sync.autoExport}
+                  onChange={(event) => setConfig({ ...config, sync: { ...config.sync, autoExport: event.target.checked } })}
+                />
+                <span>自动导出</span>
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.sync.autoImport}
+                  onChange={(event) => setConfig({ ...config, sync: { ...config.sync, autoImport: event.target.checked } })}
+                />
+                <span>自动导入</span>
+              </label>
+            </div>
+            <div className="sourceHeader">
+              <span>{syncPath || profileText}</span>
+              <button className="smallButton" onClick={() => void loadSyncStatus()}>
+                刷新状态
+              </button>
+            </div>
+            <div className="rowControls">
+              <button className="secondary" onClick={() => void saveSyncConfig()}>
+                <Save size={18} />
+                保存同步设置
+              </button>
+              <button className="secondary" onClick={() => void exportSyncProfile()}>
+                <FileDown size={18} />
+                导出到同步目录
+              </button>
+              <button className="secondary" onClick={() => void importSyncProfile(true)}>
+                <FileUp size={18} />
+                从同步目录合并
+              </button>
+              <button className="secondary danger" onClick={() => void importSyncProfile(false)}>
+                <Trash2 size={18} />
+                同步包覆盖本机
+              </button>
             </div>
             <label className="field">
               <span>迁移包 JSON</span>

@@ -127,6 +127,10 @@ struct CoreApi {
   SessionPayloadFn deleteUserPinJson = nullptr;
   CoreStringFn agentConfigJson = nullptr;
   ApplyConfigJsonFn applyAgentConfigJson = nullptr;
+  CoreStringFn syncConfigJson = nullptr;
+  ApplyConfigJsonFn applySyncConfigJson = nullptr;
+  SessionPayloadFn exportProfileSyncJson = nullptr;
+  SessionPayloadFn importProfileSyncJson = nullptr;
   CommitTextFn commitText = nullptr;
   AgentComposeFn agentCompose = nullptr;
   ExecuteCommandFn executeCommand = nullptr;
@@ -464,6 +468,10 @@ bool TryLoadInProcessCore() {
   api.deleteUserPinJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaDeleteUserPinJSON");
   api.agentConfigJson = LoadCoreProc<CoreStringFn>(module, "ShurufaAgentConfigJSON");
   api.applyAgentConfigJson = LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplyAgentConfigJSON");
+  api.syncConfigJson = LoadCoreProc<CoreStringFn>(module, "ShurufaSyncConfigJSON");
+  api.applySyncConfigJson = LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplySyncConfigJSON");
+  api.exportProfileSyncJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaExportProfileSyncJSON");
+  api.importProfileSyncJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaImportProfileSyncJSON");
   api.commitText = LoadCoreProc<CommitTextFn>(module, "ShurufaCommitText");
   api.agentCompose = LoadCoreProc<AgentComposeFn>(module, "ShurufaAgentCompose");
   api.executeCommand = LoadCoreProc<ExecuteCommandFn>(module, "ShurufaExecuteCommand");
@@ -531,6 +539,10 @@ void UseHttpCoreFallback() {
   g_core.deleteUserPinJson = nullptr;
   g_core.agentConfigJson = nullptr;
   g_core.applyAgentConfigJson = nullptr;
+  g_core.syncConfigJson = nullptr;
+  g_core.applySyncConfigJson = nullptr;
+  g_core.exportProfileSyncJson = nullptr;
+  g_core.importProfileSyncJson = nullptr;
   g_core.commitText = nullptr;
   g_core.agentCompose = nullptr;
   g_core.executeCommand = nullptr;

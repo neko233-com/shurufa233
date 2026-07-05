@@ -553,6 +553,28 @@ h2 {
   width: 100%;
 }
 
+.syncGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.syncGrid .toggle,
+.syncGrid .field {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.syncGrid .field input,
+.syncGrid .field select {
+  width: 100%;
+}
+
+.syncWide {
+  grid-column: span 2;
+}
+
 .swatches {
   display: flex;
   gap: 10px;
@@ -1564,8 +1586,13 @@ h2 {
 
   .appRuleGrid,
   .agentGrid,
+  .syncGrid,
   .contextProbe {
     grid-template-columns: 1fr;
+  }
+
+  .syncWide {
+    grid-column: span 1;
   }
 
   .contextProbe label,

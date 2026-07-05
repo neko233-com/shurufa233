@@ -301,6 +301,66 @@ func TestParseUpdateSourceNoMirrorSendsEmptyOverride(t *testing.T) {
 	}
 }
 
+func TestSyncConfigPostsSettings(t *testing.T) {
+	var syncCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/sync" || r.Method != http.MethodPut {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		syncCalled = true
+		var req struct {
+			Sync syncConfig `json:"sync"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode sync config: %v", err)
+		}
+		if !req.Sync.Enabled || req.Sync.Directory != "D:/Sync/shurufa233" || req.Sync.Provider != "local-directory" || req.Sync.ConflictPolicy != "replace-local" {
+			t.Fatalf("sync config request = %#v", req.Sync)
+		}
+		_ = json.NewEncoder(w).Encode(syncResponse{OK: true, Sync: req.Sync, Directory: req.Sync.Directory, BundlePath: req.Sync.Directory + "/shurufa233-profile.json"})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := syncCmd(server.Client(), []string{"config", "--enable", "--provider", "local-directory", "--dir", "D:/Sync/shurufa233", "--policy", "replace-local"}); err != nil {
+		t.Fatal(err)
+	}
+	if !syncCalled {
+		t.Fatal("sync endpoint was not called")
+	}
+}
+
+func TestSyncExportPostsDirectory(t *testing.T) {
+	var exportCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/sync/export" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		exportCalled = true
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode sync export: %v", err)
+		}
+		if req["directory"] != "D:/Sync/shurufa233" {
+			t.Fatalf("sync export request = %#v", req)
+		}
+		_ = json.NewEncoder(w).Encode(syncResponse{OK: true, Exported: true, Directory: "D:/Sync/shurufa233", BundlePath: "D:/Sync/shurufa233/shurufa233-profile.json"})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := syncCmd(server.Client(), []string{"export", "--dir", "D:/Sync/shurufa233"}); err != nil {
+		t.Fatal(err)
+	}
+	if !exportCalled {
+		t.Fatal("sync export endpoint was not called")
+	}
+}
+
 func TestSwitchesCallsEndpoint(t *testing.T) {
 	var switchesCalled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
