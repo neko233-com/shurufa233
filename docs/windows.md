@@ -160,6 +160,7 @@ shurufa-imecli candidates nihao next-page --limit 7
 shurufa-imecli candidates nihao select --display-index 1
 shurufa-imecli wordbook list
 shurufa-imecli wordbook import .\user-wordbook.json
+shurufa-imecli wordbook import .\luna_pinyin.userdb.txt
 shurufa-imecli phrases add msd "马上到！" 60000
 shurufa-imecli phrases import .\user-phrases.json
 shurufa-imecli phrases import .\custom_phrase.txt --replace
@@ -273,6 +274,7 @@ The Windows TSF layer keeps Microsoft IME-style session behavior:
 - Rime-style reverse lookup is exposed through daemon `/engine/reverse`, CLI `reverse`, settings UI, and C ABI `reverse-lookup-json`; it scans the shared Go dictionaries and keeps source/comment metadata so imported Luna/Rime Ice entries can be audited without platform-specific code
 - emoji, kaomoji, symbol, and agent resources are exposed through the shared catalog API (`GET /catalog`, `shurufa-imecli symbols`, and `catalog-json` in the C ABI), so Rime `symbols.yaml` and OpenCC emoji imports can power future native symbol panels without adding more Windows C++ glue
 - Rime-style fixed user phrases are managed through the Go core, daemon IPC, CLI, settings panel, and reserved C ABI as `kind=phrase`, `source=user-phrase`, stored in `user-phrases.json` separately from learned word scores; JSON import/export and direct runtime `custom_phrase.txt` import/export are both supported so personal rows from Weasel/Squirrel can outrank ordinary dictionary candidates without rebuilding a release dictionary
+- Rime/Weasel/Squirrel synced user dictionaries such as `luna_pinyin.userdb.txt` or `rime_ice.userdb.txt` can be imported through `shurufa-imecli wordbook import`, daemon `/wordbook` with `format=rime-userdb`, or C ABI `import-user-scores`; rows like `cha jian 插件 c=4 d=0.5 t=8` become stable shurufa233 `userScores` entries such as `chajian|插件`, preserving learned frequency without adopting Rime's internal storage format
 - wrong candidates can be hidden through the Windows native candidate right-click menu, `candidate-action=forget`, `ShurufaRejectCandidate`, `ShurufaExecuteCommand(..., "candidate-action", ...)`, daemon `/rejects`, CLI `rejects`, and the React settings panel; records are stored in `user-rejects.json` and remove matching learned scores so bad candidates do not keep returning after user learning
 - preferred candidates can be pinned through the Windows native candidate right-click menu, `candidate-action=pin`, direct `ShurufaPinCandidate`, `ShurufaCandidateAction`, `ShurufaExecuteCommand(..., "candidate-action", ...)`, daemon `/pins`, CLI `pins`, and the React settings panel; records are stored in `user-pins.json`, receive a large ranking bonus, and remove any matching hidden-candidate row
 - full user profile bundles are exposed through daemon `/profile`, CLI `profile export|import`, `ShurufaProfileJSON`, `ShurufaImportProfileJSON`, and the generic `profile-json` command; a bundle carries config, learned scores, fixed phrases, hidden candidates, and pinned candidates for backup, migration, or later cloud sync without changing the Windows default input method

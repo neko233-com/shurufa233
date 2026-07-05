@@ -232,6 +232,8 @@ type userPinStore struct {
 type wordbookRequest struct {
 	UserScores map[string]int `json:"userScores,omitempty"`
 	Scores     map[string]int `json:"scores,omitempty"`
+	Format     string         `json:"format,omitempty"`
+	Data       string         `json:"data,omitempty"`
 	Merge      bool           `json:"merge,omitempty"`
 }
 
@@ -768,6 +770,14 @@ func (s *AppState) wordbook(w http.ResponseWriter, r *http.Request) {
 		next := req.UserScores
 		if next == nil {
 			next = req.Scores
+		}
+		if next == nil && isRimeUserDBFormat(req.Format) && strings.TrimSpace(req.Data) != "" {
+			parsed, err := engine.ParseRimeUserDB([]byte(req.Data))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			next = parsed
 		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -2242,6 +2252,15 @@ func phraseResponse(entries []engine.Entry) map[string]any {
 func isRimeCustomPhraseFormat(format string) bool {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "rime-custom-phrase", "custom-phrase", "custom_phrase", "custom_phrase.txt", "rime":
+		return true
+	default:
+		return false
+	}
+}
+
+func isRimeUserDBFormat(format string) bool {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "rime-userdb", "rime-userdb.txt", "userdb", "userdb.txt", "rime-user-dictionary":
 		return true
 	default:
 		return false

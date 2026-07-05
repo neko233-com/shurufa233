@@ -992,6 +992,35 @@ func TestWordbookPutAndDeleteManageUserScores(t *testing.T) {
 	}
 }
 
+func TestWordbookImportsRimeUserDB(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	session.AddEntries([]engine.Entry{
+		{Reading: "chajian", Text: "插件", Weight: 100},
+		{Reading: "chajian", Text: "差件", Weight: 90},
+	})
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	body := strings.NewReader(`{"format":"rime-userdb","data":"# Rime user dictionary\ncha jian 插件 c=20 d=1 t=3\n","merge":true}`)
+	req := httptest.NewRequest(http.MethodPut, "/wordbook", body)
+	rec := httptest.NewRecorder()
+	state.wordbook(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := session.Preview("chajian"); len(got.Candidates) == 0 || got.Candidates[0].Text != "插件" {
+		t.Fatalf("expected imported Rime userdb score to rerank candidates, got %#v", got.Candidates)
+	}
+	if score := session.UserScores()["chajian|插件"]; score != 500 {
+		t.Fatalf("userdb score = %d", score)
+	}
+}
+
 func TestPhrasesPutAndDeleteManageUserPhrases(t *testing.T) {
 	config := engine.DefaultConfig()
 	session := engine.New(config)

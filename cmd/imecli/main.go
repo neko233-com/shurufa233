@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -425,6 +426,7 @@ Usage:
   shurufa-imecli wordbook list
   shurufa-imecli wordbook export
   shurufa-imecli wordbook import user-wordbook.json [--replace]
+  shurufa-imecli wordbook import luna_pinyin.userdb.txt [--replace]
   shurufa-imecli wordbook delete "nihao|你好"
   shurufa-imecli wordbook clear
   shurufa-imecli phrases list
@@ -1283,6 +1285,9 @@ func readWordbookFile(path string) (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
+	if isRimeUserDBPath(path) {
+		return engine.ParseRimeUserDB(data)
+	}
 	var wrapped struct {
 		UserScores map[string]int `json:"userScores"`
 		Scores     map[string]int `json:"scores"`
@@ -1295,9 +1300,17 @@ func readWordbookFile(path string) (map[string]int, error) {
 	}
 	var scores map[string]int
 	if err := json.Unmarshal(data, &scores); err != nil {
+		if parsed, parseErr := engine.ParseRimeUserDB(data); parseErr == nil && len(parsed) > 0 {
+			return parsed, nil
+		}
 		return nil, err
 	}
 	return scores, nil
+}
+
+func isRimeUserDBPath(path string) bool {
+	name := strings.ToLower(strings.TrimSpace(filepath.Base(path)))
+	return strings.HasSuffix(name, ".userdb.txt") || strings.HasSuffix(name, ".userdb")
 }
 
 func phrases(client *http.Client, args []string) error {

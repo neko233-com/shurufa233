@@ -180,6 +180,14 @@ also be managed through the daemon and CLI. They are persisted in
 `user-phrases.json`, loaded as `kind=phrase`, `source=user-phrase`, and kept
 separate from learned user scores:
 
+Rime synchronized user dictionaries such as `luna_pinyin.userdb.txt` and
+`rime_ice.userdb.txt` are treated as learned word scores rather than fixed
+phrases. Import them at runtime with `shurufa-imecli wordbook import
+path\to\luna_pinyin.userdb.txt` or `PUT /wordbook` using
+`format=rime-userdb`. A row such as `cha jian 插件 c=4 d=0.5 t=8` becomes the
+stable shurufa233 score key `chajian|插件`, so the final user data format stays
+portable even though migration understands Rime's sync text.
+
 ```powershell
 shurufa-imecli phrases add msd "马上到！" 60000
 shurufa-imecli phrases import .\user-phrases.json --replace

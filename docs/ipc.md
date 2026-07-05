@@ -165,9 +165,12 @@ processes without replacing the Windows default input method.
 
 `GET /wordbook` returns learned user word scores. `PUT /wordbook` accepts
 `{"userScores":{"reading|text":1000},"merge":true}` for JSON import or
-replacement when `merge` is false. `DELETE /wordbook?key=reading%7Ctext` removes
-one learned row; `DELETE /wordbook` clears all learned user words and persists
-the empty wordbook.
+replacement when `merge` is false. It also accepts Rime/Weasel/Squirrel synced
+user dictionaries through `{"format":"rime-userdb","data":"cha jian 插件 c=4 d=0.5 t=8\n","merge":true}`.
+These rows are converted into shurufa233's stable `reading|text` score map, such
+as `chajian|插件`, rather than storing Rime's internal userdb format. `DELETE
+/wordbook?key=reading%7Ctext` removes one learned row; `DELETE /wordbook` clears
+all learned user words and persists the empty wordbook.
 
 `GET /phrases` returns fixed user phrases stored in `user-phrases.json`. These
 entries are separate from learned word scores and are loaded as

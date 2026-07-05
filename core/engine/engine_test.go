@@ -394,6 +394,28 @@ http://rime.im/ rime 3
 	}
 }
 
+func TestParseRimeUserDB(t *testing.T) {
+	scores, err := ParseRimeUserDB([]byte(`# Rime user dictionary
+#@/db_name  luna_pinyin.userdb
+#@/db_type  userdb
+cha jian	插件	c=4 d=0.5 t=8
+ti huan 替換 c=1 d=0.99005 t=3
+zhong wen 中文 c=2 d=1 t=9
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scores["chajian|插件"] != 50 {
+		t.Fatalf("chajian score = %#v", scores)
+	}
+	if scores["tihuan|替換"] != 25 {
+		t.Fatalf("tihuan score = %#v", scores)
+	}
+	if scores["zhongwen|中文"] != 50 {
+		t.Fatalf("zhongwen score = %#v", scores)
+	}
+}
+
 func TestFormatRimeCustomPhrases(t *testing.T) {
 	got := FormatRimeCustomPhrases([]Entry{{Reading: "msd", Text: "马上到！", Weight: 50001}})
 	if !strings.Contains(got, "马上到！\tmsd\t1") {

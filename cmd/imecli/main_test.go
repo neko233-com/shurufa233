@@ -803,6 +803,25 @@ func TestReadWordbookFileAcceptsWrappedScores(t *testing.T) {
 	}
 }
 
+func TestReadWordbookFileAcceptsRimeUserDB(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "luna_pinyin.userdb.txt")
+	if err := os.WriteFile(path, []byte(`# Rime user dictionary
+#@/db_name luna_pinyin.userdb
+cha jian 插件 c=4 d=0.5 t=8
+zhong wen 中文 c=1 d=1 t=9
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := readWordbookFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["chajian|插件"] != 50 || got["zhongwen|中文"] != 25 {
+		t.Fatalf("scores = %#v", got)
+	}
+}
+
 func TestReadPhraseFileAcceptsWrappedEntries(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "phrases.json")
 	if err := os.WriteFile(path, []byte(`{"entries":[{"reading":"msd","text":"马上到！","weight":60000}]}`), 0o644); err != nil {

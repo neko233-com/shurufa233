@@ -39,6 +39,32 @@ func ParseRimeCustomPhrases(data []byte) ([]Entry, error) {
 	return normalizeUserPhraseEntries(entries), nil
 }
 
+func ParseRimeUserDB(data []byte) (map[string]int, error) {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scores := map[string]int{}
+	lineNumber := 0
+	for scanner.Scan() {
+		lineNumber++
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") || line == "---" || line == "..." {
+			continue
+		}
+		reading, text, score, ok := parseRimeUserDBLine(line)
+		if !ok {
+			return nil, fmt.Errorf("invalid Rime userdb row at line %d", lineNumber)
+		}
+		key := reading + "|" + text
+		scores[key] += score
+		if scores[key] > 1000000 {
+			scores[key] = 1000000
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return scores, nil
+}
+
 func FormatRimeCustomPhrases(entries []Entry) string {
 	entries = normalizeUserPhraseEntries(entries)
 	var builder strings.Builder
@@ -53,6 +79,69 @@ func FormatRimeCustomPhrases(entries []Entry) string {
 		builder.WriteByte('\n')
 	}
 	return builder.String()
+}
+
+func parseRimeUserDBLine(line string) (string, string, int, bool) {
+	fields := strings.Fields(line)
+	metadataStart := len(fields)
+	for i, field := range fields {
+		if isRimeUserDBMetadataField(field) {
+			metadataStart = i
+			break
+		}
+	}
+	if metadataStart < 2 {
+		return "", "", 0, false
+	}
+	text := strings.TrimSpace(fields[metadataStart-1])
+	reading := normalizeReading(strings.Join(fields[:metadataStart-1], ""))
+	if reading == "" || text == "" {
+		return "", "", 0, false
+	}
+	score := rimeUserDBScore(fields[metadataStart:])
+	return reading, text, score, true
+}
+
+func isRimeUserDBMetadataField(field string) bool {
+	key, _, ok := strings.Cut(strings.TrimSpace(field), "=")
+	if !ok {
+		return false
+	}
+	switch key {
+	case "c", "d", "t":
+		return true
+	default:
+		return false
+	}
+}
+
+func rimeUserDBScore(metadata []string) int {
+	count := 1.0
+	decay := 1.0
+	for _, field := range metadata {
+		key, value, ok := strings.Cut(strings.TrimSpace(field), "=")
+		if !ok || value == "" {
+			continue
+		}
+		parsed, err := strconv.ParseFloat(value, 64)
+		if err != nil || parsed <= 0 {
+			continue
+		}
+		switch key {
+		case "c":
+			count = parsed
+		case "d":
+			decay = parsed
+		}
+	}
+	score := int(count*decay*25 + 0.5)
+	if score < 1 {
+		return 1
+	}
+	if score > 1000000 {
+		return 1000000
+	}
+	return score
 }
 
 func parseRimeCustomPhraseLine(line string) (Entry, bool) {

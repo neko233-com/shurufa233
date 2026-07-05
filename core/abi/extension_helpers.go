@@ -28,6 +28,7 @@ var abiFeatureList = []string{
 	"rime-custom-yaml",
 	"reverse-lookup-json",
 	"user-scores-json",
+	"rime-userdb-text",
 	"user-phrases-json",
 	"rime-custom-phrase-text",
 	"user-rejects-json",
@@ -1331,6 +1332,15 @@ func isRimeCustomPhraseFormat(format string) bool {
 	}
 }
 
+func isRimeUserDBFormat(format string) bool {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "rime-userdb", "rime-userdb.txt", "userdb", "userdb.txt", "rime-user-dictionary":
+		return true
+	default:
+		return false
+	}
+}
+
 func decodeExtensionCommandPayload(payload string) (extensionCommandPayload, error) {
 	var out extensionCommandPayload
 	payload = strings.TrimSpace(payload)
@@ -1587,6 +1597,13 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		scores := req.UserScores
 		if scores == nil {
 			scores = req.Scores
+		}
+		if scores == nil && isRimeUserDBFormat(req.Format) && strings.TrimSpace(req.Data) != "" {
+			parsed, err := engine.ParseRimeUserDB([]byte(req.Data))
+			if err != nil {
+				return errorEnvelope(err.Error()), true
+			}
+			scores = parsed
 		}
 		if scores == nil {
 			var err error

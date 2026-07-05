@@ -176,7 +176,7 @@ skin menus can list and apply presets without adding another TSF loader pass.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `skin-presets-json`, `apply-skin-preset-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `rime-custom-phrase-text`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `profile-sync-json`, `apply-sync-config-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
+`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `skin-presets-json`, `apply-skin-preset-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `rime-userdb-text`, `user-phrases-json`, `rime-custom-phrase-text`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `profile-sync-json`, `apply-sync-config-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -249,6 +249,7 @@ dictionary-manifest-json
 dictionary-sources-json
 user-scores-json
 import-user-scores-json {"userScores":{"nihao|你好":25}}
+import-user-scores-json {"format":"rime-userdb","data":"cha jian 插件 c=4 d=0.5 t=8\n"}
 user-phrases-json
 import-user-phrases-json {"entries":[{"reading":"msd","text":"马上到！"}],"merge":true}
 rime-custom-phrase-text

@@ -461,6 +461,27 @@ func TestExecuteExtensionCommandImportsUserPhrases(t *testing.T) {
 	}
 }
 
+func TestExecuteExtensionCommandImportsRimeUserDB(t *testing.T) {
+	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(t.TempDir(), "user-scores.json"))
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{
+		{Reading: "chajian", Text: "插件", Weight: 100},
+		{Reading: "chajian", Text: "差件", Weight: 90},
+	})
+
+	got, handled := executeSessionExtensionCommand(session, "import-user-scores", `{"format":"rime-userdb","data":"# Rime user dictionary\ncha jian 插件 c=20 d=1 t=3\n"}`)
+	if !handled {
+		t.Fatal("import-user-scores command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true || result["imported"] != 1 {
+		t.Fatalf("import Rime userdb = %#v", got)
+	}
+	if state := session.Preview("chajian"); len(state.Candidates) == 0 || state.Candidates[0].Text != "插件" {
+		t.Fatalf("expected Rime userdb score to rerank candidates, got %#v", state.Candidates)
+	}
+}
+
 func TestExecuteExtensionCommandImportsRimeCustomPhrases(t *testing.T) {
 	t.Setenv("SHURUFA233_USER_PHRASES", filepath.Join(t.TempDir(), "user-phrases.json"))
 	session := engine.New(engine.DefaultConfig())
