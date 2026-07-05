@@ -91,6 +91,11 @@ func ApplyRimeCustomYAML(base Config, data []byte) (RimeCustomResult, error) {
 			applied = append(applied, "style/vertical:true")
 		}
 	}
+	if raw, ok := rimeLookup(patch, "style/candidate_list_layout"); ok {
+		layout := normalizeCandidateLayout(rimeString(raw))
+		config.CandidateLayout = layout
+		applied = append(applied, "style/candidate_list_layout:"+layout)
+	}
 	if raw, ok := rimeLookup(patch, "speller/algebra"); ok {
 		next, algebraApplied, algebraWarnings := applyRimeSpellerAlgebra(config, raw)
 		config = next

@@ -138,9 +138,9 @@ func normalizeScript(script string, fallback string) string {
 
 func normalizeCandidateLayout(layout string) string {
 	switch strings.ToLower(strings.TrimSpace(layout)) {
-	case "", "horizontal", "wechat", "microsoft":
+	case "", "horizontal", "linear", "inline", "wechat", "microsoft":
 		return "horizontal"
-	case "vertical", "rime":
+	case "vertical", "stacked", "rime":
 		return "vertical"
 	case "auto":
 		return "auto"

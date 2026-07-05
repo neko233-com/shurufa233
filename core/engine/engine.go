@@ -175,9 +175,9 @@ func (e *Engine) Config() Config {
 
 func normalizeCandidateLayout(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "horizontal", "wechat", "microsoft":
+	case "", "horizontal", "linear", "inline", "wechat", "microsoft":
 		return "horizontal"
-	case "vertical", "rime":
+	case "vertical", "stacked", "rime":
 		return "vertical"
 	case "auto":
 		return "auto"

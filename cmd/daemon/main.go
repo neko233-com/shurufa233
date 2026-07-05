@@ -2793,12 +2793,12 @@ func normalizeConfig(config engine.Config) engine.Config {
 
 func normalizeCandidateLayoutValue(layout string, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(layout)) {
-	case "", "horizontal", "wechat", "microsoft":
+	case "", "horizontal", "linear", "inline", "wechat", "microsoft":
 		if strings.TrimSpace(layout) == "" {
 			return fallback
 		}
 		return "horizontal"
-	case "vertical", "rime":
+	case "vertical", "stacked", "rime":
 		return "vertical"
 	case "auto":
 		return "auto"

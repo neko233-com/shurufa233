@@ -87,6 +87,19 @@ func TestCandidatePageSizeConfigIsClamped(t *testing.T) {
 	if e.config.CandidateLayout != "horizontal" {
 		t.Fatalf("candidate layout = %q, want horizontal", e.config.CandidateLayout)
 	}
+
+	config.CandidatePageSize = 5
+	config.CandidateLayout = "stacked"
+	e.Configure(config)
+	if e.config.CandidateLayout != "vertical" {
+		t.Fatalf("candidate layout = %q, want vertical for stacked", e.config.CandidateLayout)
+	}
+
+	config.CandidateLayout = "linear"
+	e.Configure(config)
+	if e.config.CandidateLayout != "horizontal" {
+		t.Fatalf("candidate layout = %q, want horizontal for linear", e.config.CandidateLayout)
+	}
 }
 
 func TestBuiltinSchemaPresetsIncludeRimeAndDoublePinyin(t *testing.T) {
@@ -877,6 +890,34 @@ patch:
 	}
 	if !containsString(result.Applied, "style/color_scheme:wechat_like") {
 		t.Fatalf("applied fields = %#v", result.Applied)
+	}
+}
+
+func TestApplyRimeCustomYAMLMapsWeaselCandidateListLayout(t *testing.T) {
+	result, err := ApplyRimeCustomYAML(DefaultConfig(), []byte(`
+patch:
+  style/horizontal: true
+  style/candidate_list_layout: stacked
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Config.CandidateLayout != "vertical" {
+		t.Fatalf("candidate_list_layout not mapped: %#v", result.Config)
+	}
+	if !containsString(result.Applied, "style/candidate_list_layout:vertical") {
+		t.Fatalf("applied fields = %#v", result.Applied)
+	}
+
+	result, err = ApplyRimeCustomYAML(DefaultConfig(), []byte(`
+patch:
+  style/candidate_list_layout: linear
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Config.CandidateLayout != "horizontal" {
+		t.Fatalf("linear candidate_list_layout not mapped: %#v", result.Config)
 	}
 }
 
