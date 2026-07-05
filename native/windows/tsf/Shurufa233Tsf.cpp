@@ -2346,30 +2346,26 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       if (ch >= 'A' && ch <= 'Z') {
         ch = static_cast<char>(ch - 'A' + 'a');
       }
-      selectedIndex_ = 0;
-      pageOffset_ = 0;
-      compositionLength_++;
-      rawBuffer_.push_back(ch);
-      const int count = g_core.inputKeyFast(session_, ch);
-      UpdateCandidateWindow(count);
+      InputCompositionChar(ch);
       *eaten = TRUE;
       return S_OK;
     }
 
     if (IsMicrosoftDoublePinyinSemicolonKey(key)) {
-      selectedIndex_ = 0;
-      pageOffset_ = 0;
-      compositionLength_++;
-      rawBuffer_.push_back(';');
-      const int count = g_core.inputKeyFast(session_, ';');
-      UpdateCandidateWindow(count);
+      InputCompositionChar(';');
+      *eaten = TRUE;
+      return S_OK;
+    }
+
+    if (ShouldStartSlashSymbolPrefix(key)) {
+      InputCompositionChar('/');
       *eaten = TRUE;
       return S_OK;
     }
 
     const char recognizerChar = RecognizerAsciiCharForKey(key);
     if (!asciiMode_ && ShouldUseRecognizerLiteralChar(recognizerChar)) {
-      InputRecognizerLiteralChar(recognizerChar);
+      InputCompositionChar(recognizerChar);
       *eaten = TRUE;
       return S_OK;
     }
@@ -2704,7 +2700,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     return IsRecognizerLiteralProspective(ch);
   }
 
-  void InputRecognizerLiteralChar(char ch) {
+  void InputCompositionChar(char ch) {
     selectedIndex_ = 0;
     pageOffset_ = 0;
     compositionLength_++;
@@ -2781,6 +2777,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (IsMicrosoftDoublePinyinSemicolonKey(key)) {
       return true;
     }
+    if (ShouldStartSlashSymbolPrefix(key)) {
+      return true;
+    }
     if (!rawBuffer_.empty()) {
       const char recognizerChar = RecognizerAsciiCharForKey(key);
       if (ShouldUseRecognizerLiteralChar(recognizerChar)) {
@@ -2821,6 +2820,11 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
              cachedCandidateCount_ > pageOffset_ + relativeIndex;
     }
     return false;
+  }
+
+  bool ShouldStartSlashSymbolPrefix(WPARAM key) const {
+    return !asciiMode_ && rawBuffer_.empty() && cachedCandidateCount_ == 0 && !IsShiftPressed() &&
+           (key == VK_OEM_2 || key == L'/');
   }
 
   void CommitText(ITfContext *context, const std::wstring &text) {
