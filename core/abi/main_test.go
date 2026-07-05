@@ -254,12 +254,15 @@ func TestCapabilitiesIncludePinyinSeparators(t *testing.T) {
 }
 
 func TestCapabilitiesIncludeRimeSymbolPrefix(t *testing.T) {
+	seen := map[string]bool{}
 	for _, feature := range abiFeatureList {
-		if feature == "rime-symbol-prefix" {
-			return
+		seen[feature] = true
+	}
+	for _, feature := range []string{"rime-symbol-prefix", "rime-ice-v-symbol-prefix"} {
+		if !seen[feature] {
+			t.Fatalf("capabilities missing %s: %#v", feature, abiFeatureList)
 		}
 	}
-	t.Fatalf("capabilities missing rime-symbol-prefix: %#v", abiFeatureList)
 }
 
 func TestCapabilitiesIncludeUserPhrasesJSON(t *testing.T) {
@@ -430,6 +433,14 @@ func TestPreviewPreservesRimeSymbolPrefixCandidate(t *testing.T) {
 	}
 	if len(state.Candidates) == 0 || state.Candidates[0].Text != "℃" {
 		t.Fatalf("expected symbol candidate ℃, got %#v", state.Candidates)
+	}
+
+	state = session.Preview("vfs")
+	if state.Buffer != "vfs" {
+		t.Fatalf("buffer = %q, want vfs", state.Buffer)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "℃" {
+		t.Fatalf("expected v-mode symbol candidate ℃, got %#v", state.Candidates)
 	}
 }
 

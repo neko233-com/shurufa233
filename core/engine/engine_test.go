@@ -275,7 +275,7 @@ func TestInputKeyAcceptsApostropheSeparator(t *testing.T) {
 	}
 }
 
-func TestSlashSymbolPrefixPreservesBufferAndFiltersCandidates(t *testing.T) {
+func TestSpecialResourcePrefixPreservesBufferAndFiltersCandidates(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddEntries([]Entry{{Reading: "fs", Text: "普通词", Weight: 90000}})
 
@@ -296,9 +296,22 @@ func TestSlashSymbolPrefixPreservesBufferAndFiltersCandidates(t *testing.T) {
 			t.Fatalf("slash prefix should filter ordinary candidates, got %#v", state.Candidates)
 		}
 	}
+
+	state = e.Preview("vfs")
+	if state.Buffer != "vfs" {
+		t.Fatalf("expected v prefix buffer, got %q", state.Buffer)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "℃" {
+		t.Fatalf("expected vfs to prefer symbol candidates, got %#v", state.Candidates)
+	}
+	for _, candidate := range state.Candidates {
+		if candidate.Text == "普通词" {
+			t.Fatalf("v prefix should filter ordinary candidates, got %#v", state.Candidates)
+		}
+	}
 }
 
-func TestInputKeyAcceptsSlashSymbolPrefix(t *testing.T) {
+func TestInputKeyAcceptsSpecialResourcePrefixes(t *testing.T) {
 	e := New(DefaultConfig())
 	for _, r := range "/xh" {
 		e.InputKey(r)
@@ -309,6 +322,18 @@ func TestInputKeyAcceptsSlashSymbolPrefix(t *testing.T) {
 	}
 	if len(state.Candidates) == 0 || state.Candidates[0].Text != "※" {
 		t.Fatalf("expected typed /xh to produce symbol candidates, got %#v", state.Candidates)
+	}
+
+	e.Clear()
+	for _, r := range "vxh" {
+		e.InputKey(r)
+	}
+	state = e.State()
+	if state.Buffer != "vxh" {
+		t.Fatalf("expected typed v prefix buffer, got %q", state.Buffer)
+	}
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "※" {
+		t.Fatalf("expected typed vxh to produce symbol candidates, got %#v", state.Candidates)
 	}
 }
 
@@ -1410,6 +1435,10 @@ func TestCatalogEntriesFiltersSpecialResources(t *testing.T) {
 	symbols := e.CatalogEntries(CatalogRequest{Kind: "symbol", Query: "/fs", Limit: 10})
 	if symbols.Kind != "symbol" || symbols.Count == 0 || symbols.Entries[0].Reading != "fs" {
 		t.Fatalf("symbol catalog slash query = %#v", symbols)
+	}
+	symbols = e.CatalogEntries(CatalogRequest{Kind: "symbol", Query: "vfs", Limit: 10})
+	if symbols.Kind != "symbol" || symbols.Count == 0 || symbols.Entries[0].Reading != "fs" {
+		t.Fatalf("symbol catalog v query = %#v", symbols)
 	}
 }
 

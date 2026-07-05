@@ -223,16 +223,24 @@ func parseRimeDocumentWithHints(reader io.Reader, source string, hints rimeParse
 	importList := false
 	columnList := false
 	symbolList := rimeSymbolListState{}
+	symbolSection := false
+	symbolSectionIndent := 0
 	for scanner.Scan() {
-		line := strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "\ufeff"))
+		rawLine := strings.TrimPrefix(scanner.Text(), "\ufeff")
+		line := strings.TrimSpace(rawLine)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
+		}
+		indent := leadingYAMLIndent(rawLine)
+		if symbolSection && indent <= symbolSectionIndent && !isRimeSymbolSectionLine(line) {
+			symbolSection = false
 		}
 		if line == "---" {
 			sawYAMLHeader = true
 			importList = false
 			columnList = false
 			symbolList = rimeSymbolListState{}
+			symbolSection = false
 			continue
 		}
 		if !inBody {
@@ -241,6 +249,12 @@ func parseRimeDocumentWithHints(reader io.Reader, source string, hints rimeParse
 				importList = false
 				columnList = false
 				symbolList = rimeSymbolListState{}
+				symbolSection = false
+				continue
+			}
+			if isRimeSymbolSectionLine(line) {
+				symbolSection = true
+				symbolSectionIndent = indent
 				continue
 			}
 			if symbolList.active {
@@ -282,11 +296,11 @@ func parseRimeDocumentWithHints(reader io.Reader, source string, hints rimeParse
 				}
 				columnList = false
 			}
-			if nextSymbolList, ok := parseRimeSymbolListStart(line); ok {
+			if nextSymbolList, ok := parseRimeSymbolListStart(line, symbolSection); ok {
 				symbolList = nextSymbolList
 				continue
 			}
-			if symbolEntries, ok := parseRimeSymbolLine(line, source); ok {
+			if symbolEntries, ok := parseRimeSymbolLine(line, source, symbolSection); ok {
 				entries = append(entries, symbolEntries...)
 				continue
 			}
@@ -397,16 +411,13 @@ type rimeSymbolListState struct {
 	index   int
 }
 
-func parseRimeSymbolListStart(line string) (rimeSymbolListState, bool) {
+func parseRimeSymbolListStart(line string, allowVMode bool) (rimeSymbolListState, bool) {
 	key, value, ok := splitYAMLKeyValue(line)
 	if !ok || strings.TrimSpace(value) != "" {
 		return rimeSymbolListState{}, false
 	}
 	key = strings.TrimSpace(strings.Trim(key, `"'`))
-	if !strings.HasPrefix(key, "/") {
-		return rimeSymbolListState{}, false
-	}
-	reading := normalizeRimeReading(strings.TrimPrefix(key, "/"))
+	reading := normalizeRimeSymbolReading(key, allowVMode)
 	if reading == "" {
 		return rimeSymbolListState{}, false
 	}
@@ -431,16 +442,13 @@ func parseRimeSymbolListItem(line string, source string, reading string, index i
 	}, true
 }
 
-func parseRimeSymbolLine(line string, source string) ([]engine.Entry, bool) {
+func parseRimeSymbolLine(line string, source string, allowVMode bool) ([]engine.Entry, bool) {
 	key, value, ok := splitYAMLKeyValue(line)
 	if !ok {
 		return nil, false
 	}
 	key = strings.TrimSpace(strings.Trim(key, `"'`))
-	if !strings.HasPrefix(key, "/") {
-		return nil, false
-	}
-	reading := normalizeRimeReading(strings.TrimPrefix(key, "/"))
+	reading := normalizeRimeSymbolReading(key, allowVMode)
 	if reading == "" {
 		return nil, false
 	}
@@ -464,6 +472,38 @@ func parseRimeSymbolLine(line string, source string) ([]engine.Entry, bool) {
 		})
 	}
 	return entries, len(entries) > 0
+}
+
+func normalizeRimeSymbolReading(key string, allowVMode bool) string {
+	key = strings.TrimSpace(strings.Trim(key, `"'`))
+	if strings.HasPrefix(key, "/") {
+		return normalizeRimeReading(strings.TrimLeft(key, "/"))
+	}
+	if allowVMode && strings.HasPrefix(strings.ToLower(key), "v") && len([]rune(key)) > 1 {
+		return normalizeRimeReading(string([]rune(key)[1:]))
+	}
+	return ""
+}
+
+func isRimeSymbolSectionLine(line string) bool {
+	key, value, ok := splitYAMLKeyValue(line)
+	if !ok || strings.TrimSpace(value) != "" {
+		return false
+	}
+	key = strings.TrimSpace(strings.Trim(key, `"'`))
+	return key == "symbols" || strings.HasSuffix(key, "/symbols") ||
+		strings.Contains(key, "punctuator/symbols")
+}
+
+func leadingYAMLIndent(line string) int {
+	count := 0
+	for _, r := range line {
+		if r != ' ' && r != '\t' {
+			return count
+		}
+		count++
+	}
+	return count
 }
 
 func splitYAMLKeyValue(line string) (string, string, bool) {

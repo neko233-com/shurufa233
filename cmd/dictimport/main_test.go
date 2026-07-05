@@ -262,6 +262,8 @@ patch:
   punctuator/symbols/+:
     '/fs': [℃, ℉, °]
     '/xh': ['※', "★", ☆] # stars
+    vdw: [℃℃, ℉℉]
+    Vlm: [ⅰ, Ⅰ]
     '/yx': [🙂, 😂]
     '/yw': ['(╯°□°）╯︵ ┻━┻', "=_="]
 `
@@ -282,6 +284,12 @@ patch:
 	if len(got["xh"]) != 3 || got["xh"][1].Text != "★" {
 		t.Fatalf("xh symbols = %#v", got["xh"])
 	}
+	if len(got["dw"]) != 2 || got["dw"][0].Text != "℃℃" {
+		t.Fatalf("dw v-mode symbols = %#v", got["dw"])
+	}
+	if len(got["lm"]) != 2 || got["lm"][0].Text != "ⅰ" {
+		t.Fatalf("lm caps-v-mode symbols = %#v", got["lm"])
+	}
 	if len(got["yx"]) != 2 || got["yx"][0].Kind != "emoji" {
 		t.Fatalf("yx emoji = %#v", got["yx"])
 	}
@@ -300,6 +308,9 @@ func TestParseRimeSymbolsBlockListYAML(t *testing.T) {
     '/bq':
       - 🙂
       - '(T_T)'
+    vxh:
+      - ※
+      - ★
 `
 	entries, imports, err := parseRimeDocument(strings.NewReader(input), "rime-symbols")
 	if err != nil {
@@ -321,12 +332,38 @@ func TestParseRimeSymbolsBlockListYAML(t *testing.T) {
 	if len(got["bq"]) != 2 || got["bq"][0].Kind != "emoji" || got["bq"][1].Kind != "kaomoji" {
 		t.Fatalf("bq block kinds = %#v", got["bq"])
 	}
+	if len(got["xh"]) != 2 || got["xh"][0].Text != "※" || got["xh"][1].Text != "★" {
+		t.Fatalf("xh v-mode block symbols = %#v", got["xh"])
+	}
+}
+
+func TestParseRimeNestedSymbolsVModeYAML(t *testing.T) {
+	input := `patch:
+  punctuator:
+    symbols:
+      vdw: [℃, ℉, °]
+`
+	entries, imports, err := parseRimeDocument(strings.NewReader(input), "rime-symbols")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(imports) != 0 {
+		t.Fatalf("imports = %#v, want none", imports)
+	}
+	got := map[string][]engine.Entry{}
+	for _, entry := range entries {
+		got[entry.Reading] = append(got[entry.Reading], entry)
+	}
+	if len(got["dw"]) != 3 || got["dw"][0].Text != "℃" {
+		t.Fatalf("nested v-mode symbols = %#v", got["dw"])
+	}
 }
 
 func TestRimeSymbolsImportIntoEngine(t *testing.T) {
 	input := `patch:
   punctuator/symbols/+:
     '/fs': [℃, ℉, °]
+    vxh: [※, ★, ☆]
 `
 	entries, err := parseRimeDictionary(strings.NewReader(input), "rime-symbols")
 	if err != nil {
@@ -337,6 +374,10 @@ func TestRimeSymbolsImportIntoEngine(t *testing.T) {
 	state := e.Preview("fs")
 	if len(state.Candidates) == 0 || state.Candidates[0].Text != "℃" || state.Candidates[0].Kind != "symbol" {
 		t.Fatalf("expected imported Rime symbol candidate, got %#v", state.Candidates)
+	}
+	state = e.Preview("vxh")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "※" || state.Candidates[0].Kind != "symbol" {
+		t.Fatalf("expected imported Rime v-mode symbol candidate, got %#v", state.Candidates)
 	}
 }
 

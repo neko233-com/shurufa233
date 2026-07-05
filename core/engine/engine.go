@@ -1175,8 +1175,11 @@ func recognizerComment(name string) string {
 
 func (e *Engine) lookupLocked(reading string) []Entry {
 	inputCode := normalizeInputCode(reading)
-	if strings.HasPrefix(inputCode, "/") {
-		return e.lookupSlashPrefixLocked(inputCode)
+	if code, ok := specialResourcePrefixCode(inputCode); ok {
+		entries := e.lookupSpecialResourcePrefixLocked(code)
+		if len(entries) > 0 || strings.HasPrefix(inputCode, "/") {
+			return entries
+		}
 	}
 	collapsedReading := normalizeReading(inputCode)
 	readings := e.lookupReadingsLocked(collapsedReading)
@@ -1285,8 +1288,8 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 	return nil
 }
 
-func (e *Engine) lookupSlashPrefixLocked(input string) []Entry {
-	code := normalizeReading(strings.TrimLeft(input, "/"))
+func (e *Engine) lookupSpecialResourcePrefixLocked(code string) []Entry {
+	code = normalizeReading(code)
 	if code == "" {
 		return nil
 	}
@@ -1295,7 +1298,7 @@ func (e *Engine) lookupSlashPrefixLocked(input string) []Entry {
 	seen := map[string]bool{}
 	appendSpecial := func(entries []Entry, penalty int) {
 		for _, entry := range entries {
-			if !isSlashPrefixCandidate(entry) {
+			if !isSpecialResourcePrefixCandidate(entry) {
 				continue
 			}
 			next := entry
@@ -1328,13 +1331,24 @@ func (e *Engine) lookupSlashPrefixLocked(input string) []Entry {
 	return out
 }
 
-func isSlashPrefixCandidate(entry Entry) bool {
+func isSpecialResourcePrefixCandidate(entry Entry) bool {
 	switch entry.Kind {
 	case "symbol", "emoji", "kaomoji", "agent":
 		return true
 	default:
 		return strings.HasPrefix(entry.Source, "rime-symbol") || strings.Contains(entry.Source, "opencc")
 	}
+}
+
+func specialResourcePrefixCode(input string) (string, bool) {
+	input = strings.TrimSpace(input)
+	if strings.HasPrefix(input, "/") {
+		return strings.TrimLeft(input, "/"), true
+	}
+	if strings.HasPrefix(input, "v") && len([]rune(input)) > 1 {
+		return strings.TrimPrefix(input, "v"), true
+	}
+	return "", false
 }
 
 func dynamicEntriesForInput(input string, now time.Time) []Entry {
@@ -1986,7 +2000,11 @@ func normalizeCatalogKind(kind string) string {
 
 func normalizeCatalogQuery(query string) string {
 	query = strings.TrimSpace(strings.ToLower(query))
-	query = strings.TrimLeft(query, "/")
+	if code, ok := specialResourcePrefixCode(query); ok {
+		query = code
+	} else {
+		query = strings.TrimLeft(query, "/")
+	}
 	if len([]rune(query)) > 64 {
 		return string([]rune(query)[:64])
 	}

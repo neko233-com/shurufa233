@@ -44,6 +44,7 @@ var abiFeatureList = []string{
 	"abbreviation-candidates",
 	"pinyin-separators",
 	"rime-symbol-prefix",
+	"rime-ice-v-symbol-prefix",
 	"emoji-kaomoji-symbol-candidates",
 	"catalog-json",
 	"dynamic-datetime-candidates",

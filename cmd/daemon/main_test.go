@@ -61,7 +61,7 @@ func TestWithCORSPreflightAllowsLoopbackVite(t *testing.T) {
 	}
 }
 
-func TestPreviewAcceptsRimeSlashSymbolPrefix(t *testing.T) {
+func TestPreviewAcceptsRimeSymbolPrefixes(t *testing.T) {
 	config := engine.DefaultConfig()
 	session := engine.New(config)
 	state := &AppState{
@@ -71,18 +71,20 @@ func TestPreviewAcceptsRimeSlashSymbolPrefix(t *testing.T) {
 		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/engine/preview", strings.NewReader(`{"input":"/fs"}`))
-	rec := httptest.NewRecorder()
-	state.preview(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	var got engine.State
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Buffer != "/fs" || len(got.Candidates) == 0 || got.Candidates[0].Text != "℃" {
-		t.Fatalf("preview /fs = %#v", got)
+	for _, input := range []string{"/fs", "vfs"} {
+		req := httptest.NewRequest(http.MethodPost, "/engine/preview", strings.NewReader(fmt.Sprintf(`{"input":%q}`, input)))
+		rec := httptest.NewRecorder()
+		state.preview(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+		}
+		var got engine.State
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Buffer != input || len(got.Candidates) == 0 || got.Candidates[0].Text != "℃" {
+			t.Fatalf("preview %s = %#v", input, got)
+		}
 	}
 }
 
@@ -1195,18 +1197,20 @@ func TestCatalogEndpointReturnsSpecialResources(t *testing.T) {
 		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/catalog?kind=symbol&q=/fs&limit=5", nil)
-	rec := httptest.NewRecorder()
-	state.catalog(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	var got engine.CatalogResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Kind != "symbol" || got.Count == 0 || got.Entries[0].Reading != "fs" {
-		t.Fatalf("catalog = %#v", got)
+	for _, query := range []string{"/fs", "vfs"} {
+		req := httptest.NewRequest(http.MethodGet, "/catalog?kind=symbol&q="+query+"&limit=5", nil)
+		rec := httptest.NewRecorder()
+		state.catalog(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+		}
+		var got engine.CatalogResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Kind != "symbol" || got.Count == 0 || got.Entries[0].Reading != "fs" {
+			t.Fatalf("catalog %s = %#v", query, got)
+		}
 	}
 }
 

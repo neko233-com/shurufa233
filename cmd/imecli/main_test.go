@@ -686,7 +686,9 @@ func TestCandidateActionAcceptsForgetAction(t *testing.T) {
 	}
 }
 
-func TestPreviewSendsSlashPrefixInput(t *testing.T) {
+func TestPreviewSendsSpecialResourcePrefixInput(t *testing.T) {
+	inputs := []string{"/fs", "vfs"}
+	expectedInput := ""
 	var previewCalled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/engine/preview" {
@@ -697,11 +699,11 @@ func TestPreviewSendsSlashPrefixInput(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode preview: %v", err)
 		}
-		if req["input"] != "/fs" {
+		if req["input"] != expectedInput {
 			t.Fatalf("preview input = %q", req["input"])
 		}
 		_ = json.NewEncoder(w).Encode(engineState{
-			Buffer: "/fs",
+			Buffer: expectedInput,
 			Candidates: []candidate{{
 				Text:    "℃",
 				Reading: "fs",
@@ -716,11 +718,15 @@ func TestPreviewSendsSlashPrefixInput(t *testing.T) {
 	apiBase = server.URL
 	defer func() { apiBase = previousBase }()
 
-	if err := preview(server.Client(), "/fs"); err != nil {
-		t.Fatal(err)
-	}
-	if !previewCalled {
-		t.Fatal("preview endpoint was not called")
+	for _, input := range inputs {
+		expectedInput = input
+		previewCalled = false
+		if err := preview(server.Client(), input); err != nil {
+			t.Fatal(err)
+		}
+		if !previewCalled {
+			t.Fatal("preview endpoint was not called")
+		}
 	}
 }
 
@@ -901,17 +907,18 @@ func TestParseCatalogArgs(t *testing.T) {
 
 func TestCatalogCallsEndpoint(t *testing.T) {
 	var called bool
+	expectedQuery := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/catalog" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		called = true
-		if r.URL.Query().Get("kind") != "symbol" || r.URL.Query().Get("q") != "/fs" || r.URL.Query().Get("limit") != "5" {
+		if r.URL.Query().Get("kind") != "symbol" || r.URL.Query().Get("q") != expectedQuery || r.URL.Query().Get("limit") != "5" {
 			t.Fatalf("query = %s", r.URL.RawQuery)
 		}
 		_ = json.NewEncoder(w).Encode(catalogResponse{
 			Kind:  "symbol",
-			Query: "/fs",
+			Query: expectedQuery,
 			Count: 1,
 			Entries: []phraseEntry{{
 				Reading: "fs",
@@ -927,11 +934,15 @@ func TestCatalogCallsEndpoint(t *testing.T) {
 	apiBase = server.URL
 	defer func() { apiBase = previousBase }()
 
-	if err := catalog(server.Client(), []string{"symbol", "/fs", "--limit=5"}); err != nil {
-		t.Fatal(err)
-	}
-	if !called {
-		t.Fatal("catalog endpoint was not called")
+	for _, query := range []string{"/fs", "vfs"} {
+		expectedQuery = query
+		called = false
+		if err := catalog(server.Client(), []string{"symbol", query, "--limit=5"}); err != nil {
+			t.Fatal(err)
+		}
+		if !called {
+			t.Fatal("catalog endpoint was not called")
+		}
 	}
 }
 

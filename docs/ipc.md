@@ -61,11 +61,11 @@ explicit segmentation candidate when every separated syllable can be resolved.
 The same behavior is used by the React/Wails preview strip and
 `shurufa-imecli preview "xi'an"`.
 
-It also accepts Rime-style slash symbol prefixes such as `/fs` and `/xh`. The
-buffer keeps the slash for preedit display, lookup resolves the imported Rime
-symbol code without the slash, and the candidate list is filtered to symbol,
-emoji, kaomoji, and agent-style entries so ordinary pinyin words do not leak
-into slash-prefixed symbol mode.
+It also accepts Rime-style special-resource prefixes such as `/fs`/`/xh` and
+the Rime Ice v-mode aliases `vfs`/`vxh`. The buffer keeps the typed prefix for
+preedit display, lookup resolves the imported Rime symbol code without the
+prefix, and the candidate list is filtered to symbol, emoji, kaomoji, and
+agent-style entries so ordinary pinyin words do not leak into symbol mode.
 
 The settings UI uses this IPC directly in development. A Wails v3 shell can host the same React bundle and call the same daemon API or proxy these methods through its Go backend.
 
@@ -248,8 +248,8 @@ catalog. Query parameters are `kind=all|emoji|kaomoji|symbol|agent`,
 `q=<search>`, and `limit=<n>`. `/symbols` is an alias for the same handler.
 Imported Rime `symbols.yaml`, `symbols.custom.yaml`, and OpenCC emoji rows are
 ordinary dictionary entries tagged with `kind`, so they appear here without
-special per-platform code. Slash-prefixed queries such as `q=/fs` are normalized
-to the stored Rime symbol code:
+special per-platform code. Slash-prefixed queries such as `q=/fs` and Rime Ice
+v-mode queries such as `q=vfs` are normalized to the stored Rime symbol code:
 
 ```json
 {

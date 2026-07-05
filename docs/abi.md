@@ -56,10 +56,10 @@ separated syllables resolve cleanly, for example `xi'an` -> `西安`. Platform
 glue can therefore display the upper English/pinyin preedit exactly as typed
 while sharing one cross-platform segmentation result.
 
-They also preserve Rime-style slash symbol prefixes such as `/fs`. The slash is
-kept in the returned `buffer`, while lookup uses the imported symbol code
-without the slash and filters the result to symbol, emoji, kaomoji, and agent
-candidates.
+They also preserve Rime-style special-resource prefixes such as `/fs` and the
+Rime Ice v-mode alias `vfs`. The prefix is kept in the returned `buffer`, while
+lookup uses the imported symbol code without the prefix and filters the result
+to symbol, emoji, kaomoji, and agent candidates.
 
 ## Hot Path
 
@@ -179,6 +179,7 @@ skin menus can list and apply presets without adding another TSF loader pass.
 `dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `skin-presets-json`, `apply-skin-preset-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `rime-userdb-text`, `user-phrases-json`, `rime-custom-phrase-text`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `profile-sync-json`, `apply-sync-config-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
+`rime-ice-v-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
 `dynamic-datetime-candidates`, `candidate-char-commit`, and
 `candidate-comments`, `association-candidates`, `candidate-action-json`, and
@@ -358,7 +359,8 @@ coding game or password behavior in C++.
 `catalog-json` and `ShurufaCatalogJSON` reserve the shared emoji, kaomoji,
 symbol, and agent resource surface for future native panels. The payload accepts
 `kind=all|emoji|kaomoji|symbol|agent`, `query` or `input`, and `limit`; slash
-queries such as `/fs` are normalized to the stored Rime code. The response is:
+queries such as `/fs` and Rime Ice v-mode queries such as `vfs` are normalized
+to the stored Rime code. The response is:
 
 ```json
 {
