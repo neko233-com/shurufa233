@@ -47,7 +47,10 @@ type Config = {
   schema?: string;
   candidatePageSize: number;
   candidateLayout: "horizontal" | "vertical" | "auto";
+  candidateWindowMode: "win11" | "full" | "lite" | "minimal";
   showCandidateComments: boolean;
+  performanceMode: "balanced" | "high" | "compatibility";
+  emojiCandidates: boolean;
   fuzzyInitials: string[];
   spellerAlgebra?: string[];
   doublePinyin: boolean;
@@ -445,7 +448,10 @@ const defaultConfig: Config = {
   schema: "wechat-pinyin",
   candidatePageSize: 7,
   candidateLayout: "horizontal",
+  candidateWindowMode: "win11",
   showCandidateComments: true,
+  performanceMode: "balanced",
+  emojiCandidates: true,
   fuzzyInitials: ["zh=z", "ch=c", "sh=s"],
   spellerAlgebra: [],
   doublePinyin: false,
@@ -772,6 +778,9 @@ function hydrateConfig(config: Config): Config {
     ...config,
     candidatePageSize: Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize)),
     candidateLayout: normalizeCandidateLayout(config.candidateLayout),
+    candidateWindowMode: normalizeCandidateWindowMode(config.candidateWindowMode),
+    performanceMode: normalizePerformanceMode(config.performanceMode),
+    emojiCandidates: config.emojiCandidates ?? defaultConfig.emojiCandidates,
     script: normalizeScript(config.script),
     associations: config.associations ?? defaultConfig.associations,
     recognizerPatterns: config.recognizerPatterns ?? defaultConfig.recognizerPatterns,
@@ -818,6 +827,16 @@ function hydrateConfig(config: Config): Config {
 function normalizeCandidateLayout(layout?: string): Config["candidateLayout"] {
   if (layout === "vertical" || layout === "auto") return layout;
   return "horizontal";
+}
+
+function normalizeCandidateWindowMode(mode?: string): Config["candidateWindowMode"] {
+  if (mode === "full" || mode === "lite" || mode === "minimal") return mode;
+  return "win11";
+}
+
+function normalizePerformanceMode(mode?: string): Config["performanceMode"] {
+  if (mode === "high" || mode === "compatibility") return mode;
+  return "balanced";
 }
 
 function normalizeScript(script?: string): Config["script"] {
@@ -2524,6 +2543,29 @@ function App() {
                 竖排候选
               </button>
             </div>
+            <label className="field">
+              <span>候选窗样式</span>
+              <select
+                value={config.candidateWindowMode ?? "win11"}
+                onChange={(event) => setConfig({ ...config, candidateWindowMode: event.target.value as Config["candidateWindowMode"] })}
+              >
+                <option value="win11">Win11 风格</option>
+                <option value="full">完整工具区</option>
+                <option value="lite">轻量高性能</option>
+                <option value="minimal">极简候选</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>性能模式</span>
+              <select
+                value={config.performanceMode ?? "balanced"}
+                onChange={(event) => setConfig({ ...config, performanceMode: event.target.value as Config["performanceMode"] })}
+              >
+                <option value="balanced">均衡</option>
+                <option value="high">高性能</option>
+                <option value="compatibility">兼容优先</option>
+              </select>
+            </label>
             <label className="toggle">
               <input
                 type="checkbox"
@@ -2531,6 +2573,14 @@ function App() {
                 onChange={(event) => setConfig({ ...config, showCandidateComments: event.target.checked })}
               />
               <span>显示候选注释</span>
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={config.emojiCandidates ?? true}
+                onChange={(event) => setConfig({ ...config, emojiCandidates: event.target.checked })}
+              />
+              <span>显示 Emoji / 颜文字候选</span>
             </label>
             <label className="toggle">
               <input

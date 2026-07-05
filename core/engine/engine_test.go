@@ -781,6 +781,19 @@ func TestDefaultConfigShowsCandidateComments(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigCandidateWindowPerformanceAndEmoji(t *testing.T) {
+	config := DefaultConfig()
+	if config.CandidateWindowMode != "win11" {
+		t.Fatalf("candidateWindowMode = %q, want win11", config.CandidateWindowMode)
+	}
+	if config.PerformanceMode != "balanced" {
+		t.Fatalf("performanceMode = %q, want balanced", config.PerformanceMode)
+	}
+	if !config.EmojiCandidates {
+		t.Fatal("emojiCandidates should default to true")
+	}
+}
+
 func TestKeyBehaviorProfilesNormalize(t *testing.T) {
 	wechat := NormalizeKeyBehavior(Config{KeyProfile: "wechat"})
 	if !wechat.ShiftToggleMode || !wechat.SemicolonQuickSelect || !wechat.QuoteQuickSelect ||
@@ -1435,6 +1448,19 @@ func TestBuiltinEmojiCandidateMetadata(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("expected builtin %s candidate %q for %s, got %#v", tt.kind, tt.text, tt.reading, state.Candidates)
+		}
+	}
+}
+
+func TestEmojiCandidatesCanBeDisabled(t *testing.T) {
+	config := DefaultConfig()
+	config.EmojiCandidates = false
+	e := New(config)
+
+	state := e.Preview("zan")
+	for _, candidate := range state.Candidates {
+		if candidate.Kind == "emoji" || candidate.Kind == "kaomoji" {
+			t.Fatalf("emoji candidate should be disabled, got %#v", candidate)
 		}
 	}
 }

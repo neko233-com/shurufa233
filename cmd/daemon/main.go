@@ -1595,7 +1595,7 @@ func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%s|%t|%d|%d|%d|%d|%d|%d",
+	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%s|%t|%d|%d|%d|%d|%d|%d|%s|%s|%t",
 		s.config.Skin.FontFamily,
 		s.config.Skin.FontSize,
 		s.config.Skin.Accent,
@@ -1614,6 +1614,9 @@ func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 		s.config.Skin.RowGap,
 		s.config.Skin.Shadow,
 		s.config.Skin.Opacity,
+		sanitizePayloadField(s.config.CandidateWindowMode),
+		sanitizePayloadField(s.config.PerformanceMode),
+		s.config.EmojiCandidates,
 	)
 }
 
@@ -2873,7 +2876,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	config.AppRules = engine.NormalizeAppRules(config.AppRules)
 	config.Agent = engine.NormalizeAgent(config.Agent)
 	config.Sync = engine.NormalizeSync(config.Sync)
-	return config
+	return engine.NormalizeConfig(config)
 }
 
 func normalizeCandidateLayoutValue(layout string, fallback string) string {

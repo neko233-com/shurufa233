@@ -7,7 +7,10 @@ type Config struct {
 	Schema                string              `json:"schema,omitempty"`
 	CandidatePageSize     int                 `json:"candidatePageSize"`
 	CandidateLayout       string              `json:"candidateLayout"`
+	CandidateWindowMode   string              `json:"candidateWindowMode,omitempty"`
 	ShowCandidateComments bool                `json:"showCandidateComments"`
+	PerformanceMode       string              `json:"performanceMode,omitempty"`
+	EmojiCandidates       bool                `json:"emojiCandidates"`
 	FuzzyInitials         []string            `json:"fuzzyInitials"`
 	SpellerAlgebra        []string            `json:"spellerAlgebra,omitempty"`
 	DoublePinyin          bool                `json:"doublePinyin"`

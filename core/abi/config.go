@@ -117,7 +117,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	config.AppRules = engine.NormalizeAppRules(config.AppRules)
 	config.Agent = engine.NormalizeAgent(config.Agent)
 	config.Sync = engine.NormalizeSync(config.Sync)
-	return config
+	return engine.NormalizeConfig(config)
 }
 
 func normalizeScript(script string, fallback string) string {

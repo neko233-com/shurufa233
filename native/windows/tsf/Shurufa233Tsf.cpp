@@ -39,6 +39,7 @@ constexpr int kMinCandidatesPerPage = 3;
 constexpr int kMaxCandidatesPerPage = 9;
 constexpr DWORD kSkinConfigPollMs = 250;
 constexpr DWORD kHttpSkinPollMs = 2000;
+constexpr DWORD kInvalidSinkCookie = 0xFFFFFFFF;
 
 long g_dllRefCount = 0;
 HINSTANCE g_instance = nullptr;
@@ -801,6 +802,7 @@ class CandidateWindow {
   };
 
   ~CandidateWindow() {
+    Destroy();
     ResetFont();
   }
 
@@ -839,7 +841,7 @@ class CandidateWindow {
     pageStart_ = max(0, pageStart);
     pageSize_ = max(kMinCandidatesPerPage, min(kMaxCandidatesPerPage, pageSize));
     totalCount_ = max(static_cast<int>(candidates_.size()), totalCount);
-    composing_ = compositionText.empty() ? CompositionText() : compositionText;
+    composing_ = PreferredCompositionText(compositionText);
     EnsureWindow();
     RefreshDpi();
     RefreshSkin();
@@ -865,6 +867,32 @@ class CandidateWindow {
     candidateHits_.clear();
     pageHits_.clear();
     hoverGuardArmed_ = false;
+  }
+
+  void Destroy() {
+    if (hwnd_) {
+      KillTimer(hwnd_, kStatusTimerId);
+      HWND hwnd = hwnd_;
+      hwnd_ = nullptr;
+      DestroyWindow(hwnd);
+    }
+    composing_.clear();
+    statusText_.clear();
+    candidates_.clear();
+    candidateHits_.clear();
+    pageHits_.clear();
+    hoverGuardArmed_ = false;
+    selectedIndex_ = 0;
+    pageStart_ = 0;
+    totalCount_ = 0;
+  }
+
+  bool HasWindow() const {
+    return hwnd_ != nullptr;
+  }
+
+  bool IsVisible() const {
+    return hwnd_ && IsWindowVisible(hwnd_);
   }
 
   void ShowStatus(const wchar_t *text) {
@@ -967,6 +995,12 @@ class CandidateWindow {
         SetCursor(LoadCursorW(nullptr, IDC_HAND));
         return TRUE;
       }
+    }
+    if (self && message == WM_NCDESTROY) {
+      if (self->hwnd_ == hwnd) {
+        self->hwnd_ = nullptr;
+      }
+      SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
     }
     if (message == WM_ERASEBKGND) {
       return 1;
@@ -1122,6 +1156,9 @@ class CandidateWindow {
   std::string theme_ = "system";
   std::string layout_ = "horizontal";
   bool showComments_ = true;
+  bool emojiCandidates_ = true;
+  std::string candidateWindowMode_ = "win11";
+  std::string performanceMode_ = "balanced";
   int cornerRadius_ = 10;
   int paddingX_ = 12;
   int paddingY_ = 8;
@@ -1135,6 +1172,7 @@ class CandidateWindow {
   FILETIME lastSkinConfigWriteTime_{};
   bool hasSkinConfigWriteTime_ = false;
   HFONT font_ = nullptr;
+  HFONT emojiFont_ = nullptr;
   std::wstring fontFamilyKey_;
   int fontSizeKey_ = 0;
   UINT fontDpiKey_ = 0;
@@ -1148,11 +1186,11 @@ class CandidateWindow {
                              rows * itemHeight + max(0, rows - 1) * Scale(rowGap_) +
                              Scale(paddingY_ + 2));
     }
-    return max(Scale(82), ScaledFontSize() * 2 + Scale(paddingY_ * 3 + 32));
+    return max(Scale(82), ScaledFontSize() * 2 + Scale(paddingY_ * 3 + 30));
   }
 
   int CandidateBandTop() const {
-    return ScaledFontSize() + Scale(paddingY_ + 16);
+    return ScaledFontSize() + Scale(paddingY_ + 15);
   }
 
   bool IsVerticalLayout() const {
@@ -1172,6 +1210,39 @@ class CandidateWindow {
       return "auto";
     }
     return "horizontal";
+  }
+
+  static std::string NormalizeCandidateWindowMode(const std::string &mode) {
+    std::string value;
+    value.reserve(mode.size());
+    for (char ch : mode) {
+      value.push_back(static_cast<char>(tolower(static_cast<unsigned char>(ch))));
+    }
+    if (value == "full" || value == "tools") {
+      return "full";
+    }
+    if (value == "lite" || value == "light" || value == "compact" || value == "performance") {
+      return "lite";
+    }
+    if (value == "minimal" || value == "minimalist" || value == "plain") {
+      return "minimal";
+    }
+    return "win11";
+  }
+
+  static std::string NormalizePerformanceMode(const std::string &mode) {
+    std::string value;
+    value.reserve(mode.size());
+    for (char ch : mode) {
+      value.push_back(static_cast<char>(tolower(static_cast<unsigned char>(ch))));
+    }
+    if (value == "high" || value == "performance" || value == "fast" || value == "speed") {
+      return "high";
+    }
+    if (value == "compat" || value == "compatibility" || value == "safe") {
+      return "compatibility";
+    }
+    return "balanced";
   }
 
   UINT ReadCurrentDpi() const {
@@ -1229,9 +1300,23 @@ class CandidateWindow {
       DeleteObject(font_);
       font_ = nullptr;
     }
+    if (emojiFont_) {
+      DeleteObject(emojiFont_);
+      emojiFont_ = nullptr;
+    }
     fontFamilyKey_.clear();
     fontSizeKey_ = 0;
     fontDpiKey_ = 0;
+  }
+
+  HFONT EnsureEmojiFont() {
+    if (!emojiFont_) {
+      emojiFont_ = CreateFontW(-ScaledFontSize(), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                               CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+                               L"Segoe UI Emoji");
+    }
+    return emojiFont_ ? emojiFont_ : EnsureFont();
   }
 
   int TextWidth(HDC dc, const std::wstring &value) const {
@@ -1257,15 +1342,29 @@ class CandidateWindow {
     const int commentWidth = !showComments_ || candidate.comment.empty() ? 0 : min(Scale(88), TextWidth(dc, candidate.comment) + Scale(10));
     const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
     const int kindWidth = kindLabel.empty() ? 0 : CandidateBadgeWidth(dc, kindLabel) + Scale(10);
-    return max(Scale(66), min(Scale(320), Scale(paddingX_ * 2 + 24) + textWidth + commentWidth + kindWidth));
+    return max(Scale(62), min(Scale(300), Scale(paddingX_ * 2 + 24) + textWidth + commentWidth + kindWidth));
   }
 
   bool HasPageControls() const {
     return totalCount_ > static_cast<int>(candidates_.size());
   }
 
-  int PageControlsWidth() const {
-    return HasPageControls() ? Scale(168) : 0;
+  bool IsLiteWindowMode() const {
+    return candidateWindowMode_ == "lite" || performanceMode_ == "high";
+  }
+
+  bool IsMinimalWindowMode() const {
+    return candidateWindowMode_ == "minimal";
+  }
+
+  int ToolControlsWidth() const {
+    if (IsVerticalLayout() || IsMinimalWindowMode()) {
+      return 0;
+    }
+    if (IsLiteWindowMode()) {
+      return HasPageControls() ? Scale(68) : 0;
+    }
+    return Scale(180);
   }
 
   int MeasureWindowWidth() {
@@ -1274,17 +1373,17 @@ class CandidateWindow {
     int width = max(Scale(260), TextWidth(dc, composing_) + Scale(paddingX_ * 2 + 20));
     if (IsVerticalLayout()) {
       for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
-        width = max(width, CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(paddingX_ * 2 + 14) + PageControlsWidth());
+        width = max(width, CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(paddingX_ * 2 + 14));
       }
     } else {
       for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
         width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(rowGap_);
       }
-      width += PageControlsWidth();
+      width += ToolControlsWidth();
     }
     SelectObject(dc, oldFont);
     ReleaseDC(hwnd_, dc);
-    return max(Scale(180), min(IsVerticalLayout() ? Scale(460) : Scale(780), width));
+    return max(Scale(180), min(IsVerticalLayout() ? Scale(460) : Scale(940), width));
   }
 
   int MeasureStatusWidth() {
@@ -1357,6 +1456,11 @@ class CandidateWindow {
   COLORREF CandidateIdleColor() const {
     return IsDarkSkin() ? MixColor(surface_, RGB(255, 255, 255), 5)
                             : MixColor(surface_, accent_, 4);
+  }
+
+  COLORREF CandidateSelectedColor() const {
+    return IsDarkSkin() ? MixColor(surface_, RGB(255, 255, 255), 10)
+                            : MixColor(surface_, RGB(0, 0, 0), 5);
   }
 
   COLORREF CandidateIdleBorderColor() const {
@@ -1546,6 +1650,15 @@ class CandidateWindow {
     if (fields.size() > 17) {
       opacity_ = max(80, min(100, atoi(fields[17].c_str())));
     }
+    if (fields.size() > 18) {
+      candidateWindowMode_ = NormalizeCandidateWindowMode(fields[18]);
+    }
+    if (fields.size() > 19) {
+      performanceMode_ = NormalizePerformanceMode(fields[19]);
+    }
+    if (fields.size() > 20) {
+      emojiCandidates_ = ParseBoolLike(fields[20], true);
+    }
     ApplyWindowOpacity();
     return true;
   }
@@ -1593,6 +1706,9 @@ class CandidateWindow {
     const int rowGap = SkinMetricOrDefault(JsonIntField(json, "rowGap"), 6);
     const int shadow = SkinMetricOrDefault(JsonIntField(json, "shadow"), 12);
     const int opacity = SkinMetricOrDefault(JsonIntField(json, "opacity"), 100);
+    const std::string candidateWindowMode = JsonStringField(json, "candidateWindowMode");
+    const std::string performanceMode = JsonStringField(json, "performanceMode");
+    const bool emojiCandidates = JsonBoolField(json, "emojiCandidates", true);
     if (fontFamily.empty() || fontSize <= 0 || accent.empty() || surface.empty() ||
         text.empty() || mutedText.empty() || border.empty() || highlightText.empty()) {
       return false;
@@ -1604,7 +1720,10 @@ class CandidateWindow {
                           (showComments ? "true" : "false") + "|" +
                           std::to_string(cornerRadius) + "|" + std::to_string(paddingX) + "|" +
                           std::to_string(paddingY) + "|" + std::to_string(rowGap) + "|" +
-                          std::to_string(shadow) + "|" + std::to_string(opacity);
+                          std::to_string(shadow) + "|" + std::to_string(opacity) + "|" +
+                          NormalizeCandidateWindowMode(candidateWindowMode) + "|" +
+                          NormalizePerformanceMode(performanceMode) + "|" +
+                          (emojiCandidates ? "true" : "false");
     if (!ApplySkinPayload(payload)) {
       return false;
     }
@@ -1653,6 +1772,10 @@ class CandidateWindow {
           if (fields.size() > 7) {
             item.pinned = PayloadBoolField(fields[7]);
           }
+          if (!emojiCandidates_ && (item.kind == L"emoji" || item.kind == L"kaomoji")) {
+            lineStart = lineEnd + 1;
+            continue;
+          }
           parsed.push_back(item);
         }
       }
@@ -1673,6 +1796,18 @@ class CandidateWindow {
       }
     }
     return L"";
+  }
+
+  std::wstring PreferredCompositionText(const std::wstring &fallback) const {
+    const std::wstring candidateReading = CompositionText();
+    if (candidateReading.empty()) {
+      return fallback;
+    }
+    if (fallback.empty() || candidateReading.find(L'\'') != std::wstring::npos ||
+        candidateReading.size() >= fallback.size()) {
+      return candidateReading;
+    }
+    return fallback;
   }
 
   std::wstring CandidateKindLabel(const std::wstring &kind) const {
@@ -1729,16 +1864,6 @@ class CandidateWindow {
                      rect.top + ScaledFontSize() + Scale(16)};
     DrawTextW(dc, composing_.c_str(), static_cast<int>(composing_.size()), &composeRect,
               DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
-
-    HPEN accentPen = CreatePen(PS_SOLID, max(1, Scale(2)), PreeditUnderlineColor());
-    HGDIOBJ oldPen = SelectObject(dc, accentPen);
-    const int underlineY = composeRect.bottom - Scale(2);
-    MoveToEx(dc, composeRect.left, underlineY, nullptr);
-    LineTo(dc, min(rect.right - Scale(16),
-                   composeRect.left + max(Scale(28), TextWidth(dc, composing_))),
-           underlineY);
-    SelectObject(dc, oldPen);
-    DeleteObject(accentPen);
   }
 
   void DrawRoundedRect(HDC dc, const RECT &rect, COLORREF fill, COLORREF stroke,
@@ -1782,30 +1907,72 @@ class CandidateWindow {
     DrawChevron(dc, rect, delta, mutedText_);
   }
 
+  void DrawDownChevron(HDC dc, const RECT &rect, COLORREF color) const {
+    const int midX = (rect.left + rect.right) / 2;
+    const int midY = (rect.top + rect.bottom) / 2;
+    const int halfWidth = Scale(5);
+    const int halfHeight = Scale(3);
+    POINT points[3]{
+        POINT{midX - halfWidth, midY - halfHeight},
+        POINT{midX, midY + halfHeight},
+        POINT{midX + halfWidth, midY - halfHeight},
+    };
+    HPEN pen = CreatePen(PS_SOLID, max(1, Scale(2)), color);
+    HGDIOBJ oldPen = SelectObject(dc, pen);
+    Polyline(dc, points, 3);
+    SelectObject(dc, oldPen);
+    DeleteObject(pen);
+  }
+
+  void DrawToolbarTextButton(HDC dc, const RECT &rect, const wchar_t *text) const {
+    DrawRoundedRect(dc, rect, CandidateIdleColor(), CandidateIdleBorderColor(), 8);
+    SetTextColor(dc, text_);
+    DrawTextW(dc, text, -1, const_cast<RECT *>(&rect), DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+  }
+
+  void DrawMicrophoneButton(HDC dc, const RECT &rect) const {
+    DrawRoundedRect(dc, rect, CandidateIdleColor(), CandidateIdleBorderColor(), 8);
+    HPEN pen = CreatePen(PS_SOLID, max(1, Scale(2)), mutedText_);
+    HGDIOBJ oldPen = SelectObject(dc, pen);
+    HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+    const int cx = (rect.left + rect.right) / 2;
+    RECT micBody{cx - Scale(4), rect.top + Scale(7),
+                 cx + Scale(4), rect.top + Scale(19)};
+    RoundRect(dc, micBody.left, micBody.top, micBody.right, micBody.bottom,
+              Scale(5), Scale(5));
+    MoveToEx(dc, cx - Scale(8), rect.top + Scale(16), nullptr);
+    LineTo(dc, cx - Scale(8), rect.top + Scale(19));
+    LineTo(dc, cx, rect.top + Scale(23));
+    LineTo(dc, cx + Scale(8), rect.top + Scale(19));
+    LineTo(dc, cx + Scale(8), rect.top + Scale(16));
+    MoveToEx(dc, cx, rect.top + Scale(23), nullptr);
+    LineTo(dc, cx, rect.bottom - Scale(5));
+    MoveToEx(dc, cx - Scale(6), rect.bottom - Scale(5), nullptr);
+    LineTo(dc, cx + Scale(6), rect.bottom - Scale(5));
+    SelectObject(dc, oldBrush);
+    SelectObject(dc, oldPen);
+    DeleteObject(pen);
+  }
+
   void DrawCandidateItem(HDC dc, const CandidateView &candidate, bool selected,
                          const RECT &itemRect) {
     if (selected) {
-      if (shadow_ > 0) {
-        const int shadowOffset = max(1, Scale(max(1, shadow_ / 8)));
-        const int shadowMix = max(8, min(30, shadow_ + 6));
-        RECT shadowRect{itemRect.left + shadowOffset / 2, itemRect.top + shadowOffset,
-                        itemRect.right + shadowOffset / 2, itemRect.bottom + shadowOffset};
-        DrawRoundedRect(dc, shadowRect, MixColor(CandidateBandColor(), accent_, shadowMix),
-                        MixColor(CandidateBandColor(), accent_, shadowMix), cornerRadius_);
-      }
-      DrawRoundedRect(dc, itemRect, accent_, CandidateAccentEdgeColor(), cornerRadius_);
-    } else {
-      DrawRoundedRect(dc, itemRect, CandidateIdleColor(), CandidateIdleBorderColor(), cornerRadius_);
+      DrawRoundedRect(dc, itemRect, CandidateSelectedColor(), CandidateIdleBorderColor(), 7);
+      RECT accentRect{itemRect.left, itemRect.top + Scale(7),
+                      itemRect.left + max(Scale(3), 2), itemRect.bottom - Scale(7)};
+      HBRUSH accentBrush = CreateSolidBrush(accent_);
+      FillRect(dc, &accentRect, accentBrush);
+      DeleteObject(accentBrush);
     }
 
     wchar_t number[8]{};
     StringCchPrintfW(number, ARRAYSIZE(number), L"%d", candidate.index);
-    SetTextColor(dc, selected ? highlightText_ : mutedText_);
+    SetTextColor(dc, selected ? text_ : mutedText_);
     RECT numberRect{itemRect.left + Scale(paddingX_), itemRect.top,
                     itemRect.left + Scale(paddingX_ + 20), itemRect.bottom};
     DrawTextW(dc, number, -1, &numberRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
 
-    SetTextColor(dc, selected ? highlightText_ : text_);
+    SetTextColor(dc, text_);
     RECT textRect{itemRect.left + Scale(paddingX_ + 20), itemRect.top,
                   itemRect.right - Scale(paddingX_), itemRect.bottom};
     const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
@@ -1822,20 +1989,27 @@ class CandidateWindow {
       SetTextColor(dc, CandidateBadgeTextColor(selected));
       DrawTextW(dc, kindLabel.c_str(), static_cast<int>(kindLabel.size()), &badgeRect,
                 DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS);
-      SetTextColor(dc, selected ? highlightText_ : text_);
+      SetTextColor(dc, text_);
     }
     if (showComments_ && !candidate.comment.empty()) {
       const int commentWidth = min(Scale(88), max(Scale(30), TextWidth(dc, candidate.comment) + Scale(8)));
       RECT commentRect{max(textRect.left + Scale(30), rightEdge - commentWidth), itemRect.top,
                        rightEdge - Scale(4), itemRect.bottom};
       textRect.right = max(textRect.left + Scale(24), commentRect.left - Scale(6));
-      SetTextColor(dc, selected ? MixColor(highlightText_, accent_, 14) : mutedText_);
+      SetTextColor(dc, mutedText_);
       DrawTextW(dc, candidate.comment.c_str(), static_cast<int>(candidate.comment.size()),
                 &commentRect, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_END_ELLIPSIS);
-      SetTextColor(dc, selected ? highlightText_ : text_);
+      SetTextColor(dc, text_);
+    }
+    HGDIOBJ oldFont = nullptr;
+    if ((candidate.kind == L"emoji" || candidate.kind == L"kaomoji") && emojiCandidates_) {
+      oldFont = SelectObject(dc, EnsureEmojiFont());
     }
     DrawTextW(dc, candidate.text.c_str(), static_cast<int>(candidate.text.size()), &textRect,
               DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS);
+    if (oldFont) {
+      SelectObject(dc, oldFont);
+    }
   }
 
   void DrawCandidates(HDC dc, const RECT &rect) {
@@ -1846,8 +2020,8 @@ class CandidateWindow {
     int x = rect.left + Scale(paddingX_ + 3);
     const int y = CandidateBandTop() + Scale(paddingY_);
     const int itemHeight = max(Scale(34), ScaledFontSize() + Scale(paddingY_ * 2 + 4));
-    const int candidateRight = HasPageControls() ? rect.right - PageControlsWidth() - Scale(8)
-                                                 : rect.right - Scale(paddingX_ + 2);
+    const int candidateRight = IsVerticalLayout() ? rect.right - Scale(paddingX_ + 2)
+                                                  : rect.right - ToolControlsWidth() - Scale(8);
     for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
       const CandidateView &candidate = candidates_[i];
       const bool selected = static_cast<int>(i) == selectedIndex_;
@@ -1875,7 +2049,7 @@ class CandidateWindow {
         break;
       }
     }
-    DrawPageIndicator(dc, rect);
+    DrawToolbar(dc, rect);
   }
 
   int HitTestCandidate(POINT point) const {
@@ -1931,30 +2105,51 @@ class CandidateWindow {
     }
   }
 
-  void DrawPageIndicator(HDC dc, const RECT &rect) {
-    if (!HasPageControls()) {
+  void DrawToolbar(HDC dc, const RECT &rect) {
+    if (IsVerticalLayout() || IsMinimalWindowMode() || ToolControlsWidth() <= 0) {
       return;
     }
-    const int first = pageStart_ + 1;
-    const int last = min(pageStart_ + static_cast<int>(candidates_.size()), totalCount_);
-    wchar_t label[32]{};
-    StringCchPrintfW(label, ARRAYSIZE(label), L"%d-%d/%d", first, last, totalCount_);
-    const int centerY = IsVerticalLayout()
-                            ? CandidateBandTop() + max(Scale(34), (rect.bottom - CandidateBandTop()) / 2)
-                            : CandidateBandTop() + Scale(paddingY_) +
-                                  max(Scale(34), ScaledFontSize() + Scale(paddingY_ * 2 + 4)) / 2;
-    RECT prevRect{rect.right - Scale(156), centerY - Scale(15),
-                  rect.right - Scale(128), centerY + Scale(15)};
-    RECT nextRect{rect.right - Scale(42), centerY - Scale(15),
-                  rect.right - Scale(14), centerY + Scale(15)};
+    const int centerY = CandidateBandTop() + Scale(paddingY_) +
+                        max(Scale(34), ScaledFontSize() + Scale(paddingY_ * 2 + 4)) / 2;
+    const int left = rect.right - ToolControlsWidth() + Scale(2);
+    HPEN dividerPen = CreatePen(PS_SOLID, max(1, Scale(1)), CandidateIdleBorderColor());
+    HGDIOBJ oldPen = SelectObject(dc, dividerPen);
+    MoveToEx(dc, left - Scale(8), centerY - Scale(16), nullptr);
+    LineTo(dc, left - Scale(8), centerY + Scale(16));
+    SelectObject(dc, oldPen);
+    DeleteObject(dividerPen);
+
+    RECT prevRect{left, centerY - Scale(15), left + Scale(28), centerY + Scale(15)};
+    RECT nextRect{prevRect.right + Scale(4), centerY - Scale(15),
+                  prevRect.right + Scale(32), centerY + Scale(15)};
     DrawPageButton(dc, prevRect, -1);
     DrawPageButton(dc, nextRect, 1);
-    pageHits_.push_back(PageHit{prevRect, -1});
-    pageHits_.push_back(PageHit{nextRect, 1});
+    if (HasPageControls()) {
+      pageHits_.push_back(PageHit{prevRect, -1});
+      pageHits_.push_back(PageHit{nextRect, 1});
+    }
+    if (IsLiteWindowMode()) {
+      return;
+    }
+
+    RECT favoriteRect{nextRect.right + Scale(10), centerY - Scale(15),
+                      nextRect.right + Scale(42), centerY + Scale(15)};
+    DrawToolbarTextButton(dc, favoriteRect, L"♡");
+
+    RECT dropdownRect{favoriteRect.right + Scale(4), centerY - Scale(15),
+                      favoriteRect.right + Scale(30), centerY + Scale(15)};
+    DrawDownChevron(dc, dropdownRect, mutedText_);
+
+    RECT modeRect{dropdownRect.right + Scale(4), centerY - Scale(15),
+                  dropdownRect.right + Scale(54), centerY + Scale(15)};
     SetTextColor(dc, mutedText_);
-    RECT labelRect{prevRect.right + Scale(6), centerY - Scale(15),
-                   nextRect.left - Scale(6), centerY + Scale(15)};
-    DrawTextW(dc, label, -1, &labelRect, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+    DrawTextW(dc, L"高", -1, &modeRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
+    RECT modeChevron{modeRect.left + Scale(20), modeRect.top, modeRect.left + Scale(36), modeRect.bottom};
+    DrawDownChevron(dc, modeChevron, mutedText_);
+
+    RECT micRect{modeRect.right + Scale(2), centerY - Scale(15),
+                 modeRect.right + Scale(30), centerY + Scale(15)};
+    DrawMicrophoneButton(dc, micRect);
   }
 
   void DrawStatus(HDC dc, const RECT &rect) {
@@ -2270,7 +2465,10 @@ class EditSession final : public ITfEditSession {
   std::wstring text_;
 };
 
-class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink {
+class TextService final : public ITfTextInputProcessorEx,
+                          public ITfKeyEventSink,
+                          public ITfActiveLanguageProfileNotifySink,
+                          public ITfThreadMgrEventSink {
  public:
   TextService() {
     AddDllRef();
@@ -2300,6 +2498,10 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       *out = static_cast<ITfTextInputProcessorEx *>(this);
     } else if (riid == IID_ITfKeyEventSink) {
       *out = static_cast<ITfKeyEventSink *>(this);
+    } else if (riid == IID_ITfActiveLanguageProfileNotifySink) {
+      *out = static_cast<ITfActiveLanguageProfileNotifySink *>(this);
+    } else if (riid == IID_ITfThreadMgrEventSink) {
+      *out = static_cast<ITfThreadMgrEventSink *>(this);
     } else {
       return E_NOINTERFACE;
     }
@@ -2340,6 +2542,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     if (SUCCEEDED(hr) && keyMgr_) {
       hr = keyMgr_->AdviseKeyEventSink(clientId_, static_cast<ITfKeyEventSink *>(this), TRUE);
     }
+    AdviseThreadMgrSinks();
     wchar_t message[160]{};
     StringCchPrintfW(message, ARRAYSIZE(message), L"ActivateEx session=%llu advise_hr=0x%08X",
                      session_, static_cast<unsigned int>(hr));
@@ -2349,10 +2552,9 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
 
   STDMETHODIMP Deactivate() override {
     LogDebugLine(L"Deactivate called");
-    candidateWindow_.Hide();
-    cachedCandidateCount_ = 0;
-    compositionLength_ = 0;
+    CloseCandidateUI(false, true);
     ResetPunctuationState();
+    UnadviseThreadMgrSinks();
     if (session_ && g_core.Ready()) {
       g_core.destroySession(session_);
       session_ = 0;
@@ -2371,7 +2573,46 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     return S_OK;
   }
 
-  STDMETHODIMP OnSetFocus(BOOL) override {
+  STDMETHODIMP OnSetFocus(BOOL foreground) override {
+    if (!foreground) {
+      CloseCandidateUI(true, true);
+    }
+    return S_OK;
+  }
+
+  STDMETHODIMP OnActivated(REFCLSID clsid, REFGUID guidProfile, BOOL activated) override {
+    if (IsOurProfile(clsid, guidProfile)) {
+      if (!activated) {
+        CloseCandidateUI(true, true);
+      }
+      return S_OK;
+    }
+    if (activated) {
+      CloseCandidateUI(true, true);
+    }
+    return S_OK;
+  }
+
+  STDMETHODIMP OnInitDocumentMgr(ITfDocumentMgr *) override {
+    return S_OK;
+  }
+
+  STDMETHODIMP OnUninitDocumentMgr(ITfDocumentMgr *) override {
+    return S_OK;
+  }
+
+  STDMETHODIMP OnSetFocus(ITfDocumentMgr *focus, ITfDocumentMgr *) override {
+    if (!focus) {
+      CloseCandidateUI(true, true);
+    }
+    return S_OK;
+  }
+
+  STDMETHODIMP OnPushContext(ITfContext *) override {
+    return S_OK;
+  }
+
+  STDMETHODIMP OnPopContext(ITfContext *) override {
     return S_OK;
   }
 
@@ -2380,6 +2621,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return E_INVALIDARG;
     }
     if (HasSystemModifier()) {
+      CloseCandidateUI(true, true);
       *eaten = FALSE;
       return S_OK;
     }
@@ -2397,6 +2639,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     }
     *eaten = FALSE;
     if (HasSystemModifier()) {
+      CloseCandidateUI(true, true);
       return S_OK;
     }
     RefreshTypingConfigFromConfig();
@@ -2596,6 +2839,81 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return;
     }
     static_cast<TextService *>(owner)->OnCandidateClicked(absoluteIndex);
+  }
+
+  static bool IsOurProfile(REFCLSID clsid, REFGUID guidProfile) {
+    return IsEqualCLSID(clsid, kClsidTextService) && IsEqualGUID(guidProfile, kProfileGuid);
+  }
+
+  void AdviseThreadMgrSinks() {
+    if (!threadMgr_) {
+      return;
+    }
+    ITfSource *source = nullptr;
+    if (FAILED(threadMgr_->QueryInterface(IID_ITfSource, reinterpret_cast<void **>(&source))) ||
+        !source) {
+      return;
+    }
+    if (profileSinkCookie_ == kInvalidSinkCookie) {
+      source->AdviseSink(IID_ITfActiveLanguageProfileNotifySink,
+                         static_cast<ITfActiveLanguageProfileNotifySink *>(this),
+                         &profileSinkCookie_);
+    }
+    if (threadMgrSinkCookie_ == kInvalidSinkCookie) {
+      source->AdviseSink(IID_ITfThreadMgrEventSink,
+                         static_cast<ITfThreadMgrEventSink *>(this),
+                         &threadMgrSinkCookie_);
+    }
+    source->Release();
+  }
+
+  void UnadviseThreadMgrSinks() {
+    if (!threadMgr_ ||
+        (profileSinkCookie_ == kInvalidSinkCookie &&
+         threadMgrSinkCookie_ == kInvalidSinkCookie)) {
+      profileSinkCookie_ = kInvalidSinkCookie;
+      threadMgrSinkCookie_ = kInvalidSinkCookie;
+      return;
+    }
+    ITfSource *source = nullptr;
+    if (SUCCEEDED(threadMgr_->QueryInterface(IID_ITfSource, reinterpret_cast<void **>(&source))) &&
+        source) {
+      if (profileSinkCookie_ != kInvalidSinkCookie) {
+        source->UnadviseSink(profileSinkCookie_);
+      }
+      if (threadMgrSinkCookie_ != kInvalidSinkCookie) {
+        source->UnadviseSink(threadMgrSinkCookie_);
+      }
+      source->Release();
+    }
+    profileSinkCookie_ = kInvalidSinkCookie;
+    threadMgrSinkCookie_ = kInvalidSinkCookie;
+  }
+
+  void CloseCandidateUI(bool clearCoreSession, bool destroyWindow) {
+    const bool hasComposition = cachedCandidateCount_ > 0 || compositionLength_ > 0 ||
+                                !rawBuffer_.empty();
+    const bool hasWindow = candidateWindow_.HasWindow();
+    if (!hasComposition && !hasWindow) {
+      shiftDown_ = false;
+      shiftToggleCandidate_ = false;
+      return;
+    }
+    if (clearCoreSession && hasComposition && session_ && g_core.clearSession) {
+      char *cleared = g_core.clearSession(session_);
+      if (cleared && g_core.freeValue) {
+        g_core.freeValue(cleared);
+      }
+    }
+    ResetCompositionState();
+    ResetPunctuationState();
+    shiftDown_ = false;
+    shiftToggleCandidate_ = false;
+    if (destroyWindow) {
+      candidateWindow_.Destroy();
+    } else {
+      candidateWindow_.Hide();
+    }
   }
 
   static void OnCandidateSelectedThunk(void *owner, int absoluteIndex) {
@@ -3834,6 +4152,8 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
   long refCount_ = 1;
   ITfThreadMgr *threadMgr_ = nullptr;
   ITfKeystrokeMgr *keyMgr_ = nullptr;
+  DWORD profileSinkCookie_ = kInvalidSinkCookie;
+  DWORD threadMgrSinkCookie_ = kInvalidSinkCookie;
   TfClientId clientId_ = TF_CLIENTID_NULL;
   uint64_t session_ = 0;
   int selectedIndex_ = 0;

@@ -426,7 +426,7 @@ func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	parts := strings.Split(rec.Body.String(), "|")
-	if len(parts) != 18 {
+	if len(parts) != 21 {
 		t.Fatalf("skin payload parts = %#v", parts)
 	}
 	if parts[9] != "5" {
@@ -440,6 +440,9 @@ func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 	}
 	if got := strings.Join(parts[12:18], ","); got != "11,13,9,7,15,96" {
 		t.Fatalf("skin metric payload = %q", got)
+	}
+	if got := strings.Join(parts[18:21], ","); got != "win11,balanced,true" {
+		t.Fatalf("candidate window payload = %q", got)
 	}
 }
 

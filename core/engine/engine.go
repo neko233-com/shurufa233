@@ -45,7 +45,10 @@ func DefaultConfig() Config {
 		Schema:                "wechat-pinyin",
 		CandidatePageSize:     7,
 		CandidateLayout:       "horizontal",
+		CandidateWindowMode:   "win11",
 		ShowCandidateComments: true,
+		PerformanceMode:       "balanced",
+		EmojiCandidates:       true,
 		FuzzyInitials: []string{
 			"zh=z",
 			"ch=c",
@@ -101,21 +104,7 @@ func DefaultConfig() Config {
 }
 
 func New(config Config) *Engine {
-	if config.MaxCandidates <= 0 {
-		config = DefaultConfig()
-	}
-	config.CandidatePageSize = normalizeCandidatePageSize(config.CandidatePageSize)
-	config.CandidateLayout = normalizeCandidateLayout(config.CandidateLayout)
-	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
-	config.Mode = normalizeMode(config.Mode)
-	config.Script = normalizeScript(config.Script)
-	config = NormalizeSchemaConfig(config)
-	config = NormalizeKeyBehavior(config)
-	config.Skin = NormalizeSkin(config.Skin)
-	config.RecognizerPatterns = NormalizeRecognizerPatterns(config.RecognizerPatterns)
-	config.AppRules = NormalizeAppRules(config.AppRules)
-	config.Agent = NormalizeAgent(config.Agent)
-	config.Sync = NormalizeSync(config.Sync)
+	config = NormalizeConfig(config)
 	e := &Engine{
 		config:  config,
 		dict:    make(map[string][]Entry),
@@ -132,14 +121,40 @@ func New(config Config) *Engine {
 func (e *Engine) Configure(config Config) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	config = NormalizeConfig(config)
+	e.config = config
+}
+
+func NormalizeConfig(config Config) Config {
+	defaults := DefaultConfig()
+	if config.MaxCandidates <= 0 && config.CandidatePageSize <= 0 &&
+		config.Schema == "" && config.Language == "" && config.Mode == "" {
+		config = defaults
+	}
 	if config.MaxCandidates <= 0 {
-		config.MaxCandidates = DefaultConfig().MaxCandidates
+		config.MaxCandidates = defaults.MaxCandidates
+	}
+	if config.Schema == "" {
+		config.Schema = defaults.Schema
 	}
 	config.CandidatePageSize = normalizeCandidatePageSize(config.CandidatePageSize)
 	config.CandidateLayout = normalizeCandidateLayout(config.CandidateLayout)
+	config.CandidateWindowMode = normalizeCandidateWindowMode(config.CandidateWindowMode)
+	config.PerformanceMode = normalizePerformanceMode(config.PerformanceMode)
 	config.DoublePinyinScheme = normalizeDoublePinyinScheme(config.DoublePinyinScheme)
+	if config.Language == "" {
+		config.Language = defaults.Language
+	}
 	config.Mode = normalizeMode(config.Mode)
 	config.Script = normalizeScript(config.Script)
+	switch strings.ToLower(strings.TrimSpace(config.Punctuation)) {
+	case "half":
+		config.Punctuation = "half"
+	case "full", "":
+		config.Punctuation = defaults.Punctuation
+	default:
+		config.Punctuation = defaults.Punctuation
+	}
 	config = NormalizeSchemaConfig(config)
 	config = NormalizeKeyBehavior(config)
 	config.Skin = NormalizeSkin(config.Skin)
@@ -147,7 +162,22 @@ func (e *Engine) Configure(config Config) {
 	config.AppRules = NormalizeAppRules(config.AppRules)
 	config.Agent = NormalizeAgent(config.Agent)
 	config.Sync = NormalizeSync(config.Sync)
-	e.config = config
+	if config.Update.SourcePreset == "" {
+		config.Update.SourcePreset = defaults.Update.SourcePreset
+	}
+	if config.Update.Channel == "" {
+		config.Update.Channel = defaults.Update.Channel
+	}
+	if len(config.Update.ManifestURLs) == 0 {
+		config.Update.ManifestURLs = defaults.Update.ManifestURLs
+	}
+	if config.Update.MirrorBaseURLs == nil {
+		config.Update.MirrorBaseURLs = defaults.Update.MirrorBaseURLs
+	}
+	if config.Update.InstalledVersion == "" {
+		config.Update.InstalledVersion = defaults.Update.InstalledVersion
+	}
+	return config
 }
 
 func DefaultRecognizerPatterns() map[string]string {
@@ -191,6 +221,34 @@ func normalizeCandidateLayout(value string) string {
 		return "auto"
 	default:
 		return "horizontal"
+	}
+}
+
+func normalizeCandidateWindowMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "win11", "windows11", "microsoft":
+		return "win11"
+	case "full", "tools":
+		return "full"
+	case "lite", "light", "compact", "performance":
+		return "lite"
+	case "minimal", "minimalist", "plain":
+		return "minimal"
+	default:
+		return "win11"
+	}
+}
+
+func normalizePerformanceMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "balanced", "normal":
+		return "balanced"
+	case "high", "performance", "fast", "speed":
+		return "high"
+	case "compat", "compatibility", "safe":
+		return "compatibility"
+	default:
+		return "balanced"
 	}
 }
 
@@ -990,6 +1048,9 @@ func (e *Engine) candidatesLocked() []Candidate {
 	entries := e.lookupLocked(e.buffer)
 	candidates := make([]Candidate, 0, len(entries))
 	for _, entry := range entries {
+		if !e.config.EmojiCandidates && isEmojiResourceKind(entry.Kind) {
+			continue
+		}
 		displayText := convertScriptText(entry.Text, e.config.Script)
 		if e.isRejectedLocked(entry.Reading, displayText) {
 			continue
@@ -1024,6 +1085,15 @@ func (e *Engine) candidatesLocked() []Candidate {
 		candidates = candidates[:max]
 	}
 	return candidates
+}
+
+func isEmojiResourceKind(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "emoji", "kaomoji":
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *Engine) isRejectedLocked(reading string, text string) bool {
