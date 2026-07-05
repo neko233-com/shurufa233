@@ -1382,7 +1382,9 @@ func TestUpdateSourcesEndpointListsRimeSources(t *testing.T) {
 		}
 		if source.ID == "rime-ice-source" &&
 			strings.Contains(source.ConvertCommand, "shurufa-dictimport") &&
-			strings.Contains(source.SyncCommand, "shurufa-dictsync") {
+			strings.Contains(source.SyncCommand, "shurufa-dictsync") &&
+			hasRawSourceLabel(source.RawSources, "symbols_v.yaml") &&
+			hasRawSourceLabel(source.RawSources, "symbols_caps_v.yaml") {
 			foundIce = true
 		}
 	}
@@ -1392,6 +1394,15 @@ func TestUpdateSourcesEndpointListsRimeSources(t *testing.T) {
 	if !foundIce {
 		t.Fatalf("expected rime-ice source with convert and sync commands, got %#v", got.Sources)
 	}
+}
+
+func hasRawSourceLabel(sources []engine.DictionaryRawSource, label string) bool {
+	for _, source := range sources {
+		if source.Label == label {
+			return true
+		}
+	}
+	return false
 }
 
 func TestApplyUpdateSourceUpdatesConfig(t *testing.T) {

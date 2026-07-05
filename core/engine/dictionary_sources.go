@@ -72,6 +72,7 @@ var builtinDictionarySources = []DictionarySourcePreset{
 		RawSources: []DictionaryRawSource{
 			{Label: "rime_ice.dict.yaml", URL: "https://raw.githubusercontent.com/iDvel/rime-ice/main/rime_ice.dict.yaml", Role: "entry-dictionary"},
 			{Label: "symbols_v.yaml", URL: "https://raw.githubusercontent.com/iDvel/rime-ice/main/symbols_v.yaml", Role: "symbols"},
+			{Label: "symbols_caps_v.yaml", URL: "https://raw.githubusercontent.com/iDvel/rime-ice/main/symbols_caps_v.yaml", Role: "symbols"},
 			{Label: "opencc/emoji.txt", URL: "https://raw.githubusercontent.com/iDvel/rime-ice/main/opencc/emoji.txt", Role: "opencc-emoji"},
 		},
 		ConvertCommand: `shurufa-dictimport -language zh-CN -version rime-ice -source rime-ice -missing-imports=warn -out data\dictionaries\zh-CN.rime-ice.json.gz path\to\rime-ice\rime_ice.dict.yaml`,

@@ -62,9 +62,10 @@ The command clones or updates the upstream repository under
 `.cache/dictionaries`, converts the preset's known source files with
 `shurufa-dictimport`, records the exact upstream commit, and writes
 `data/dictionaries/dictionary-manifest.json` with `shurufa-dictmanifest`.
-For Rime Ice, the preset converts `rime_ice.dict.yaml`, `symbols_v.yaml`, and
-`opencc/emoji.txt` together, so imported OpenCC emoji rows can reuse readings
-from the main dictionary in the same conversion pass.
+For Rime Ice, the preset converts `rime_ice.dict.yaml`, `symbols_v.yaml`,
+`symbols_caps_v.yaml`, and `opencc/emoji.txt` together, so imported OpenCC emoji
+rows can reuse readings from the main dictionary in the same conversion pass
+while both full-pinyin `v` and double-pinyin `V` symbol modes stay covered.
 
 Useful sync flags:
 

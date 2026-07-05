@@ -287,7 +287,7 @@ func inputFilesForPreset(id string) []string {
 	case "rime-luna-source":
 		return []string{"luna_pinyin.dict.yaml"}
 	case "rime-ice-source":
-		return []string{"rime_ice.dict.yaml", "symbols_v.yaml", "opencc/emoji.txt"}
+		return []string{"rime_ice.dict.yaml", "symbols_v.yaml", "symbols_caps_v.yaml", "opencc/emoji.txt"}
 	case "rime-emoji-source":
 		return []string{"opencc/emoji_word.txt", "opencc/emoji_category.txt"}
 	default:

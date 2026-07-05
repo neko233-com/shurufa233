@@ -684,6 +684,25 @@ func TestExecuteExtensionCommandDictionarySources(t *testing.T) {
 	if !ok || len(sources) == 0 {
 		t.Fatalf("dictionary sources = %#v", result["sources"])
 	}
+	var rimeIce *engine.DictionarySourcePreset
+	for index := range sources {
+		if sources[index].ID == "rime-ice-source" {
+			rimeIce = &sources[index]
+			break
+		}
+	}
+	if rimeIce == nil || !dictionarySourceHasRawLabel(*rimeIce, "symbols_v.yaml") || !dictionarySourceHasRawLabel(*rimeIce, "symbols_caps_v.yaml") {
+		t.Fatalf("rime ice raw sources = %#v", sources)
+	}
+}
+
+func dictionarySourceHasRawLabel(source engine.DictionarySourcePreset, label string) bool {
+	for _, raw := range source.RawSources {
+		if raw.Label == label {
+			return true
+		}
+	}
+	return false
 }
 
 func TestExecuteExtensionCommandSchemaPresets(t *testing.T) {

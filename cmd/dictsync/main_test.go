@@ -50,7 +50,7 @@ func TestCloneURLsPreferMirrorsAndDedupe(t *testing.T) {
 
 func TestInputFilesForPreset(t *testing.T) {
 	got := inputFilesForPreset("rime-ice-source")
-	want := []string{"rime_ice.dict.yaml", "symbols_v.yaml", "opencc/emoji.txt"}
+	want := []string{"rime_ice.dict.yaml", "symbols_v.yaml", "symbols_caps_v.yaml", "opencc/emoji.txt"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("rime ice inputs = %#v, want %#v", got, want)
 	}
