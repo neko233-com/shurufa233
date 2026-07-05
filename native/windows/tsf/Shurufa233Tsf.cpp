@@ -71,6 +71,7 @@ using CandidateActionFn = char *(*)(uint64_t, const char *);
 using KeyEventJsonFn = char *(*)(uint64_t, const char *);
 using ReverseLookupFn = char *(*)(uint64_t, const char *);
 using ApplyConfigJsonFn = char *(*)(char *);
+using SelectCandidateCharFn = char *(*)(uint64_t, int, const char *);
 using ImportUserScoresJsonFn = char *(*)(uint64_t, char *);
 using ImportUserPhrasesJsonFn = char *(*)(uint64_t, char *);
 using ImportUserRejectsJsonFn = char *(*)(uint64_t, char *);
@@ -109,15 +110,26 @@ struct CoreApi {
   AssociateFn associate = nullptr;
   CandidateActionFn candidateAction = nullptr;
   KeyEventJsonFn keyEventJson = nullptr;
+  SessionPayloadFn catalogJson = nullptr;
   ReverseLookupFn reverseLookup = nullptr;
   CoreStringFn dictionarySourcesJson = nullptr;
   CoreStringFn configJson = nullptr;
   ApplyConfigJsonFn applyConfigJson = nullptr;
+  CoreStringFn schemaPresetsJson = nullptr;
+  ApplyConfigJsonFn applySchemaJson = nullptr;
+  CoreStringFn skinPresetsJson = nullptr;
+  ApplyConfigJsonFn applySkinPresetJson = nullptr;
   CoreStringFn reloadConfig = nullptr;
   CoreStringFn reloadDictionaries = nullptr;
   CoreStringFn dictionaryManifestJson = nullptr;
   SessionStringFn recognizerPatternsJson = nullptr;
+  SessionStringFn switchesJson = nullptr;
+  SessionPayloadFn applySwitchJson = nullptr;
+  SessionStringFn appRulesJson = nullptr;
   SessionPayloadFn applyAppRulesJson = nullptr;
+  SessionPayloadFn resolveAppContextJson = nullptr;
+  SessionStringFn profileJson = nullptr;
+  SessionPayloadFn importProfileJson = nullptr;
   SessionStringFn userScoresJson = nullptr;
   ImportUserScoresJsonFn importUserScoresJson = nullptr;
   SessionStringFn userPhrasesJson = nullptr;
@@ -136,6 +148,7 @@ struct CoreApi {
   SessionPayloadFn exportProfileSyncJson = nullptr;
   SessionPayloadFn importProfileSyncJson = nullptr;
   CommitTextFn commitText = nullptr;
+  SelectCandidateCharFn selectCandidateChar = nullptr;
   AgentComposeFn agentCompose = nullptr;
   ExecuteCommandFn executeCommand = nullptr;
 
@@ -447,16 +460,27 @@ bool TryLoadInProcessCore() {
   api.associate = LoadCoreProc<AssociateFn>(module, "ShurufaAssociate");
   api.candidateAction = LoadCoreProc<CandidateActionFn>(module, "ShurufaCandidateAction");
   api.keyEventJson = LoadCoreProc<KeyEventJsonFn>(module, "ShurufaKeyEventJSON");
+  api.catalogJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaCatalogJSON");
   api.reverseLookup = LoadCoreProc<ReverseLookupFn>(module, "ShurufaReverseLookupJSON");
   api.dictionarySourcesJson = LoadCoreProc<CoreStringFn>(module, "ShurufaDictionarySourcesJSON");
   api.configJson = LoadCoreProc<CoreStringFn>(module, "ShurufaConfigJSON");
   api.applyConfigJson = LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplyConfigJSON");
+  api.schemaPresetsJson = LoadCoreProc<CoreStringFn>(module, "ShurufaSchemaPresetsJSON");
+  api.applySchemaJson = LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplySchemaJSON");
+  api.skinPresetsJson = LoadCoreProc<CoreStringFn>(module, "ShurufaSkinPresetsJSON");
+  api.applySkinPresetJson = LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplySkinPresetJSON");
   api.reloadConfig = LoadCoreProc<CoreStringFn>(module, "ShurufaReloadConfig");
   api.reloadDictionaries = LoadCoreProc<CoreStringFn>(module, "ShurufaReloadDictionaries");
   api.dictionaryManifestJson =
       LoadCoreProc<CoreStringFn>(module, "ShurufaDictionaryManifestJSON");
   api.recognizerPatternsJson = LoadCoreProc<SessionStringFn>(module, "ShurufaRecognizerPatternsJSON");
+  api.switchesJson = LoadCoreProc<SessionStringFn>(module, "ShurufaSwitchesJSON");
+  api.applySwitchJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaApplySwitchJSON");
+  api.appRulesJson = LoadCoreProc<SessionStringFn>(module, "ShurufaAppRulesJSON");
   api.applyAppRulesJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaApplyAppRulesJSON");
+  api.resolveAppContextJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaResolveAppContextJSON");
+  api.profileJson = LoadCoreProc<SessionStringFn>(module, "ShurufaProfileJSON");
+  api.importProfileJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaImportProfileJSON");
   api.userScoresJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserScoresJSON");
   api.importUserScoresJson =
       LoadCoreProc<ImportUserScoresJsonFn>(module, "ShurufaImportUserScoresJSON");
@@ -479,6 +503,8 @@ bool TryLoadInProcessCore() {
   api.exportProfileSyncJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaExportProfileSyncJSON");
   api.importProfileSyncJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaImportProfileSyncJSON");
   api.commitText = LoadCoreProc<CommitTextFn>(module, "ShurufaCommitText");
+  api.selectCandidateChar =
+      LoadCoreProc<SelectCandidateCharFn>(module, "ShurufaSelectCandidateChar");
   api.agentCompose = LoadCoreProc<AgentComposeFn>(module, "ShurufaAgentCompose");
   api.executeCommand = LoadCoreProc<ExecuteCommandFn>(module, "ShurufaExecuteCommand");
   if (!api.Ready()) {
@@ -525,15 +551,26 @@ void UseHttpCoreFallback() {
   g_core.associate = nullptr;
   g_core.candidateAction = nullptr;
   g_core.keyEventJson = nullptr;
+  g_core.catalogJson = nullptr;
   g_core.reverseLookup = nullptr;
   g_core.dictionarySourcesJson = nullptr;
   g_core.configJson = nullptr;
   g_core.applyConfigJson = nullptr;
+  g_core.schemaPresetsJson = nullptr;
+  g_core.applySchemaJson = nullptr;
+  g_core.skinPresetsJson = nullptr;
+  g_core.applySkinPresetJson = nullptr;
   g_core.reloadConfig = nullptr;
   g_core.reloadDictionaries = nullptr;
   g_core.dictionaryManifestJson = nullptr;
   g_core.recognizerPatternsJson = nullptr;
+  g_core.switchesJson = nullptr;
+  g_core.applySwitchJson = nullptr;
+  g_core.appRulesJson = nullptr;
   g_core.applyAppRulesJson = nullptr;
+  g_core.resolveAppContextJson = nullptr;
+  g_core.profileJson = nullptr;
+  g_core.importProfileJson = nullptr;
   g_core.userScoresJson = nullptr;
   g_core.importUserScoresJson = nullptr;
   g_core.userPhrasesJson = nullptr;
@@ -552,6 +589,7 @@ void UseHttpCoreFallback() {
   g_core.exportProfileSyncJson = nullptr;
   g_core.importProfileSyncJson = nullptr;
   g_core.commitText = nullptr;
+  g_core.selectCandidateChar = nullptr;
   g_core.agentCompose = nullptr;
   g_core.executeCommand = nullptr;
 }

@@ -144,6 +144,35 @@ func ShurufaApplySchemaJSON(payload *C.char) *C.char {
 	return jsonCString(applyConfigEnvelope(next))
 }
 
+//export ShurufaSkinPresetsJSON
+func ShurufaSkinPresetsJSON() *C.char {
+	config := loadConfig()
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"selected":  config.Skin,
+		"presets":   engine.BuiltinSkinPresets(),
+		"config":    config,
+		"updatedAt": time.Now().UTC(),
+	})
+}
+
+//export ShurufaApplySkinPresetJSON
+func ShurufaApplySkinPresetJSON(payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	config := loadConfig()
+	next, ok := engine.ApplySkinPresetConfig(config, firstNonEmpty(req.ID, req.Preset, req.Input, req.Text))
+	if !ok {
+		return jsonCString(errorEnvelope("unknown skin preset id"))
+	}
+	next = normalizeConfig(next)
+	result := applyConfigEnvelope(next)
+	result["presets"] = engine.BuiltinSkinPresets()
+	return jsonCString(result)
+}
+
 //export ShurufaApplyRimeCustomJSON
 func ShurufaApplyRimeCustomJSON(id C.uint64_t, payload *C.char) *C.char {
 	return jsonCString(applyRimeCustomPayload(getSession(uint64(id)), C.GoString(payload)))

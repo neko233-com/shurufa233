@@ -117,6 +117,8 @@ char* ShurufaConfigJSON(void);
 char* ShurufaApplyConfigJSON(char* json);
 char* ShurufaSchemaPresetsJSON(void);
 char* ShurufaApplySchemaJSON(char* json);
+char* ShurufaSkinPresetsJSON(void);
+char* ShurufaApplySkinPresetJSON(char* json);
 char* ShurufaApplyRimeCustomJSON(uint64_t session, char* json);
 char* ShurufaRecognizerPatternsJSON(uint64_t session);
 char* ShurufaSwitchesJSON(uint64_t session);
@@ -168,6 +170,9 @@ understands (`doublePinyin`, `doublePinyinScheme`, `candidateLayout`,
 `showCandidateComments`, punctuation, fuzzy initials, key behavior profile, and dictionary source
 preference). This keeps new schemes in Go/config instead of requiring another
 C++ export on developer machines that only consume packaged builds.
+`ShurufaSkinPresetsJSON` and `ShurufaApplySkinPresetJSON` provide the same
+direct surface for WeChat/Rime-style candidate strip skins, so future native
+skin menus can list and apply presets without adding another TSF loader pass.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
