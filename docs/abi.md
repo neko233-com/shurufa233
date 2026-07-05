@@ -130,6 +130,8 @@ char* ShurufaResolveAppContextJSON(uint64_t session, char* json);
 char* ShurufaReloadConfig(void);
 char* ShurufaReloadDictionaries(void);
 char* ShurufaDictionaryManifestJSON(void);
+char* ShurufaDictionaryUpdateCheckJSON(char* json);
+char* ShurufaDictionaryUpdateApplyJSON(char* json);
 char* ShurufaUserScoresJSON(uint64_t session);
 char* ShurufaImportUserScoresJSON(uint64_t session, char* json);
 char* ShurufaUserPhrasesJSON(uint64_t session);
@@ -250,6 +252,8 @@ reload-dictionaries
 dictionary-manifest-json
 dictionary-sources-json
 apply-dictionary-source-json {"id":"shurufa233-github-cn","mirrorBaseUrls":["https://gh-proxy.com/{url}"]}
+dictionary-update-check-json {"manifestUrls":["https://example.com/dictionary-manifest.json"]}
+dictionary-update-apply-json {"manifestUrls":["https://example.com/dictionary-manifest.json"],"force":true}
 user-scores-json
 import-user-scores-json {"userScores":{"nihao|你好":25}}
 import-user-scores-json {"format":"rime-userdb","data":"cha jian 插件 c=4 d=0.5 t=8\n"}
@@ -447,6 +451,13 @@ source references. `ShurufaApplyDictionarySourceJSON` accepts
 `{"id":"shurufa233-github-cn"}` plus optional `manifestUrls` and
 `mirrorBaseUrls`; passing an empty `mirrorBaseUrls` array explicitly disables
 mirrors while preserving the selected preset.
+`ShurufaDictionaryUpdateCheckJSON` and `ShurufaDictionaryUpdateApplyJSON` expose
+the daemon hot-update path directly to native callers: they read the configured
+manifest URLs, try mirror templates before canonical URLs, verify artifact and
+content SHA-256 when provided, decompress gzip dictionaries, persist the
+installed manifest/dictionaries, hot-load active sessions, and update
+`installedVersion` in shared config. Payloads may override `manifestUrls`,
+`mirrorBaseUrls`, and `force` without changing C++ glue.
 
 `ShurufaUserScoresJSON`, `ShurufaImportUserScoresJSON`, and `ShurufaCommitText`
 reserve the learned user-wordbook surface. Import accepts either:

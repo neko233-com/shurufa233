@@ -323,6 +323,10 @@ func executeExtensionCommand(id uint64, command string, payload string) any {
 		return applyConfigEnvelope(normalizeConfig(next))
 	case "apply-dictionary-source-json", "apply-dictionary-source", "update-source":
 		return applyDictionarySourcePayload(req)
+	case "dictionary-update-check-json", "dictionary-update-check", "update-check":
+		return dictionaryUpdateCheckPayload(req)
+	case "dictionary-update-apply-json", "dictionary-update-apply", "update-apply":
+		return dictionaryUpdateApplyPayload(req)
 	case "reload-config":
 		return applyConfigEnvelope(loadConfig())
 	case "reload-dictionaries":

@@ -360,6 +360,24 @@ func ShurufaDictionaryManifestJSON() *C.char {
 	return jsonCString(dictionaryManifestEnvelope())
 }
 
+//export ShurufaDictionaryUpdateCheckJSON
+func ShurufaDictionaryUpdateCheckJSON(payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(dictionaryUpdateCheckPayload(req))
+}
+
+//export ShurufaDictionaryUpdateApplyJSON
+func ShurufaDictionaryUpdateApplyJSON(payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(dictionaryUpdateApplyPayload(req))
+}
+
 func dictionaryManifestEnvelope() map[string]any {
 	dir, err := dictionaryDir()
 	if err != nil {

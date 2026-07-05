@@ -123,6 +123,8 @@ struct CoreApi {
   CoreStringFn reloadConfig = nullptr;
   CoreStringFn reloadDictionaries = nullptr;
   CoreStringFn dictionaryManifestJson = nullptr;
+  ApplyConfigJsonFn dictionaryUpdateCheckJson = nullptr;
+  ApplyConfigJsonFn dictionaryUpdateApplyJson = nullptr;
   SessionStringFn recognizerPatternsJson = nullptr;
   SessionStringFn switchesJson = nullptr;
   SessionPayloadFn applySwitchJson = nullptr;
@@ -476,6 +478,10 @@ bool TryLoadInProcessCore() {
   api.reloadDictionaries = LoadCoreProc<CoreStringFn>(module, "ShurufaReloadDictionaries");
   api.dictionaryManifestJson =
       LoadCoreProc<CoreStringFn>(module, "ShurufaDictionaryManifestJSON");
+  api.dictionaryUpdateCheckJson =
+      LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaDictionaryUpdateCheckJSON");
+  api.dictionaryUpdateApplyJson =
+      LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaDictionaryUpdateApplyJSON");
   api.recognizerPatternsJson = LoadCoreProc<SessionStringFn>(module, "ShurufaRecognizerPatternsJSON");
   api.switchesJson = LoadCoreProc<SessionStringFn>(module, "ShurufaSwitchesJSON");
   api.applySwitchJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaApplySwitchJSON");
@@ -567,6 +573,8 @@ void UseHttpCoreFallback() {
   g_core.reloadConfig = nullptr;
   g_core.reloadDictionaries = nullptr;
   g_core.dictionaryManifestJson = nullptr;
+  g_core.dictionaryUpdateCheckJson = nullptr;
+  g_core.dictionaryUpdateApplyJson = nullptr;
   g_core.recognizerPatternsJson = nullptr;
   g_core.switchesJson = nullptr;
   g_core.applySwitchJson = nullptr;

@@ -3,7 +3,11 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -98,6 +102,19 @@ func gzipBytes(t *testing.T, data []byte) []byte {
 		t.Fatal(err)
 	}
 	return buffer.Bytes()
+}
+
+func serverURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:])
 }
 
 func TestLoadConfigKeepsHalfWidthPunctuation(t *testing.T) {
@@ -754,6 +771,105 @@ func TestApplyDictionarySourceRejectsRawSourceWithoutManifest(t *testing.T) {
 	result, ok := got.(abiEnvelope)
 	if !ok || result.OK || result.Error == "" {
 		t.Fatalf("raw source without manifest should fail, got %#v", got)
+	}
+}
+
+func TestDictionaryUpdateCheckPayloadUsesManifestOverride(t *testing.T) {
+	t.Setenv("SHURUFA233_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/dictionary-manifest.json" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{
+			"version": "remote-check",
+			"channel": "stable",
+			"generatedAt": "2026-07-05T00:00:00Z",
+			"dictionaries": []
+		}`)
+	}))
+	defer server.Close()
+
+	got := dictionaryUpdateCheckPayload(extensionCommandPayload{
+		ManifestURLs: []string{server.URL + "/dictionary-manifest.json"},
+	})
+	result, ok := got.(abiUpdateCheck)
+	if !ok || !result.OK || result.LatestVersion != "remote-check" || !result.UpdateAvailable {
+		t.Fatalf("dictionary update check = %#v", got)
+	}
+	if result.ManifestURL != server.URL+"/dictionary-manifest.json" {
+		t.Fatalf("manifest URL = %q", result.ManifestURL)
+	}
+}
+
+func TestDictionaryUpdateApplyPayloadLoadsGzipDictionary(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	dictionaryDirPath := filepath.Join(t.TempDir(), "dictionaries")
+	t.Setenv("SHURUFA233_CONFIG", configPath)
+	t.Setenv("SHURUFA233_DICTIONARY_DIR", dictionaryDirPath)
+
+	dictionary := []byte(`{
+		"language": "zh-CN",
+		"version": "remote-abi-gzip",
+		"entries": [
+			{ "reading": "rexing", "text": "热更 ABI", "weight": 30000 }
+		]
+	}`)
+	compressed := gzipBytes(t, dictionary)
+	rawSHA := sha256Hex(compressed)
+	contentSHA := sha256Hex(dictionary)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/dictionary-manifest.json":
+			_, _ = fmt.Fprintf(w, `{
+				"version": "remote-abi-gzip",
+				"channel": "stable",
+				"generatedAt": "2026-07-05T00:00:00Z",
+				"dictionaries": [
+					{
+						"language": "zh-CN",
+						"version": "remote-abi-gzip",
+						"url": "%s/zh-CN.remote-abi-gzip.json.gz",
+						"compression": "gzip",
+						"sha256": "%s",
+						"contentSha256": "%s"
+					}
+				]
+			}`, serverURL(r), rawSHA, contentSHA)
+		case "/zh-CN.remote-abi-gzip.json.gz":
+			w.Header().Set("Content-Type", "application/gzip")
+			_, _ = w.Write(compressed)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	sessionID := uint64(420001)
+	session := getSession(sessionID)
+	defer func() {
+		sessionsMu.Lock()
+		delete(sessions, sessionID)
+		sessionsMu.Unlock()
+	}()
+
+	got := dictionaryUpdateApplyPayload(extensionCommandPayload{
+		ManifestURLs: []string{server.URL + "/dictionary-manifest.json"},
+	})
+	result, ok := got.(abiUpdateApplyResult)
+	if !ok || !result.OK || result.Version != "remote-abi-gzip" || len(result.Applied) != 1 {
+		t.Fatalf("dictionary update apply = %#v", got)
+	}
+	state := session.Preview("rexing")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "热更 ABI" {
+		t.Fatalf("hot-loaded candidates = %#v", state.Candidates)
+	}
+	if _, err := os.Stat(filepath.Join(dictionaryDirPath, "zh-CN.remote-abi-gzip.json")); err != nil {
+		t.Fatalf("expected persisted dictionary: %v", err)
+	}
+	persisted := loadConfig()
+	if persisted.Update.InstalledVersion != "remote-abi-gzip" {
+		t.Fatalf("installed version = %q", persisted.Update.InstalledVersion)
 	}
 }
 

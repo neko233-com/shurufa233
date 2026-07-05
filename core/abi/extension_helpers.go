@@ -22,6 +22,8 @@ var abiFeatureList = []string{
 	"dictionary-manifest-json",
 	"dictionary-source-presets",
 	"apply-dictionary-source-json",
+	"dictionary-update-check-json",
+	"dictionary-update-apply-json",
 	"schema-presets-json",
 	"apply-schema-json",
 	"skin-presets-json",
@@ -175,6 +177,7 @@ type extensionCommandPayload struct {
 	ID             string             `json:"id,omitempty"`
 	Switch         string             `json:"switch,omitempty"`
 	Value          *bool              `json:"value,omitempty"`
+	Force          *bool              `json:"force,omitempty"`
 	Schema         string             `json:"schema,omitempty"`
 	Preset         string             `json:"preset,omitempty"`
 	ManifestURLs   []string           `json:"manifestUrls,omitempty"`
@@ -1439,6 +1442,10 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		}, true
 	case "apply-dictionary-source-json", "apply-dictionary-source", "update-source":
 		return applyDictionarySourcePayload(req), true
+	case "dictionary-update-check-json", "dictionary-update-check", "update-check":
+		return dictionaryUpdateCheckPayload(req), true
+	case "dictionary-update-apply-json", "dictionary-update-apply", "update-apply":
+		return dictionaryUpdateApplyPayload(req), true
 	case "schema-presets-json", "schemas", "schemas-json":
 		return map[string]any{
 			"ok":        true,
