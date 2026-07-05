@@ -318,3 +318,6 @@ by `GET /updates/check` and `POST /updates/apply`.
 The optional source fields are copied to the manifest and each dictionary row,
 so settings UI, daemon logs, and future native panels can show where a hot-update
 dictionary came from without baking upstream details into C++.
+Use `POST /updates/source` or the C ABI `ShurufaApplyDictionarySourceJSON` to
+switch between GitHub Release, China mirror-ready, and custom manifest URLs
+without duplicating hot-update source logic outside Go.

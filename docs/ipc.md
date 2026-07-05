@@ -279,6 +279,15 @@ mirror/CDN URLs first and then GitHub, verifies hashes when provided, loads it
 into active IME sessions, persists it locally, and returns the applied language
 versions.
 
+`POST /updates/source` switches the configured dictionary hot-update source
+with the same JSON accepted by the native ABI:
+
+```json
+{ "id": "shurufa233-github-cn", "mirrorBaseUrls": ["https://gh-proxy.com/{url}"] }
+```
+
+Use `mirrorBaseUrls: []` to keep the selected preset but disable mirrors.
+
 `GET /ime/mode` returns the current session state, including `mode`.
 
 `POST /ime/mode` body:

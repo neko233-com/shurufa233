@@ -347,12 +347,15 @@ func TestCapabilitiesIncludeAssociationCandidates(t *testing.T) {
 }
 
 func TestCapabilitiesIncludeDictionarySourcePresets(t *testing.T) {
+	seen := map[string]bool{}
 	for _, feature := range abiFeatureList {
-		if feature == "dictionary-source-presets" {
-			return
+		seen[feature] = true
+	}
+	for _, feature := range []string{"dictionary-source-presets", "apply-dictionary-source-json"} {
+		if !seen[feature] {
+			t.Fatalf("capabilities missing %s: %#v", feature, abiFeatureList)
 		}
 	}
-	t.Fatalf("capabilities missing dictionary-source-presets: %#v", abiFeatureList)
 }
 
 func TestCapabilitiesIncludeKeyBehaviorConfig(t *testing.T) {
@@ -696,6 +699,61 @@ func TestExecuteExtensionCommandDictionarySources(t *testing.T) {
 		!dictionarySourceHasRawLabel(*rimeIce, "symbols_v.yaml") ||
 		!dictionarySourceHasRawLabel(*rimeIce, "symbols_caps_v.yaml") {
 		t.Fatalf("rime ice raw sources = %#v", sources)
+	}
+}
+
+func TestApplyDictionarySourceUpdatesConfig(t *testing.T) {
+	t.Setenv("SHURUFA233_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+
+	got := applyDictionarySourcePayload(extensionCommandPayload{ID: "shurufa233-github-cn"})
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("apply dictionary source = %#v", got)
+	}
+	config, ok := result["config"].(engine.Config)
+	if !ok {
+		t.Fatalf("config = %#v", result["config"])
+	}
+	if config.Update.SourcePreset != "shurufa233-github-cn" {
+		t.Fatalf("source preset = %q", config.Update.SourcePreset)
+	}
+	if len(config.Update.MirrorBaseURLs) == 0 || config.Update.MirrorBaseURLs[0] != "https://gh-proxy.com/{url}" {
+		t.Fatalf("mirror URLs = %#v", config.Update.MirrorBaseURLs)
+	}
+	persisted := loadConfig()
+	if persisted.Update.SourcePreset != "shurufa233-github-cn" {
+		t.Fatalf("persisted source preset = %q", persisted.Update.SourcePreset)
+	}
+}
+
+func TestExecuteExtensionCommandApplyDictionarySourceOverridesMirrors(t *testing.T) {
+	t.Setenv("SHURUFA233_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "apply-dictionary-source-json", `{"id":"shurufa233-github-cn","mirrorBaseUrls":[]}`)
+	if !handled {
+		t.Fatal("apply-dictionary-source-json command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("apply-dictionary-source-json = %#v", got)
+	}
+	config := loadConfig()
+	if config.Update.SourcePreset != "shurufa233-github-cn" {
+		t.Fatalf("source preset = %q", config.Update.SourcePreset)
+	}
+	if len(config.Update.MirrorBaseURLs) != 0 {
+		t.Fatalf("mirror override should clear mirrors, got %#v", config.Update.MirrorBaseURLs)
+	}
+}
+
+func TestApplyDictionarySourceRejectsRawSourceWithoutManifest(t *testing.T) {
+	t.Setenv("SHURUFA233_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+
+	got := applyDictionarySourcePayload(extensionCommandPayload{ID: "rime-ice-source"})
+	result, ok := got.(abiEnvelope)
+	if !ok || result.OK || result.Error == "" {
+		t.Fatalf("raw source without manifest should fail, got %#v", got)
 	}
 }
 

@@ -113,6 +113,7 @@ struct CoreApi {
   SessionPayloadFn catalogJson = nullptr;
   ReverseLookupFn reverseLookup = nullptr;
   CoreStringFn dictionarySourcesJson = nullptr;
+  ApplyConfigJsonFn applyDictionarySourceJson = nullptr;
   CoreStringFn configJson = nullptr;
   ApplyConfigJsonFn applyConfigJson = nullptr;
   CoreStringFn schemaPresetsJson = nullptr;
@@ -463,6 +464,8 @@ bool TryLoadInProcessCore() {
   api.catalogJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaCatalogJSON");
   api.reverseLookup = LoadCoreProc<ReverseLookupFn>(module, "ShurufaReverseLookupJSON");
   api.dictionarySourcesJson = LoadCoreProc<CoreStringFn>(module, "ShurufaDictionarySourcesJSON");
+  api.applyDictionarySourceJson =
+      LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplyDictionarySourceJSON");
   api.configJson = LoadCoreProc<CoreStringFn>(module, "ShurufaConfigJSON");
   api.applyConfigJson = LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaApplyConfigJSON");
   api.schemaPresetsJson = LoadCoreProc<CoreStringFn>(module, "ShurufaSchemaPresetsJSON");
@@ -554,6 +557,7 @@ void UseHttpCoreFallback() {
   g_core.catalogJson = nullptr;
   g_core.reverseLookup = nullptr;
   g_core.dictionarySourcesJson = nullptr;
+  g_core.applyDictionarySourceJson = nullptr;
   g_core.configJson = nullptr;
   g_core.applyConfigJson = nullptr;
   g_core.schemaPresetsJson = nullptr;

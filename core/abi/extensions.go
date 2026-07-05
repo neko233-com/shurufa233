@@ -102,6 +102,15 @@ func ShurufaDictionarySourcesJSON() *C.char {
 	})
 }
 
+//export ShurufaApplyDictionarySourceJSON
+func ShurufaApplyDictionarySourceJSON(payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(applyDictionarySourcePayload(req))
+}
+
 //export ShurufaConfigJSON
 func ShurufaConfigJSON() *C.char {
 	return jsonCString(configEnvelope())

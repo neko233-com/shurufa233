@@ -113,6 +113,7 @@ char* ShurufaKeyEventJSON(uint64_t session, const char* json);
 char* ShurufaCatalogJSON(uint64_t session, const char* json);
 char* ShurufaReverseLookupJSON(uint64_t session, const char* json);
 char* ShurufaDictionarySourcesJSON(void);
+char* ShurufaApplyDictionarySourceJSON(char* json);
 char* ShurufaConfigJSON(void);
 char* ShurufaApplyConfigJSON(char* json);
 char* ShurufaSchemaPresetsJSON(void);
@@ -248,6 +249,7 @@ reload-config
 reload-dictionaries
 dictionary-manifest-json
 dictionary-sources-json
+apply-dictionary-source-json {"id":"shurufa233-github-cn","mirrorBaseUrls":["https://gh-proxy.com/{url}"]}
 user-scores-json
 import-user-scores-json {"userScores":{"nihao|你好":25}}
 import-user-scores-json {"format":"rime-userdb","data":"cha jian 插件 c=4 d=0.5 t=8\n"}
@@ -439,6 +441,12 @@ files from `%APPDATA%\shurufa233\dictionaries` or
 `SHURUFA233_DICTIONARY_DIR`, then adds or updates entries in active sessions.
 `ShurufaDictionaryManifestJSON` returns the installed manifest when
 `manifest.json` or `dictionary-manifest.json` exists.
+`ShurufaDictionarySourcesJSON` returns built-in hot-update presets, including
+the default GitHub Release source, the China mirror-ready source, and raw Rime
+source references. `ShurufaApplyDictionarySourceJSON` accepts
+`{"id":"shurufa233-github-cn"}` plus optional `manifestUrls` and
+`mirrorBaseUrls`; passing an empty `mirrorBaseUrls` array explicitly disables
+mirrors while preserving the selected preset.
 
 `ShurufaUserScoresJSON`, `ShurufaImportUserScoresJSON`, and `ShurufaCommitText`
 reserve the learned user-wordbook surface. Import accepts either:

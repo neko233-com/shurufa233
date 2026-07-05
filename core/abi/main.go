@@ -321,6 +321,8 @@ func executeExtensionCommand(id uint64, command string, payload string) any {
 			return errorEnvelope("unknown skin preset id")
 		}
 		return applyConfigEnvelope(normalizeConfig(next))
+	case "apply-dictionary-source-json", "apply-dictionary-source", "update-source":
+		return applyDictionarySourcePayload(req)
 	case "reload-config":
 		return applyConfigEnvelope(loadConfig())
 	case "reload-dictionaries":

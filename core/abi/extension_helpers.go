@@ -21,6 +21,7 @@ var abiFeatureList = []string{
 	"reload-dictionaries",
 	"dictionary-manifest-json",
 	"dictionary-source-presets",
+	"apply-dictionary-source-json",
 	"schema-presets-json",
 	"apply-schema-json",
 	"skin-presets-json",
@@ -151,53 +152,55 @@ type profileBundle struct {
 }
 
 type extensionCommandPayload struct {
-	Input        string             `json:"input,omitempty"`
-	Context      string             `json:"context,omitempty"`
-	Action       string             `json:"action,omitempty"`
-	Key          string             `json:"key,omitempty"`
-	Character    string             `json:"character,omitempty"`
-	Code         int                `json:"code,omitempty"`
-	Mode         string             `json:"mode,omitempty"`
-	Toggle       bool               `json:"toggle,omitempty"`
-	Ctrl         bool               `json:"ctrl,omitempty"`
-	Alt          bool               `json:"alt,omitempty"`
-	Shift        bool               `json:"shift,omitempty"`
-	Meta         bool               `json:"meta,omitempty"`
-	Modifiers    []string           `json:"modifiers,omitempty"`
-	Index        int                `json:"index,omitempty"`
-	DisplayIndex int                `json:"displayIndex,omitempty"`
-	Start        int                `json:"start,omitempty"`
-	Limit        int                `json:"limit,omitempty"`
-	PageSize     int                `json:"pageSize,omitempty"`
-	Delta        int                `json:"delta,omitempty"`
-	Side         string             `json:"side,omitempty"`
-	ID           string             `json:"id,omitempty"`
-	Switch       string             `json:"switch,omitempty"`
-	Value        *bool              `json:"value,omitempty"`
-	Schema       string             `json:"schema,omitempty"`
-	Preset       string             `json:"preset,omitempty"`
-	YAML         string             `json:"yaml,omitempty"`
-	Format       string             `json:"format,omitempty"`
-	Data         string             `json:"data,omitempty"`
-	Reading      string             `json:"reading,omitempty"`
-	Text         string             `json:"text,omitempty"`
-	Kind         string             `json:"kind,omitempty"`
-	Query        string             `json:"query,omitempty"`
-	Config       *engine.Config     `json:"config,omitempty"`
-	Agent        *engine.Agent      `json:"agent,omitempty"`
-	Sync         *engine.Sync       `json:"sync,omitempty"`
-	AppContext   *engine.AppContext `json:"appContext,omitempty"`
-	Rules        []engine.AppRule   `json:"rules,omitempty"`
-	UserScores   map[string]int     `json:"userScores,omitempty"`
-	Scores       map[string]int     `json:"scores,omitempty"`
-	Entries      []engine.Entry     `json:"entries,omitempty"`
-	Phrases      []engine.Entry     `json:"phrases,omitempty"`
-	Rejects      []engine.Entry     `json:"rejects,omitempty"`
-	Pins         []engine.Entry     `json:"pins,omitempty"`
-	Merge        bool               `json:"merge,omitempty"`
-	Directory    string             `json:"directory,omitempty"`
-	Path         string             `json:"path,omitempty"`
-	Raw          *json.RawMessage   `json:"raw,omitempty"`
+	Input          string             `json:"input,omitempty"`
+	Context        string             `json:"context,omitempty"`
+	Action         string             `json:"action,omitempty"`
+	Key            string             `json:"key,omitempty"`
+	Character      string             `json:"character,omitempty"`
+	Code           int                `json:"code,omitempty"`
+	Mode           string             `json:"mode,omitempty"`
+	Toggle         bool               `json:"toggle,omitempty"`
+	Ctrl           bool               `json:"ctrl,omitempty"`
+	Alt            bool               `json:"alt,omitempty"`
+	Shift          bool               `json:"shift,omitempty"`
+	Meta           bool               `json:"meta,omitempty"`
+	Modifiers      []string           `json:"modifiers,omitempty"`
+	Index          int                `json:"index,omitempty"`
+	DisplayIndex   int                `json:"displayIndex,omitempty"`
+	Start          int                `json:"start,omitempty"`
+	Limit          int                `json:"limit,omitempty"`
+	PageSize       int                `json:"pageSize,omitempty"`
+	Delta          int                `json:"delta,omitempty"`
+	Side           string             `json:"side,omitempty"`
+	ID             string             `json:"id,omitempty"`
+	Switch         string             `json:"switch,omitempty"`
+	Value          *bool              `json:"value,omitempty"`
+	Schema         string             `json:"schema,omitempty"`
+	Preset         string             `json:"preset,omitempty"`
+	ManifestURLs   []string           `json:"manifestUrls,omitempty"`
+	MirrorBaseURLs []string           `json:"mirrorBaseUrls,omitempty"`
+	YAML           string             `json:"yaml,omitempty"`
+	Format         string             `json:"format,omitempty"`
+	Data           string             `json:"data,omitempty"`
+	Reading        string             `json:"reading,omitempty"`
+	Text           string             `json:"text,omitempty"`
+	Kind           string             `json:"kind,omitempty"`
+	Query          string             `json:"query,omitempty"`
+	Config         *engine.Config     `json:"config,omitempty"`
+	Agent          *engine.Agent      `json:"agent,omitempty"`
+	Sync           *engine.Sync       `json:"sync,omitempty"`
+	AppContext     *engine.AppContext `json:"appContext,omitempty"`
+	Rules          []engine.AppRule   `json:"rules,omitempty"`
+	UserScores     map[string]int     `json:"userScores,omitempty"`
+	Scores         map[string]int     `json:"scores,omitempty"`
+	Entries        []engine.Entry     `json:"entries,omitempty"`
+	Phrases        []engine.Entry     `json:"phrases,omitempty"`
+	Rejects        []engine.Entry     `json:"rejects,omitempty"`
+	Pins           []engine.Entry     `json:"pins,omitempty"`
+	Merge          bool               `json:"merge,omitempty"`
+	Directory      string             `json:"directory,omitempty"`
+	Path           string             `json:"path,omitempty"`
+	Raw            *json.RawMessage   `json:"raw,omitempty"`
 }
 
 func buildProfileBundle(session *engine.Engine) profileBundle {
@@ -352,6 +355,28 @@ func applyConfigEnvelope(config engine.Config) map[string]any {
 		"sessionsUpdated": updated,
 		"updatedAt":       time.Now().UTC(),
 	}
+}
+
+func applyDictionarySourcePayload(req extensionCommandPayload) any {
+	id := firstNonEmpty(req.ID, req.Preset, req.Input, req.Text)
+	source, ok := engine.DictionarySourceByID(strings.TrimSpace(id))
+	if !ok {
+		return errorEnvelope("unknown dictionary source")
+	}
+	if !source.Installable && len(req.ManifestURLs) == 0 {
+		return errorEnvelope("source is not directly installable; generate and publish a shurufa233 manifest first")
+	}
+	next := engine.UpdateConfigFromDictionarySource(loadConfig(), source)
+	if len(req.ManifestURLs) > 0 {
+		next.Update.ManifestURLs = append([]string(nil), req.ManifestURLs...)
+	}
+	if req.MirrorBaseURLs != nil {
+		next.Update.MirrorBaseURLs = append([]string(nil), req.MirrorBaseURLs...)
+	}
+	result := applyConfigEnvelope(next)
+	result["selected"] = next.Update.SourcePreset
+	result["source"] = source
+	return result
 }
 
 func reloadDictionariesEnvelope() map[string]any {
@@ -1412,6 +1437,8 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"sources":   engine.BuiltinDictionarySources(),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
+	case "apply-dictionary-source-json", "apply-dictionary-source", "update-source":
+		return applyDictionarySourcePayload(req), true
 	case "schema-presets-json", "schemas", "schemas-json":
 		return map[string]any{
 			"ok":        true,
