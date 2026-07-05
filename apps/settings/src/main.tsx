@@ -387,7 +387,20 @@ type CandidateActionResult = {
 type SkinPreset = {
   id: string;
   name: string;
+  description?: string;
+  tags?: string[];
   skin: Skin;
+  candidatePageSize: number;
+  candidateLayout: Config["candidateLayout"];
+  showCandidateComments: boolean;
+};
+
+type SkinPresetResponse = {
+  ok: boolean;
+  selected?: string;
+  presets: SkinPreset[];
+  config?: Config;
+  updatedAt: string;
 };
 
 type TypingPrompt = {
@@ -522,10 +535,12 @@ const defaultConfig: Config = {
   },
 };
 
-const skinPresets: SkinPreset[] = [
+const fallbackSkinPresets: SkinPreset[] = [
   {
     id: "wechat-clean",
-    name: "清透白",
+    name: "WeChat Clean",
+    description: "微信式横向候选条，清爽白底，少注释干扰。",
+    tags: ["wechat", "horizontal", "light"],
     skin: {
       ...defaultConfig.skin,
       accent: "#16a34a",
@@ -536,10 +551,53 @@ const skinPresets: SkinPreset[] = [
       highlightText: "#ffffff",
       theme: "wechat-clean",
     },
+    candidatePageSize: 7,
+    candidateLayout: "horizontal",
+    showCandidateComments: false,
   },
   {
-    id: "ink",
-    name: "墨色",
+    id: "wechat-dark",
+    name: "WeChat Dark",
+    description: "深色微信式横向候选条，适合游戏和夜间验证。",
+    tags: ["wechat", "horizontal", "dark"],
+    skin: {
+      ...defaultConfig.skin,
+      accent: "#22c55e",
+      surface: "#111827",
+      text: "#f8fafc",
+      mutedText: "#94a3b8",
+      border: "#334155",
+      highlightText: "#ffffff",
+      theme: "wechat-dark",
+    },
+    candidatePageSize: 7,
+    candidateLayout: "horizontal",
+    showCandidateComments: false,
+  },
+  {
+    id: "microsoft-light",
+    name: "Microsoft Light",
+    description: "Windows 11/Microsoft Pinyin 风格浅色候选条。",
+    tags: ["microsoft", "windows11", "horizontal"],
+    skin: {
+      ...defaultConfig.skin,
+      accent: "#2563eb",
+      surface: "#ffffff",
+      text: "#111827",
+      mutedText: "#64748b",
+      border: "#d1d5db",
+      highlightText: "#ffffff",
+      theme: "microsoft-light",
+    },
+    candidatePageSize: 7,
+    candidateLayout: "horizontal",
+    showCandidateComments: false,
+  },
+  {
+    id: "rime-vertical",
+    name: "Rime Vertical",
+    description: "小狼毫/鼠须管迁移检查用竖排候选，保留注释。",
+    tags: ["rime", "vertical", "comments"],
     skin: {
       ...defaultConfig.skin,
       accent: "#38bdf8",
@@ -548,36 +606,11 @@ const skinPresets: SkinPreset[] = [
       mutedText: "#94a3b8",
       border: "#334155",
       highlightText: "#ffffff",
-      theme: "ink",
+      theme: "rime-vertical",
     },
-  },
-  {
-    id: "bamboo",
-    name: "竹青",
-    skin: {
-      ...defaultConfig.skin,
-      accent: "#0f766e",
-      surface: "#f8fffc",
-      text: "#10201d",
-      mutedText: "#52756f",
-      border: "#b9d8d0",
-      highlightText: "#ffffff",
-      theme: "bamboo",
-    },
-  },
-  {
-    id: "berry",
-    name: "莓果",
-    skin: {
-      ...defaultConfig.skin,
-      accent: "#db2777",
-      surface: "#fff7fb",
-      text: "#26111c",
-      mutedText: "#8b5d72",
-      border: "#f0bfd4",
-      highlightText: "#ffffff",
-      theme: "berry",
-    },
+    candidatePageSize: 5,
+    candidateLayout: "vertical",
+    showCandidateComments: true,
   },
 ];
 
@@ -801,6 +834,8 @@ function App() {
   const [dictionarySourceText, setDictionarySourceText] = useState("未读取");
   const [schemas, setSchemas] = useState<SchemaPreset[]>([]);
   const [schemaText, setSchemaText] = useState("未读取");
+  const [skinPresets, setSkinPresets] = useState<SkinPreset[]>(fallbackSkinPresets);
+  const [skinPresetText, setSkinPresetText] = useState("本地预设");
   const [switches, setSwitches] = useState<SwitchOption[]>([]);
   const [switchText, setSwitchText] = useState("未读取");
   const [rimeCustomDraft, setRimeCustomDraft] = useState(`patch:
@@ -878,6 +913,7 @@ function App() {
     void loadCatalog();
     void loadDictionarySources();
     void loadSchemas();
+    void loadSkinPresets();
     void loadSwitches();
     void loadAppRules();
     void resolveAppContext(appContextProbe);
@@ -1193,6 +1229,38 @@ function App() {
       setSchemaText("应用失败");
       setError(err instanceof Error ? err.message : "schema apply failed");
     }
+  }
+
+  async function loadSkinPresets() {
+    try {
+      const res = await fetch(`${apiBase}/skins`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as SkinPresetResponse;
+      setSkinPresets(data.presets?.length ? data.presets : fallbackSkinPresets);
+      setSkinPresetText(data.selected ? `当前 ${data.selected}` : `${data.presets?.length ?? fallbackSkinPresets.length} 个预设`);
+      if (data.config) {
+        setConfig(hydrateConfig(data.config));
+      }
+      setError("");
+    } catch (err) {
+      setSkinPresets(fallbackSkinPresets);
+      setSkinPresetText("使用本地预设");
+      setError(err instanceof Error ? err.message : "skin presets load failed");
+    }
+  }
+
+  function applySkinPresetLocal(preset: SkinPreset) {
+    setConfig({
+      ...config,
+      candidatePageSize: Math.min(9, Math.max(3, preset.candidatePageSize || config.candidatePageSize)),
+      candidateLayout: normalizeCandidateLayout(preset.candidateLayout),
+      showCandidateComments: preset.showCandidateComments,
+      skin: {
+        ...preset.skin,
+        fontFamily: config.skin.fontFamily,
+      },
+    });
+    setSkinPresetText(`已选择 ${preset.name}`);
   }
 
   async function loadSwitches() {
@@ -2460,14 +2528,15 @@ function App() {
           <section className="panel">
             <div className="panelHeader">
               <h2>候选栏外观</h2>
-              <span>TSF/IMKit 原生窗口读取</span>
+              <span>{skinPresetText}</span>
             </div>
             <div className="skinPresetGrid">
               {skinPresets.map((preset) => (
                 <button
                   key={preset.id}
                   className={config.skin.theme === preset.id ? "skinPreset selected" : "skinPreset"}
-                  onClick={() => setConfig({ ...config, skin: { ...preset.skin, fontFamily: config.skin.fontFamily } })}
+                  title={preset.description}
+                  onClick={() => applySkinPresetLocal(preset)}
                 >
                   <span className="skinPreview" style={{ background: preset.skin.surface, borderColor: preset.skin.border }}>
                     <i style={{ background: preset.skin.accent }} />

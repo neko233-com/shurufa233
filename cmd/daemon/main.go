@@ -54,6 +54,19 @@ type schemaRequest struct {
 	ID string `json:"id,omitempty"`
 }
 
+type skinPresetRequest struct {
+	ID     string `json:"id,omitempty"`
+	Preset string `json:"preset,omitempty"`
+}
+
+type skinPresetResponse struct {
+	OK        bool                `json:"ok"`
+	Selected  string              `json:"selected,omitempty"`
+	Presets   []engine.SkinPreset `json:"presets"`
+	Config    engine.Config       `json:"config,omitempty"`
+	UpdatedAt time.Time           `json:"updatedAt"`
+}
+
 type rimeCustomRequest struct {
 	YAML string `json:"yaml,omitempty"`
 	Text string `json:"text,omitempty"`
@@ -334,6 +347,8 @@ func main() {
 	mux.HandleFunc("POST /updates/source", state.withCORS(state.applyUpdateSource))
 	mux.HandleFunc("GET /schemas", state.withCORS(state.schemas))
 	mux.HandleFunc("POST /schemas/apply", state.withCORS(state.applySchema))
+	mux.HandleFunc("GET /skins", state.withCORS(state.skins))
+	mux.HandleFunc("POST /skins/apply", state.withCORS(state.applySkinPreset))
 	mux.HandleFunc("POST /rime/custom", state.withCORS(state.applyRimeCustom))
 	mux.HandleFunc("GET /switches", state.withCORS(state.switches))
 	mux.HandleFunc("POST /switches/apply", state.withCORS(state.applySwitch))
@@ -505,6 +520,50 @@ func (s *AppState) applySchema(w http.ResponseWriter, r *http.Request) {
 		Selected: s.config.Schema,
 		Schemas:  engine.BuiltinSchemaPresets(),
 		Config:   s.config,
+	})
+}
+
+func (s *AppState) skins(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	writeJSON(w, skinPresetResponse{
+		OK:        true,
+		Selected:  s.config.Skin.Theme,
+		Presets:   engine.BuiltinSkinPresets(),
+		Config:    s.config,
+		UpdatedAt: time.Now().UTC(),
+	})
+}
+
+func (s *AppState) applySkinPreset(w http.ResponseWriter, r *http.Request) {
+	var req skinPresetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next, ok := engine.ApplySkinPresetConfig(s.config, firstNonEmpty(req.ID, req.Preset))
+	if !ok {
+		http.Error(w, "unknown skin preset id", http.StatusBadRequest)
+		return
+	}
+	next = normalizeConfig(next)
+	s.config = next
+	s.engine.Configure(next)
+	for _, session := range s.sessions {
+		session.Configure(next)
+	}
+	if err := s.saveLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, skinPresetResponse{
+		OK:        true,
+		Selected:  s.config.Skin.Theme,
+		Presets:   engine.BuiltinSkinPresets(),
+		Config:    s.config,
+		UpdatedAt: time.Now().UTC(),
 	})
 }
 

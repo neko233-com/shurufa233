@@ -383,6 +383,8 @@ func TestCapabilitiesIncludeApplyAppRulesAndUserDataDelete(t *testing.T) {
 	want := map[string]bool{
 		"agent-config-json":       false,
 		"apply-agent-config-json": false,
+		"skin-presets-json":       false,
+		"apply-skin-preset-json":  false,
 		"profile-sync-json":       false,
 		"apply-sync-config-json":  false,
 		"apply-app-rules-json":    false,
@@ -657,6 +659,37 @@ func TestExecuteExtensionCommandSchemaPresets(t *testing.T) {
 	schemas, ok := result["schemas"].([]engine.SchemaPreset)
 	if !ok || len(schemas) == 0 {
 		t.Fatalf("schema presets = %#v", result["schemas"])
+	}
+}
+
+func TestExecuteCommandAppliesSkinPreset(t *testing.T) {
+	t.Setenv("SHURUFA233_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	session := engine.New(engine.DefaultConfig())
+
+	listed, handled := executeSessionExtensionCommand(session, "skin-presets-json", `{}`)
+	if !handled {
+		t.Fatal("skin-presets-json command was not handled")
+	}
+	listResult, ok := listed.(map[string]any)
+	if !ok || listResult["ok"] != true {
+		t.Fatalf("skin-presets-json = %#v", listed)
+	}
+	presets, ok := listResult["presets"].([]engine.SkinPreset)
+	if !ok || len(presets) == 0 {
+		t.Fatalf("skin presets = %#v", listResult["presets"])
+	}
+
+	applied, handled := executeSessionExtensionCommand(session, "apply-skin-preset-json", `{"id":"wechat-dark"}`)
+	if !handled {
+		t.Fatal("apply-skin-preset-json command was not handled")
+	}
+	appliedResult, ok := applied.(map[string]any)
+	if !ok || appliedResult["ok"] != true {
+		t.Fatalf("apply-skin-preset-json = %#v", applied)
+	}
+	config, ok := appliedResult["config"].(engine.Config)
+	if !ok || config.Skin.Theme != "wechat-dark" || config.CandidateLayout != "horizontal" || config.ShowCandidateComments {
+		t.Fatalf("applied skin config = %#v", appliedResult["config"])
 	}
 }
 

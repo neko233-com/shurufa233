@@ -171,6 +171,8 @@ shurufa-imecli symbols symbol /fs
 shurufa-imecli reverse "你好"
 shurufa-imecli schemas
 shurufa-imecli schema apply double-pinyin-microsoft
+shurufa-imecli skin list
+shurufa-imecli skin apply wechat-clean
 shurufa-imecli rime import .\default.custom.yaml
 shurufa-imecli switches
 shurufa-imecli switch ascii_mode on
@@ -391,6 +393,15 @@ Current skin fields come from the settings UI:
 - border color
 - highlight text color
 - theme mode
+
+Shared skin presets are now owned by the Go core and exposed through daemon,
+CLI, ABI, and the React settings panel. Built-in preset IDs include
+`wechat-clean`, `wechat-dark`, `microsoft-light`, and `rime-vertical`; aliases
+such as `wechat`, `microsoft`, and `rime` normalize to those presets. Applying a
+preset updates colors plus candidate page size, horizontal/vertical layout, and
+comment visibility while preserving the user's font family. This keeps the
+native C++ renderer thin: future WeChat/Microsoft/Rime-like visual presets can
+ship through Go/config without requiring another TSF DLL rebuild.
 
 The daemon normalizes skin colors before saving config. Invalid color strings fall back to defaults, and low-contrast candidate text, muted text, or highlighted text is automatically corrected to a readable black/white value. This keeps custom skins from producing an unreadable candidate strip during live typing.
 The native Windows candidate renderer also detects dark skins from the configured surface color, so custom dark themes do not need a special theme id to get dark-mode derived borders, idle candidate backgrounds, and preedit chrome.

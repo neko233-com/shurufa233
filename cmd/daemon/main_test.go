@@ -432,6 +432,52 @@ func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 	}
 }
 
+func TestSkinsListAndApplyPreset(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.Skin.FontFamily = "Custom Font"
+	path := filepath.Join(t.TempDir(), "config.json")
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     path,
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/skins", nil)
+	listRec := httptest.NewRecorder()
+	state.skins(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d body=%s", listRec.Code, listRec.Body.String())
+	}
+	var listed skinPresetResponse
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if !listed.OK || len(listed.Presets) == 0 {
+		t.Fatalf("skin presets = %#v", listed)
+	}
+
+	applyReq := httptest.NewRequest(http.MethodPost, "/skins/apply", strings.NewReader(`{"id":"rime"}`))
+	applyRec := httptest.NewRecorder()
+	state.applySkinPreset(applyRec, applyReq)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("apply status = %d body=%s", applyRec.Code, applyRec.Body.String())
+	}
+	if state.config.Skin.Theme != "rime-vertical" || state.config.CandidateLayout != "vertical" || !state.config.ShowCandidateComments {
+		t.Fatalf("applied skin config = %#v", state.config)
+	}
+	if state.config.Skin.FontFamily != "Custom Font" {
+		t.Fatalf("font family = %q", state.config.Skin.FontFamily)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(saved), `"theme": "rime-vertical"`) {
+		t.Fatalf("saved config missing skin preset: %s", saved)
+	}
+}
+
 func TestNormalizeConfigKeepsCandidateLayout(t *testing.T) {
 	next := engine.DefaultConfig()
 	next.CandidateLayout = "rime"

@@ -122,6 +122,14 @@ type schemaResponse struct {
 	Config   configPayload  `json:"config,omitempty"`
 }
 
+type skinPresetResponse struct {
+	OK        bool                `json:"ok"`
+	Selected  string              `json:"selected,omitempty"`
+	Presets   []engine.SkinPreset `json:"presets"`
+	Config    engine.Config       `json:"config,omitempty"`
+	UpdatedAt string              `json:"updatedAt"`
+}
+
 type schemaPreset struct {
 	ID                     string   `json:"id"`
 	Name                   string   `json:"name"`
@@ -354,6 +362,8 @@ func main() {
 		err = schemas(client)
 	case "schema":
 		err = schema(client, os.Args[2:])
+	case "skins", "skin":
+		err = skins(client, os.Args[2:])
 	case "rime":
 		err = rimeCustom(client, os.Args[2:])
 	case "mode":
@@ -445,6 +455,7 @@ Usage:
   shurufa-imecli update-source shurufa233-github-cn [--mirror URL_OR_TEMPLATE] [--manifest URL]
   shurufa-imecli schemas
   shurufa-imecli schema [current|apply <id>]
+  shurufa-imecli skin [list|apply <id>]
   shurufa-imecli rime import default.custom.yaml
   shurufa-imecli update-check
   shurufa-imecli update-apply
@@ -869,6 +880,60 @@ func printSchemas(response schemaResponse) {
 			fmt.Printf("  dictionary: %s\n", schema.DictionarySourcePreset)
 		}
 		fmt.Printf("  %s\n", schema.Description)
+	}
+}
+
+func skins(client *http.Client, args []string) error {
+	action := "list"
+	if len(args) > 0 {
+		action = strings.ToLower(strings.TrimSpace(args[0]))
+		args = args[1:]
+	}
+	switch action {
+	case "", "list", "presets":
+		var response skinPresetResponse
+		if err := getJSON(client, "/skins", &response); err != nil {
+			return err
+		}
+		printSkinPresets(response)
+		return nil
+	case "apply", "use", "set":
+		if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+			return fmt.Errorf("missing skin preset id")
+		}
+		var response skinPresetResponse
+		if err := postJSON(client, "/skins/apply", map[string]string{"id": strings.TrimSpace(args[0])}, &response); err != nil {
+			return err
+		}
+		fmt.Printf("skin=%s layout=%s pageSize=%d comments=%v accent=%s surface=%s\n",
+			response.Selected,
+			response.Config.CandidateLayout,
+			response.Config.CandidatePageSize,
+			response.Config.ShowCandidateComments,
+			response.Config.Skin.Accent,
+			response.Config.Skin.Surface,
+		)
+		return nil
+	default:
+		return fmt.Errorf("unknown skin action %q", action)
+	}
+}
+
+func printSkinPresets(response skinPresetResponse) {
+	for _, preset := range response.Presets {
+		marker := " "
+		if preset.ID == response.Selected {
+			marker = "*"
+		}
+		fmt.Printf("%s %s [%s page=%d comments=%v]\n",
+			marker,
+			preset.ID,
+			preset.CandidateLayout,
+			preset.CandidatePageSize,
+			preset.ShowCandidateComments,
+		)
+		fmt.Printf("  %s\n", preset.Name)
+		fmt.Printf("  %s\n", preset.Description)
 	}
 }
 

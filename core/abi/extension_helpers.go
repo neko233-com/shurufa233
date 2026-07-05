@@ -23,6 +23,8 @@ var abiFeatureList = []string{
 	"dictionary-source-presets",
 	"schema-presets-json",
 	"apply-schema-json",
+	"skin-presets-json",
+	"apply-skin-preset-json",
 	"rime-custom-yaml",
 	"reverse-lookup-json",
 	"user-scores-json",
@@ -169,6 +171,7 @@ type extensionCommandPayload struct {
 	Switch       string             `json:"switch,omitempty"`
 	Value        *bool              `json:"value,omitempty"`
 	Schema       string             `json:"schema,omitempty"`
+	Preset       string             `json:"preset,omitempty"`
 	YAML         string             `json:"yaml,omitempty"`
 	Format       string             `json:"format,omitempty"`
 	Data         string             `json:"data,omitempty"`
@@ -1334,6 +1337,25 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"schemas":   engine.BuiltinSchemaPresets(),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
+	case "skin-presets-json", "skins", "skins-json":
+		return map[string]any{
+			"ok":        true,
+			"selected":  session.Config().Skin.Theme,
+			"presets":   engine.BuiltinSkinPresets(),
+			"config":    session.Config(),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "apply-skin-preset-json", "apply-skin-preset", "skin-preset":
+		next, ok := engine.ApplySkinPresetConfig(session.Config(), firstNonEmpty(req.ID, req.Preset, req.Input, req.Text))
+		if !ok {
+			return errorEnvelope("unknown skin preset id"), true
+		}
+		session.Configure(next)
+		result := applyConfigEnvelope(next)
+		result["selected"] = next.Skin.Theme
+		result["presets"] = engine.BuiltinSkinPresets()
+		result["state"] = session.State()
+		return result, true
 	case "rime-custom-json", "rime-custom-yaml", "apply-rime-custom-json", "apply-rime-custom-yaml":
 		return applyRimeCustomPayload(session, payload), true
 	case "switches-json", "rime-switches-json", "switches":

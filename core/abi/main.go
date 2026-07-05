@@ -289,6 +289,22 @@ func executeExtensionCommand(id uint64, command string, payload string) any {
 			return errorEnvelope("unknown schema id")
 		}
 		return applyConfigEnvelope(normalizeConfig(next))
+	case "skin-presets-json", "skins", "skins-json":
+		config := loadConfig()
+		return map[string]any{
+			"ok":        true,
+			"selected":  config.Skin.Theme,
+			"presets":   engine.BuiltinSkinPresets(),
+			"config":    config,
+			"updatedAt": time.Now().UTC(),
+		}
+	case "apply-skin-preset-json", "apply-skin-preset", "skin-preset":
+		config := loadConfig()
+		next, ok := engine.ApplySkinPresetConfig(config, firstNonEmpty(req.ID, req.Preset, req.Input, req.Text))
+		if !ok {
+			return errorEnvelope("unknown skin preset id")
+		}
+		return applyConfigEnvelope(normalizeConfig(next))
 	case "reload-config":
 		return applyConfigEnvelope(loadConfig())
 	case "reload-dictionaries":

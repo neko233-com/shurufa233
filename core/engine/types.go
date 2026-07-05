@@ -90,6 +90,17 @@ type Skin struct {
 	Theme         string `json:"theme"`
 }
 
+type SkinPreset struct {
+	ID                    string   `json:"id"`
+	Name                  string   `json:"name"`
+	Description           string   `json:"description"`
+	Tags                  []string `json:"tags,omitempty"`
+	Skin                  Skin     `json:"skin"`
+	CandidatePageSize     int      `json:"candidatePageSize"`
+	CandidateLayout       string   `json:"candidateLayout"`
+	ShowCandidateComments bool     `json:"showCandidateComments"`
+}
+
 type Candidate struct {
 	Text      string `json:"text"`
 	Reading   string `json:"reading"`

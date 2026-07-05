@@ -169,7 +169,7 @@ C++ export on developer machines that only consume packaged builds.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `rime-custom-phrase-text`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `profile-sync-json`, `apply-sync-config-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
+`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `skin-presets-json`, `apply-skin-preset-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `rime-custom-phrase-text`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `profile-sync-json`, `apply-sync-config-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -226,6 +226,8 @@ sync-export             {"directory":"D:/Sync/shurufa233"}
 sync-import             {"directory":"D:/Sync/shurufa233","merge":true}
 schema-presets-json
 apply-schema-json       {"id":"double-pinyin-microsoft"}
+skin-presets-json
+apply-skin-preset-json  {"id":"wechat-clean"}
 rime-custom-json        {"yaml":"patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n"}
 switches-json
 apply-switch-json       {"id":"ascii_mode","value":true}
@@ -395,6 +397,13 @@ or `SHURUFA233_CONFIG` and applies it to active sessions. Use these for skin,
 candidate count, visible candidate page size, candidate layout, fuzzy initials,
 double pinyin scheme, punctuation, key behavior profile, update-channel, and mode changes that should
 be visible without reinstalling the TSF DLL.
+
+`skin-presets-json` and `apply-skin-preset-json` expose Go-owned
+candidate-window presets for native renderers and settings surfaces. Presets
+include WeChat-like light/dark horizontal strips, a Microsoft-light strip, and a
+Rime-style vertical strip; applying one updates colors, page size, layout, and
+candidate comment visibility through shared config while preserving the user's
+font family.
 
 `ShurufaReloadDictionaries` reloads local `.json` and `.json.gz` dictionary
 files from `%APPDATA%\shurufa233\dictionaries` or

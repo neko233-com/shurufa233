@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/neko233-com/shurufa233/core/engine"
 )
 
 func TestParseAgentArgsWithContext(t *testing.T) {
@@ -594,6 +596,42 @@ func TestSchemaApplyPostsSelectedID(t *testing.T) {
 	}
 	if !schemaCalled {
 		t.Fatal("schema endpoint was not called")
+	}
+}
+
+func TestSkinApplyPostsSelectedID(t *testing.T) {
+	var skinCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/skins/apply" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		skinCalled = true
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode skin request: %v", err)
+		}
+		if req["id"] != "wechat-clean" {
+			t.Fatalf("skin request = %#v", req)
+		}
+		config := engine.DefaultConfig()
+		config.Skin.Theme = "wechat-clean"
+		config.Skin.Accent = "#16a34a"
+		_ = json.NewEncoder(w).Encode(skinPresetResponse{
+			OK:       true,
+			Selected: "wechat-clean",
+			Config:   config,
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := skins(server.Client(), []string{"apply", "wechat-clean"}); err != nil {
+		t.Fatal(err)
+	}
+	if !skinCalled {
+		t.Fatal("skin endpoint was not called")
 	}
 }
 

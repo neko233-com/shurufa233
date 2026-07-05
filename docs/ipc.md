@@ -356,6 +356,16 @@ comments or pin markers yet.
 Older nine-field, ten-field, or eleven-field payloads are still treated as the
 default seven-candidate horizontal strip with comments shown.
 
+`GET /skins` returns shared candidate-window skin presets such as
+`wechat-clean`, `wechat-dark`, `microsoft-light`, and `rime-vertical`. Each
+preset carries the lower candidate strip colors plus `candidatePageSize`,
+`candidateLayout`, and `showCandidateComments`, so WeChat/Microsoft/Rime-style
+UX choices move through one config model. `POST /skins/apply` accepts
+`{"id":"wechat-clean"}` or aliases such as `{"id":"rime"}`, persists the shared
+config, and updates active sessions. The CLI mirrors this through
+`shurufa-imecli skin list` and `shurufa-imecli skin apply wechat-clean`; the C
+ABI mirrors it through `skin-presets-json` and `apply-skin-preset-json`.
+
 `GET /agent/config` returns the normalized provider-neutral agent settings from
 the shared config. `PUT /agent/config` accepts:
 

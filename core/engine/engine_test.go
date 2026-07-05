@@ -102,6 +102,41 @@ func TestBuiltinSchemaPresetsIncludeRimeAndDoublePinyin(t *testing.T) {
 	}
 }
 
+func TestBuiltinSkinPresetsIncludeWechatAndRime(t *testing.T) {
+	presets := BuiltinSkinPresets()
+	seen := map[string]bool{}
+	for _, preset := range presets {
+		seen[preset.ID] = true
+		if preset.CandidatePageSize < 3 || preset.CandidatePageSize > 9 {
+			t.Fatalf("preset page size out of range: %#v", preset)
+		}
+		if preset.CandidateLayout == "" || preset.Skin.Theme == "" || preset.Skin.FontFamily == "" {
+			t.Fatalf("incomplete skin preset: %#v", preset)
+		}
+	}
+	for _, id := range []string{"wechat-clean", "wechat-dark", "microsoft-light", "rime-vertical"} {
+		if !seen[id] {
+			t.Fatalf("missing skin preset %q in %#v", id, presets)
+		}
+	}
+}
+
+func TestApplySkinPresetConfigKeepsFontAndAppliesCandidateStyle(t *testing.T) {
+	config := DefaultConfig()
+	config.Skin.FontFamily = "Test Font"
+
+	next, ok := ApplySkinPresetConfig(config, "rime")
+	if !ok {
+		t.Fatal("expected rime skin preset")
+	}
+	if next.Skin.Theme != "rime-vertical" || next.CandidateLayout != "vertical" || !next.ShowCandidateComments {
+		t.Fatalf("skin preset config = %#v", next)
+	}
+	if next.Skin.FontFamily != "Test Font" {
+		t.Fatalf("font family = %q", next.Skin.FontFamily)
+	}
+}
+
 func TestReverseLookupFindsReadingsAndSources(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddEntries([]Entry{{Reading: "shurufa", Text: "输入法", Kind: "phrase", Source: "rime-test", Comment: "测试", Weight: 22000}})
