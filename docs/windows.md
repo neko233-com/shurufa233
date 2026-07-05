@@ -396,15 +396,21 @@ Current skin fields come from the settings UI:
 - border color
 - highlight text color
 - theme mode
+- corner radius
+- horizontal and vertical padding
+- row gap
+- shadow strength
+- opacity
 
 Shared skin presets are now owned by the Go core and exposed through daemon,
 CLI, ABI, and the React settings panel. Built-in preset IDs include
 `wechat-clean`, `wechat-dark`, `microsoft-light`, and `rime-vertical`; aliases
 such as `wechat`, `microsoft`, and `rime` normalize to those presets. Applying a
-preset updates colors plus candidate page size, horizontal/vertical layout, and
-comment visibility while preserving the user's font family. This keeps the
-native C++ renderer thin: future WeChat/Microsoft/Rime-like visual presets can
-ship through Go/config without requiring another TSF DLL rebuild.
+preset updates colors plus candidate page size, horizontal/vertical layout,
+comment visibility, radius, padding, row spacing, shadow, and opacity while
+preserving the user's font family. This keeps the native C++ renderer thin:
+future WeChat/Microsoft/Rime-like visual presets can ship through Go/config
+without requiring another TSF DLL rebuild.
 
 The daemon normalizes skin colors before saving config. Invalid color strings fall back to defaults, and low-contrast candidate text, muted text, or highlighted text is automatically corrected to a readable black/white value. This keeps custom skins from producing an unreadable candidate strip during live typing.
 The native Windows candidate renderer also detects dark skins from the configured surface color, so custom dark themes do not need a special theme id to get dark-mode derived borders, idle candidate backgrounds, and preedit chrome.

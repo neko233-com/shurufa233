@@ -77,6 +77,12 @@ func DefaultConfig() Config {
 			Border:        "#d1d5db",
 			HighlightText: "#ffffff",
 			Theme:         "system",
+			CornerRadius:  10,
+			PaddingX:      12,
+			PaddingY:      8,
+			RowGap:        6,
+			Shadow:        12,
+			Opacity:       100,
 		},
 		Update: Update{
 			SourcePreset: "shurufa233-github",
@@ -105,6 +111,7 @@ func New(config Config) *Engine {
 	config.Script = normalizeScript(config.Script)
 	config = NormalizeSchemaConfig(config)
 	config = NormalizeKeyBehavior(config)
+	config.Skin = NormalizeSkin(config.Skin)
 	config.RecognizerPatterns = NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = NormalizeAppRules(config.AppRules)
 	config.Agent = NormalizeAgent(config.Agent)
@@ -135,6 +142,7 @@ func (e *Engine) Configure(config Config) {
 	config.Script = normalizeScript(config.Script)
 	config = NormalizeSchemaConfig(config)
 	config = NormalizeKeyBehavior(config)
+	config.Skin = NormalizeSkin(config.Skin)
 	config.RecognizerPatterns = NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = NormalizeAppRules(config.AppRules)
 	config.Agent = NormalizeAgent(config.Agent)

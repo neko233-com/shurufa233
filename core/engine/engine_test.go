@@ -126,6 +126,10 @@ func TestBuiltinSkinPresetsIncludeWechatAndRime(t *testing.T) {
 		if preset.CandidateLayout == "" || preset.Skin.Theme == "" || preset.Skin.FontFamily == "" {
 			t.Fatalf("incomplete skin preset: %#v", preset)
 		}
+		if preset.Skin.CornerRadius < 4 || preset.Skin.PaddingX < 8 || preset.Skin.PaddingY < 4 ||
+			preset.Skin.RowGap < 3 || preset.Skin.Opacity < 80 {
+			t.Fatalf("incomplete skin metrics: %#v", preset.Skin)
+		}
 	}
 	for _, id := range []string{"wechat-clean", "wechat-dark", "microsoft-light", "rime-vertical"} {
 		if !seen[id] {
@@ -147,6 +151,30 @@ func TestApplySkinPresetConfigKeepsFontAndAppliesCandidateStyle(t *testing.T) {
 	}
 	if next.Skin.FontFamily != "Test Font" {
 		t.Fatalf("font family = %q", next.Skin.FontFamily)
+	}
+	if next.Skin.CornerRadius != 8 || next.Skin.PaddingX != 10 || next.Skin.Opacity != 98 {
+		t.Fatalf("rime skin metrics = %#v", next.Skin)
+	}
+}
+
+func TestNormalizeSkinFillsAndClampsMetrics(t *testing.T) {
+	got := NormalizeSkin(Skin{
+		FontFamily:   "  ",
+		FontSize:     0,
+		CornerRadius: 99,
+		PaddingX:     1,
+		PaddingY:     99,
+		RowGap:       1,
+		Shadow:       99,
+		Opacity:      1,
+	})
+
+	if got.FontFamily != DefaultConfig().Skin.FontFamily || got.FontSize != DefaultConfig().Skin.FontSize {
+		t.Fatalf("skin defaults = %#v", got)
+	}
+	if got.CornerRadius != 18 || got.PaddingX != 8 || got.PaddingY != 18 ||
+		got.RowGap != 3 || got.Shadow != 24 || got.Opacity != 80 {
+		t.Fatalf("skin metrics = %#v", got)
 	}
 }
 

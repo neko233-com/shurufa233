@@ -728,6 +728,21 @@ std::vector<std::string> SplitTabFields(const std::string &line) {
   return fields;
 }
 
+std::vector<std::string> SplitCharFields(const std::string &line, char separator) {
+  std::vector<std::string> fields;
+  size_t start = 0;
+  while (start <= line.size()) {
+    size_t end = line.find(separator, start);
+    if (end == std::string::npos) {
+      fields.push_back(line.substr(start));
+      break;
+    }
+    fields.push_back(line.substr(start, end - start));
+    start = end + 1;
+  }
+  return fields;
+}
+
 bool PayloadBoolField(const std::string &value) {
   std::string normalized;
   normalized.reserve(value.size());
@@ -971,13 +986,14 @@ class CandidateWindow {
       RegisterClassW(&wc);
       registered = true;
     }
-    hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+    hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_LAYERED,
                             L"Shurufa233CandidateWindow", L"", WS_POPUP,
                             CW_USEDEFAULT, CW_USEDEFAULT, 320, 42, nullptr, nullptr,
                             g_instance, this);
     if (hwnd_) {
       DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
       DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
+      ApplyWindowOpacity();
       RefreshDpi();
     }
   }
@@ -1039,7 +1055,7 @@ class CandidateWindow {
                             statusText_.empty() ? PreeditBorderColor() : border_);
     HGDIOBJ oldPen = SelectObject(dc, border);
     HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
-    const int windowRadius = Scale(12);
+    const int windowRadius = Scale(cornerRadius_);
     RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, windowRadius, windowRadius);
     SelectObject(dc, oldBrush);
     SelectObject(dc, oldPen);
@@ -1103,6 +1119,12 @@ class CandidateWindow {
   std::string theme_ = "system";
   std::string layout_ = "horizontal";
   bool showComments_ = true;
+  int cornerRadius_ = 10;
+  int paddingX_ = 12;
+  int paddingY_ = 8;
+  int rowGap_ = 6;
+  int shadow_ = 12;
+  int opacity_ = 100;
   std::wstring skinConfigPath_;
   bool skinConfigPathResolved_ = false;
   DWORD lastLocalSkinCheckTick_ = 0;
@@ -1118,14 +1140,16 @@ class CandidateWindow {
   int CandidateWindowHeight() const {
     if (IsVerticalLayout()) {
       const int rows = max(1, min(static_cast<int>(candidates_.size()), pageSize_));
-      const int itemHeight = max(Scale(34), ScaledFontSize() + Scale(20));
-      return max(Scale(112), CandidateBandTop() + Scale(8) + rows * (itemHeight + Scale(7)) + Scale(10));
+      const int itemHeight = max(Scale(34), ScaledFontSize() + Scale(paddingY_ * 2 + 4));
+      return max(Scale(112), CandidateBandTop() + Scale(paddingY_) +
+                             rows * itemHeight + max(0, rows - 1) * Scale(rowGap_) +
+                             Scale(paddingY_ + 2));
     }
-    return max(Scale(82), ScaledFontSize() * 2 + Scale(56));
+    return max(Scale(82), ScaledFontSize() * 2 + Scale(paddingY_ * 3 + 32));
   }
 
   int CandidateBandTop() const {
-    return ScaledFontSize() + Scale(24);
+    return ScaledFontSize() + Scale(paddingY_ + 16);
   }
 
   bool IsVerticalLayout() const {
@@ -1230,7 +1254,7 @@ class CandidateWindow {
     const int commentWidth = !showComments_ || candidate.comment.empty() ? 0 : min(Scale(88), TextWidth(dc, candidate.comment) + Scale(10));
     const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
     const int kindWidth = kindLabel.empty() ? 0 : CandidateBadgeWidth(dc, kindLabel) + Scale(10);
-    return max(Scale(66), min(Scale(320), Scale(48) + textWidth + commentWidth + kindWidth));
+    return max(Scale(66), min(Scale(320), Scale(paddingX_ * 2 + 24) + textWidth + commentWidth + kindWidth));
   }
 
   bool HasPageControls() const {
@@ -1244,14 +1268,14 @@ class CandidateWindow {
   int MeasureWindowWidth() {
     HDC dc = GetDC(hwnd_);
     HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
-    int width = max(Scale(260), TextWidth(dc, composing_) + Scale(44));
+    int width = max(Scale(260), TextWidth(dc, composing_) + Scale(paddingX_ * 2 + 20));
     if (IsVerticalLayout()) {
       for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
-        width = max(width, CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(38) + PageControlsWidth());
+        width = max(width, CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(paddingX_ * 2 + 14) + PageControlsWidth());
       }
     } else {
       for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
-        width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(6);
+        width += CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(rowGap_);
       }
       width += PageControlsWidth();
     }
@@ -1458,50 +1482,68 @@ class CandidateWindow {
     return ParseBoolLike(json.substr(start, end - start), fallback);
   }
 
+  static int SkinMetricOrDefault(int value, int fallback) {
+    return value > 0 ? value : fallback;
+  }
+
+  void ApplyWindowOpacity() {
+    if (!hwnd_) {
+      return;
+    }
+    const BYTE alpha = static_cast<BYTE>(max(80, min(100, opacity_)) * 255 / 100);
+    SetLayeredWindowAttributes(hwnd_, 0, alpha, LWA_ALPHA);
+  }
+
   bool ApplySkinPayload(const std::string &skin) {
-    size_t first = skin.find('|');
-    size_t second = first == std::string::npos ? std::string::npos : skin.find('|', first + 1);
-    size_t third = second == std::string::npos ? std::string::npos : skin.find('|', second + 1);
-    size_t fourth = third == std::string::npos ? std::string::npos : skin.find('|', third + 1);
-    size_t fifth = fourth == std::string::npos ? std::string::npos : skin.find('|', fourth + 1);
-    size_t sixth = fifth == std::string::npos ? std::string::npos : skin.find('|', fifth + 1);
-    size_t seventh = sixth == std::string::npos ? std::string::npos : skin.find('|', sixth + 1);
-    size_t eighth = seventh == std::string::npos ? std::string::npos : skin.find('|', seventh + 1);
-    size_t ninth = eighth == std::string::npos ? std::string::npos : skin.find('|', eighth + 1);
-    size_t tenth = ninth == std::string::npos ? std::string::npos : skin.find('|', ninth + 1);
-    size_t eleventh = tenth == std::string::npos ? std::string::npos : skin.find('|', tenth + 1);
-    if (first == std::string::npos || second == std::string::npos || third == std::string::npos ||
-        fourth == std::string::npos || fifth == std::string::npos || sixth == std::string::npos ||
-        seventh == std::string::npos || eighth == std::string::npos) {
+    const std::vector<std::string> fields = SplitCharFields(skin, '|');
+    if (fields.size() < 9) {
       return false;
     }
-    std::wstring nextFontFamily = Utf8ToWide(skin.substr(0, first).c_str());
+    std::wstring nextFontFamily = Utf8ToWide(fields[0].c_str());
     if (nextFontFamily.empty()) {
       nextFontFamily = L"Microsoft YaHei UI";
     }
-    const int nextFontSize = max(13, min(28, atoi(skin.substr(first + 1, second - first - 1).c_str()) + 3));
+    const int nextFontSize = max(13, min(28, atoi(fields[1].c_str()) + 3));
     if (nextFontFamily != fontFamily_ || nextFontSize != fontSize_) {
       fontFamily_ = nextFontFamily;
       fontSize_ = nextFontSize;
       ResetFont();
     }
-    accent_ = ParseColor(skin.substr(second + 1, third - second - 1));
-    surface_ = ParseColor(skin.substr(third + 1, fourth - third - 1));
-    text_ = ParseColor(skin.substr(fourth + 1, fifth - fourth - 1));
-    mutedText_ = ParseColor(skin.substr(fifth + 1, sixth - fifth - 1));
-    border_ = ParseColor(skin.substr(sixth + 1, seventh - sixth - 1));
-    highlightText_ = ParseColor(skin.substr(seventh + 1, eighth - seventh - 1));
-    theme_ = skin.substr(eighth + 1, ninth == std::string::npos ? std::string::npos : ninth - eighth - 1);
-    if (ninth != std::string::npos) {
-      pageSize_ = max(kMinCandidatesPerPage,
-                      min(kMaxCandidatesPerPage, atoi(skin.substr(ninth + 1, tenth == std::string::npos ? std::string::npos : tenth - ninth - 1).c_str())));
+    accent_ = ParseColor(fields[2]);
+    surface_ = ParseColor(fields[3]);
+    text_ = ParseColor(fields[4]);
+    mutedText_ = ParseColor(fields[5]);
+    border_ = ParseColor(fields[6]);
+    highlightText_ = ParseColor(fields[7]);
+    theme_ = fields[8];
+    if (fields.size() > 9) {
+      pageSize_ = max(kMinCandidatesPerPage, min(kMaxCandidatesPerPage, atoi(fields[9].c_str())));
     }
-    if (tenth != std::string::npos) {
-      layout_ = NormalizeCandidateLayout(skin.substr(tenth + 1, eleventh == std::string::npos ? std::string::npos : eleventh - tenth - 1));
+    if (fields.size() > 10) {
+      layout_ = NormalizeCandidateLayout(fields[10]);
     }
-    if (eleventh != std::string::npos) {
-      showComments_ = ParseBoolLike(skin.substr(eleventh + 1), true);
+    if (fields.size() > 11) {
+      showComments_ = ParseBoolLike(fields[11], true);
     }
+    if (fields.size() > 12) {
+      cornerRadius_ = max(4, min(18, atoi(fields[12].c_str())));
+    }
+    if (fields.size() > 13) {
+      paddingX_ = max(8, min(24, atoi(fields[13].c_str())));
+    }
+    if (fields.size() > 14) {
+      paddingY_ = max(4, min(18, atoi(fields[14].c_str())));
+    }
+    if (fields.size() > 15) {
+      rowGap_ = max(3, min(14, atoi(fields[15].c_str())));
+    }
+    if (fields.size() > 16) {
+      shadow_ = max(0, min(24, atoi(fields[16].c_str())));
+    }
+    if (fields.size() > 17) {
+      opacity_ = max(80, min(100, atoi(fields[17].c_str())));
+    }
+    ApplyWindowOpacity();
     return true;
   }
 
@@ -1542,6 +1584,12 @@ class CandidateWindow {
     }
     const std::string layout = JsonStringField(json, "candidateLayout");
     const bool showComments = JsonBoolField(json, "showCandidateComments", true);
+    const int cornerRadius = SkinMetricOrDefault(JsonIntField(json, "cornerRadius"), 10);
+    const int paddingX = SkinMetricOrDefault(JsonIntField(json, "paddingX"), 12);
+    const int paddingY = SkinMetricOrDefault(JsonIntField(json, "paddingY"), 8);
+    const int rowGap = SkinMetricOrDefault(JsonIntField(json, "rowGap"), 6);
+    const int shadow = SkinMetricOrDefault(JsonIntField(json, "shadow"), 12);
+    const int opacity = SkinMetricOrDefault(JsonIntField(json, "opacity"), 100);
     if (fontFamily.empty() || fontSize <= 0 || accent.empty() || surface.empty() ||
         text.empty() || mutedText.empty() || border.empty() || highlightText.empty()) {
       return false;
@@ -1550,7 +1598,10 @@ class CandidateWindow {
                           surface + "|" + text + "|" + mutedText + "|" + border + "|" +
                           highlightText + "|" + theme + "|" + std::to_string(pageSize) + "|" +
                           NormalizeCandidateLayout(layout) + "|" +
-                          (showComments ? "true" : "false");
+                          (showComments ? "true" : "false") + "|" +
+                          std::to_string(cornerRadius) + "|" + std::to_string(paddingX) + "|" +
+                          std::to_string(paddingY) + "|" + std::to_string(rowGap) + "|" +
+                          std::to_string(shadow) + "|" + std::to_string(opacity);
     if (!ApplySkinPayload(payload)) {
       return false;
     }
@@ -1731,31 +1782,38 @@ class CandidateWindow {
   void DrawCandidateItem(HDC dc, const CandidateView &candidate, bool selected,
                          const RECT &itemRect) {
     if (selected) {
-      RECT shadowRect{itemRect.left + Scale(1), itemRect.top + Scale(2),
-                      itemRect.right + Scale(1), itemRect.bottom + Scale(2)};
-      DrawRoundedRect(dc, shadowRect, MixColor(CandidateBandColor(), accent_, 18),
-                      MixColor(CandidateBandColor(), accent_, 18), 12);
-      DrawRoundedRect(dc, itemRect, accent_, CandidateAccentEdgeColor(), 12);
+      if (shadow_ > 0) {
+        const int shadowOffset = max(1, Scale(max(1, shadow_ / 8)));
+        const int shadowMix = max(8, min(30, shadow_ + 6));
+        RECT shadowRect{itemRect.left + shadowOffset / 2, itemRect.top + shadowOffset,
+                        itemRect.right + shadowOffset / 2, itemRect.bottom + shadowOffset};
+        DrawRoundedRect(dc, shadowRect, MixColor(CandidateBandColor(), accent_, shadowMix),
+                        MixColor(CandidateBandColor(), accent_, shadowMix), cornerRadius_);
+      }
+      DrawRoundedRect(dc, itemRect, accent_, CandidateAccentEdgeColor(), cornerRadius_);
     } else {
-      DrawRoundedRect(dc, itemRect, CandidateIdleColor(), CandidateIdleBorderColor(), 12);
+      DrawRoundedRect(dc, itemRect, CandidateIdleColor(), CandidateIdleBorderColor(), cornerRadius_);
     }
 
     wchar_t number[8]{};
     StringCchPrintfW(number, ARRAYSIZE(number), L"%d", candidate.index);
     SetTextColor(dc, selected ? highlightText_ : mutedText_);
-    RECT numberRect{itemRect.left + Scale(10), itemRect.top, itemRect.left + Scale(30), itemRect.bottom};
+    RECT numberRect{itemRect.left + Scale(paddingX_), itemRect.top,
+                    itemRect.left + Scale(paddingX_ + 20), itemRect.bottom};
     DrawTextW(dc, number, -1, &numberRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
 
     SetTextColor(dc, selected ? highlightText_ : text_);
-    RECT textRect{itemRect.left + Scale(30), itemRect.top, itemRect.right - Scale(10), itemRect.bottom};
+    RECT textRect{itemRect.left + Scale(paddingX_ + 20), itemRect.top,
+                  itemRect.right - Scale(paddingX_), itemRect.bottom};
     const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
     int rightEdge = itemRect.right - Scale(8);
     if (!kindLabel.empty()) {
       const int badgeWidth = CandidateBadgeWidth(dc, kindLabel);
       rightEdge = itemRect.right - badgeWidth - Scale(8);
       textRect.right = max(textRect.left + Scale(24), rightEdge);
-      RECT badgeRect{rightEdge, itemRect.top + Scale(7),
-                     itemRect.right - Scale(7), itemRect.bottom - Scale(7)};
+      RECT badgeRect{rightEdge, itemRect.top + Scale(max(4, paddingY_ - 2)),
+                     itemRect.right - Scale(max(4, paddingX_ / 2)),
+                     itemRect.bottom - Scale(max(4, paddingY_ - 2))};
       DrawRoundedRect(dc, badgeRect, CandidateBadgeFillColor(selected),
                       CandidateBadgeBorderColor(selected), 9);
       SetTextColor(dc, CandidateBadgeTextColor(selected));
@@ -1782,11 +1840,11 @@ class CandidateWindow {
     candidateHits_.clear();
     pageHits_.clear();
     DrawComposition(dc, rect);
-    int x = rect.left + Scale(15);
-    const int y = CandidateBandTop() + Scale(8);
-    const int itemHeight = max(Scale(34), ScaledFontSize() + Scale(20));
+    int x = rect.left + Scale(paddingX_ + 3);
+    const int y = CandidateBandTop() + Scale(paddingY_);
+    const int itemHeight = max(Scale(34), ScaledFontSize() + Scale(paddingY_ * 2 + 4));
     const int candidateRight = HasPageControls() ? rect.right - PageControlsWidth() - Scale(8)
-                                                 : rect.right - Scale(14);
+                                                 : rect.right - Scale(paddingX_ + 2);
     for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
       const CandidateView &candidate = candidates_[i];
       const bool selected = static_cast<int>(i) == selectedIndex_;
@@ -1795,7 +1853,7 @@ class CandidateWindow {
                                 : CandidateItemWidth(dc, candidate, selected);
       RECT itemRect{x, y, x + itemWidth, y + itemHeight};
       if (IsVerticalLayout()) {
-        itemRect.top = y + static_cast<int>(i) * (itemHeight + Scale(7));
+        itemRect.top = y + static_cast<int>(i) * (itemHeight + Scale(rowGap_));
         itemRect.bottom = itemRect.top + itemHeight;
       }
       if (itemRect.left >= candidateRight - Scale(56)) {
@@ -1809,7 +1867,7 @@ class CandidateWindow {
       if (IsVerticalLayout()) {
         continue;
       }
-      x += itemWidth + Scale(7);
+      x += itemWidth + Scale(rowGap_);
       if (x > candidateRight - Scale(56)) {
         break;
       }
@@ -1880,8 +1938,8 @@ class CandidateWindow {
     StringCchPrintfW(label, ARRAYSIZE(label), L"%d-%d/%d", first, last, totalCount_);
     const int centerY = IsVerticalLayout()
                             ? CandidateBandTop() + max(Scale(34), (rect.bottom - CandidateBandTop()) / 2)
-                            : CandidateBandTop() + Scale(8) +
-                                  max(Scale(34), ScaledFontSize() + Scale(20)) / 2;
+                            : CandidateBandTop() + Scale(paddingY_) +
+                                  max(Scale(34), ScaledFontSize() + Scale(paddingY_ * 2 + 4)) / 2;
     RECT prevRect{rect.right - Scale(156), centerY - Scale(15),
                   rect.right - Scale(128), centerY + Scale(15)};
     RECT nextRect{rect.right - Scale(42), centerY - Scale(15),

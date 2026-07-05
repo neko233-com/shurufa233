@@ -95,6 +95,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	default:
 		config.Punctuation = engine.DefaultConfig().Punctuation
 	}
+	config.Skin = engine.NormalizeSkin(config.Skin)
 	if config.Update.SourcePreset == "" {
 		config.Update.SourcePreset = engine.DefaultConfig().Update.SourcePreset
 	}

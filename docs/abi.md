@@ -177,6 +177,10 @@ C++ export on developer machines that only consume packaged builds.
 `ShurufaSkinPresetsJSON` and `ShurufaApplySkinPresetJSON` provide the same
 direct surface for WeChat/Rime-style candidate strip skins, so future native
 skin menus can list and apply presets without adding another TSF loader pass.
+Skin presets include colors plus native renderer metrics (`cornerRadius`,
+`paddingX`, `paddingY`, `rowGap`, `shadow`, and `opacity`), letting packaged C++
+glue consume new WeChat/Microsoft/Rime-like candidate-window spacing and depth
+without adding another C ABI entry point.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,

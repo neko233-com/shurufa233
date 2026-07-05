@@ -1577,7 +1577,7 @@ func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%s|%t",
+	_, _ = fmt.Fprintf(w, "%s|%d|%s|%s|%s|%s|%s|%s|%s|%d|%s|%t|%d|%d|%d|%d|%d|%d",
 		s.config.Skin.FontFamily,
 		s.config.Skin.FontSize,
 		s.config.Skin.Accent,
@@ -1590,6 +1590,12 @@ func (s *AppState) imeSkin(w http.ResponseWriter, _ *http.Request) {
 		s.config.CandidatePageSize,
 		sanitizePayloadField(s.config.CandidateLayout),
 		s.config.ShowCandidateComments,
+		s.config.Skin.CornerRadius,
+		s.config.Skin.PaddingX,
+		s.config.Skin.PaddingY,
+		s.config.Skin.RowGap,
+		s.config.Skin.Shadow,
+		s.config.Skin.Opacity,
 	)
 }
 
@@ -2728,6 +2734,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	config.Punctuation = normalizePunctuationValue(config.Punctuation, defaults.Punctuation)
 	config.Script = normalizeScriptValue(config.Script, defaults.Script)
 	config.DoublePinyinScheme = normalizeDoublePinyinSchemeValue(config.DoublePinyinScheme, defaults.DoublePinyinScheme)
+	config.Skin = engine.NormalizeSkin(config.Skin)
 	if config.Skin.FontFamily == "" {
 		config.Skin = defaults.Skin
 	}

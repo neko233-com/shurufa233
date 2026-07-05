@@ -381,15 +381,17 @@ seven-column rows remain valid for clients that have not adopted candidate
 comments or pin markers yet.
 
 `GET /ime/skin` returns a compact pipe-separated native-renderer payload:
-`fontFamily|fontSize|accent|surface|text|mutedText|border|highlightText|theme|candidatePageSize|candidateLayout|showCandidateComments`.
-Older nine-field, ten-field, or eleven-field payloads are still treated as the
-default seven-candidate horizontal strip with comments shown.
+`fontFamily|fontSize|accent|surface|text|mutedText|border|highlightText|theme|candidatePageSize|candidateLayout|showCandidateComments|cornerRadius|paddingX|paddingY|rowGap|shadow|opacity`.
+Older nine-field, ten-field, eleven-field, or twelve-field payloads are still
+treated as the default seven-candidate horizontal strip with default Win11-like
+spacing, radius, shadow, and full opacity.
 
 `GET /skins` returns shared candidate-window skin presets such as
 `wechat-clean`, `wechat-dark`, `microsoft-light`, and `rime-vertical`. Each
 preset carries the lower candidate strip colors plus `candidatePageSize`,
-`candidateLayout`, and `showCandidateComments`, so WeChat/Microsoft/Rime-style
-UX choices move through one config model. `POST /skins/apply` accepts
+`candidateLayout`, `showCandidateComments`, and renderer metrics such as radius,
+padding, row gap, shadow, and opacity, so WeChat/Microsoft/Rime-style UX choices
+move through one config model. `POST /skins/apply` accepts
 `{"id":"wechat-clean"}` or aliases such as `{"id":"rime"}`, persists the shared
 config, and updates active sessions. The CLI mirrors this through
 `shurufa-imecli skin list` and `shurufa-imecli skin apply wechat-clean`; the C

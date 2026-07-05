@@ -88,6 +88,12 @@ type Skin struct {
 	Border        string `json:"border"`
 	HighlightText string `json:"highlightText"`
 	Theme         string `json:"theme"`
+	CornerRadius  int    `json:"cornerRadius"`
+	PaddingX      int    `json:"paddingX"`
+	PaddingY      int    `json:"paddingY"`
+	RowGap        int    `json:"rowGap"`
+	Shadow        int    `json:"shadow"`
+	Opacity       int    `json:"opacity"`
 }
 
 type SkinPreset struct {

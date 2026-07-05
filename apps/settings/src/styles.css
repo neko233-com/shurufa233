@@ -581,6 +581,18 @@ h2 {
   margin-bottom: 14px;
 }
 
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.metricGrid .field {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
 .skinPresetGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1051,19 +1063,20 @@ h2 {
   min-width: min(100%, 520px);
   overflow: hidden;
   border: 1px solid var(--candidate-border, #d1d5db);
-  border-radius: 8px;
+  border-radius: var(--candidate-radius, 10px);
   background: color-mix(in srgb, var(--candidate-surface, #ffffff), #f8fafc 16%);
   box-shadow:
-    0 18px 42px rgb(15 23 42 / 0.14),
+    0 var(--candidate-shadow-y, 18px) var(--candidate-shadow-blur, 42px) rgb(15 23 42 / 0.14),
     0 3px 8px rgb(15 23 42 / 0.08);
   color: var(--candidate-text, #111827);
+  opacity: var(--candidate-opacity, 1);
 }
 
 .compositionRow {
   display: flex;
   align-items: center;
   min-height: 48px;
-  padding: 8px 18px 6px;
+  padding: var(--candidate-padding-y, 8px) calc(var(--candidate-padding-x, 12px) + 4px) 6px;
   color: color-mix(in srgb, var(--candidate-text, #111827), #111827 18%);
 }
 
@@ -1081,12 +1094,12 @@ h2 {
 .candidateBand {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--candidate-row-gap, 6px);
   min-height: 50px;
   overflow-x: auto;
   border-top: 1px solid color-mix(in srgb, var(--candidate-border, #d1d5db), transparent 20%);
   background: var(--candidate-surface, #ffffff);
-  padding: 8px 14px;
+  padding: var(--candidate-padding-y, 8px) var(--candidate-padding-x, 12px);
 }
 
 .candidateBand.vertical {
@@ -1105,11 +1118,11 @@ h2 {
   min-width: 66px;
   min-height: 34px;
   border: 1px solid color-mix(in srgb, var(--candidate-border, #d1d5db), var(--candidate-surface, #ffffff) 36%);
-  border-radius: 8px;
+  border-radius: var(--candidate-radius, 10px);
   background: color-mix(in srgb, var(--candidate-surface, #ffffff), var(--candidate-accent, #2563eb) 4%);
   color: var(--candidate-text, #111827);
   cursor: pointer;
-  padding: 0 11px;
+  padding: 0 var(--candidate-padding-x, 12px);
 }
 
 .candidateBand.vertical .candidatePill {
@@ -1125,7 +1138,7 @@ h2 {
   border-color: color-mix(in srgb, var(--candidate-accent, #2563eb), #ffffff 10%);
   background: var(--candidate-accent, #2563eb);
   color: var(--candidate-highlight, #ffffff);
-  box-shadow: 0 7px 14px color-mix(in srgb, var(--candidate-accent, #2563eb), transparent 72%);
+  box-shadow: 0 var(--candidate-selected-shadow-y, 7px) var(--candidate-selected-shadow-blur, 14px) color-mix(in srgb, var(--candidate-accent, #2563eb), transparent 72%);
 }
 
 .candidatePill b {

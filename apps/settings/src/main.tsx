@@ -34,6 +34,12 @@ type Skin = {
   border: string;
   highlightText: string;
   theme: string;
+  cornerRadius: number;
+  paddingX: number;
+  paddingY: number;
+  rowGap: number;
+  shadow: number;
+  opacity: number;
 };
 
 type Config = {
@@ -503,6 +509,12 @@ const defaultConfig: Config = {
     border: "#d1d5db",
     highlightText: "#ffffff",
     theme: "system",
+    cornerRadius: 10,
+    paddingX: 12,
+    paddingY: 8,
+    rowGap: 6,
+    shadow: 12,
+    opacity: 100,
   },
   update: {
     sourcePreset: "shurufa233-github",
@@ -550,6 +562,12 @@ const fallbackSkinPresets: SkinPreset[] = [
       border: "#d7dee8",
       highlightText: "#ffffff",
       theme: "wechat-clean",
+      cornerRadius: 12,
+      paddingX: 14,
+      paddingY: 9,
+      rowGap: 6,
+      shadow: 14,
+      opacity: 100,
     },
     candidatePageSize: 7,
     candidateLayout: "horizontal",
@@ -569,6 +587,12 @@ const fallbackSkinPresets: SkinPreset[] = [
       border: "#334155",
       highlightText: "#ffffff",
       theme: "wechat-dark",
+      cornerRadius: 12,
+      paddingX: 14,
+      paddingY: 9,
+      rowGap: 6,
+      shadow: 16,
+      opacity: 96,
     },
     candidatePageSize: 7,
     candidateLayout: "horizontal",
@@ -588,6 +612,12 @@ const fallbackSkinPresets: SkinPreset[] = [
       border: "#d1d5db",
       highlightText: "#ffffff",
       theme: "microsoft-light",
+      cornerRadius: 8,
+      paddingX: 12,
+      paddingY: 8,
+      rowGap: 6,
+      shadow: 10,
+      opacity: 100,
     },
     candidatePageSize: 7,
     candidateLayout: "horizontal",
@@ -607,6 +637,12 @@ const fallbackSkinPresets: SkinPreset[] = [
       border: "#334155",
       highlightText: "#ffffff",
       theme: "rime-vertical",
+      cornerRadius: 8,
+      paddingX: 10,
+      paddingY: 7,
+      rowGap: 5,
+      shadow: 10,
+      opacity: 98,
     },
     candidatePageSize: 5,
     candidateLayout: "vertical",
@@ -983,6 +1019,15 @@ function App() {
         "--candidate-muted": config.skin.mutedText,
         "--candidate-border": config.skin.border,
         "--candidate-highlight": config.skin.highlightText,
+        "--candidate-radius": `${config.skin.cornerRadius}px`,
+        "--candidate-padding-x": `${config.skin.paddingX}px`,
+        "--candidate-padding-y": `${config.skin.paddingY}px`,
+        "--candidate-row-gap": `${config.skin.rowGap}px`,
+        "--candidate-shadow-y": `${Math.round(config.skin.shadow * 1.5)}px`,
+        "--candidate-shadow-blur": `${Math.round(config.skin.shadow * 3.5)}px`,
+        "--candidate-selected-shadow-y": `${Math.round(config.skin.shadow * 0.55)}px`,
+        "--candidate-selected-shadow-blur": `${Math.round(config.skin.shadow * 1.2)}px`,
+        "--candidate-opacity": config.skin.opacity / 100,
       }) as CSSProperties,
     [config.skin],
   );
@@ -2586,6 +2631,80 @@ function App() {
                 }
               />
             </label>
+            <div className="metricGrid">
+              <label className="field">
+                <span>圆角</span>
+                <input
+                  type="number"
+                  min={4}
+                  max={18}
+                  value={config.skin.cornerRadius}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, cornerRadius: Number(event.target.value), theme: "custom" } })
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>横向留白</span>
+                <input
+                  type="number"
+                  min={8}
+                  max={24}
+                  value={config.skin.paddingX}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, paddingX: Number(event.target.value), theme: "custom" } })
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>纵向留白</span>
+                <input
+                  type="number"
+                  min={4}
+                  max={18}
+                  value={config.skin.paddingY}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, paddingY: Number(event.target.value), theme: "custom" } })
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>候选间距</span>
+                <input
+                  type="number"
+                  min={3}
+                  max={14}
+                  value={config.skin.rowGap}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, rowGap: Number(event.target.value), theme: "custom" } })
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>阴影</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={24}
+                  value={config.skin.shadow}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, shadow: Number(event.target.value), theme: "custom" } })
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>透明度</span>
+                <input
+                  type="number"
+                  min={80}
+                  max={100}
+                  value={config.skin.opacity}
+                  onChange={(event) =>
+                    setConfig({ ...config, skin: { ...config.skin, opacity: Number(event.target.value), theme: "custom" } })
+                  }
+                />
+              </label>
+            </div>
             <div className="swatches">
               {["#2563eb", "#16a34a", "#dc2626", "#db2777", "#0f766e"].map((color) => (
                 <button
