@@ -61,11 +61,13 @@ using ModeFn = char *(*)(uint64_t);
 using CommitCandidateFn = char *(*)(uint64_t, int);
 using CommitCandidateCharFn = char *(*)(uint64_t, int, const char *);
 using RejectCandidateFn = char *(*)(uint64_t, int);
+using PinCandidateFn = char *(*)(uint64_t, int);
 using FreeFn = void (*)(char *);
 using CoreStringFn = char *(*)();
 using SessionStringFn = char *(*)(uint64_t);
 using CandidatePayloadV2Fn = char *(*)(uint64_t, int, int);
 using AssociateFn = char *(*)(uint64_t, const char *);
+using CandidateActionFn = char *(*)(uint64_t, const char *);
 using KeyEventJsonFn = char *(*)(uint64_t, const char *);
 using ReverseLookupFn = char *(*)(uint64_t, const char *);
 using ApplyConfigJsonFn = char *(*)(char *);
@@ -98,12 +100,14 @@ struct CoreApi {
   CommitCandidateFn commitCandidate = nullptr;
   CommitCandidateCharFn commitCandidateChar = nullptr;
   RejectCandidateFn rejectCandidate = nullptr;
+  PinCandidateFn pinCandidate = nullptr;
   FreeFn freeValue = nullptr;
   CoreStringFn abiVersion = nullptr;
   CoreStringFn capabilities = nullptr;
   SessionStringFn stateJson = nullptr;
   CandidatePayloadV2Fn candidatePayloadV2 = nullptr;
   AssociateFn associate = nullptr;
+  CandidateActionFn candidateAction = nullptr;
   KeyEventJsonFn keyEventJson = nullptr;
   ReverseLookupFn reverseLookup = nullptr;
   CoreStringFn dictionarySourcesJson = nullptr;
@@ -434,12 +438,14 @@ bool TryLoadInProcessCore() {
   api.commitCandidateChar =
       LoadCoreProc<CommitCandidateCharFn>(module, "ShurufaCommitCandidateChar");
   api.rejectCandidate = LoadCoreProc<RejectCandidateFn>(module, "ShurufaRejectCandidate");
+  api.pinCandidate = LoadCoreProc<PinCandidateFn>(module, "ShurufaPinCandidate");
   api.freeValue = LoadCoreProc<FreeFn>(module, "ShurufaFree");
   api.abiVersion = LoadCoreProc<CoreStringFn>(module, "ShurufaAbiVersion");
   api.capabilities = LoadCoreProc<CoreStringFn>(module, "ShurufaCapabilities");
   api.stateJson = LoadCoreProc<SessionStringFn>(module, "ShurufaState");
   api.candidatePayloadV2 = LoadCoreProc<CandidatePayloadV2Fn>(module, "ShurufaCandidatePayloadV2");
   api.associate = LoadCoreProc<AssociateFn>(module, "ShurufaAssociate");
+  api.candidateAction = LoadCoreProc<CandidateActionFn>(module, "ShurufaCandidateAction");
   api.keyEventJson = LoadCoreProc<KeyEventJsonFn>(module, "ShurufaKeyEventJSON");
   api.reverseLookup = LoadCoreProc<ReverseLookupFn>(module, "ShurufaReverseLookupJSON");
   api.dictionarySourcesJson = LoadCoreProc<CoreStringFn>(module, "ShurufaDictionarySourcesJSON");
@@ -510,12 +516,14 @@ void UseHttpCoreFallback() {
   g_core.commitCandidate = HttpCommitCandidate;
   g_core.commitCandidateChar = nullptr;
   g_core.rejectCandidate = nullptr;
+  g_core.pinCandidate = nullptr;
   g_core.freeValue = HttpFree;
   g_core.abiVersion = nullptr;
   g_core.capabilities = nullptr;
   g_core.stateJson = nullptr;
   g_core.candidatePayloadV2 = nullptr;
   g_core.associate = nullptr;
+  g_core.candidateAction = nullptr;
   g_core.keyEventJson = nullptr;
   g_core.reverseLookup = nullptr;
   g_core.dictionarySourcesJson = nullptr;
@@ -707,6 +715,7 @@ class CandidateWindow {
   using CandidateClickHandler = void (*)(void *, int);
   using CandidateSelectHandler = void (*)(void *, int);
   using CandidatePageHandler = void (*)(void *, int);
+  using CandidateMenuHandler = void (*)(void *, int, HWND, POINT);
 
   struct CandidateView {
     int index = 0;
@@ -736,6 +745,11 @@ class CandidateWindow {
   void SetPageHandler(void *owner, CandidatePageHandler handler) {
     pageOwner_ = owner;
     pageHandler_ = handler;
+  }
+
+  void SetMenuHandler(void *owner, CandidateMenuHandler handler) {
+    menuOwner_ = owner;
+    menuHandler_ = handler;
   }
 
   void Show(const std::string &payload, int selectedIndex, int pageStart, int totalCount,
@@ -835,6 +849,23 @@ class CandidateWindow {
         if (pageDelta != 0) {
           self->pageHandler_(self->pageOwner_, pageDelta);
         }
+      }
+      return 0;
+    }
+    if (self && (message == WM_RBUTTONUP || message == WM_CONTEXTMENU)) {
+      POINT point{};
+      if (message == WM_CONTEXTMENU && lparam != -1) {
+        point = POINT{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+        ScreenToClient(hwnd, &point);
+      } else {
+        point = POINT{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+      }
+      const int absoluteIndex = self->HitTestCandidate(point);
+      if (absoluteIndex >= 0 && self->menuHandler_) {
+        self->SelectCandidate(absoluteIndex);
+        POINT screenPoint = point;
+        ClientToScreen(hwnd, &screenPoint);
+        self->menuHandler_(self->menuOwner_, absoluteIndex, hwnd, screenPoint);
       }
       return 0;
     }
@@ -991,6 +1022,14 @@ class CandidateWindow {
   std::vector<CandidateView> candidates_;
   std::vector<CandidateHit> candidateHits_;
   std::vector<PageHit> pageHits_;
+  void *clickOwner_ = nullptr;
+  CandidateClickHandler clickHandler_ = nullptr;
+  void *selectOwner_ = nullptr;
+  CandidateSelectHandler selectHandler_ = nullptr;
+  void *pageOwner_ = nullptr;
+  CandidatePageHandler pageHandler_ = nullptr;
+  void *menuOwner_ = nullptr;
+  CandidateMenuHandler menuHandler_ = nullptr;
   std::wstring composing_;
   std::wstring statusText_;
   int selectedIndex_ = 0;
@@ -1021,12 +1060,6 @@ class CandidateWindow {
   int fontSizeKey_ = 0;
   UINT fontDpiKey_ = 0;
   UINT dpi_ = 96;
-  void *clickOwner_ = nullptr;
-  CandidateClickHandler clickHandler_ = nullptr;
-  void *selectOwner_ = nullptr;
-  CandidateSelectHandler selectHandler_ = nullptr;
-  void *pageOwner_ = nullptr;
-  CandidatePageHandler pageHandler_ = nullptr;
 
   int CandidateWindowHeight() const {
     if (IsVerticalLayout()) {
@@ -2129,6 +2162,7 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     candidateWindow_.SetClickHandler(this, &TextService::OnCandidateClickedThunk);
     candidateWindow_.SetSelectHandler(this, &TextService::OnCandidateSelectedThunk);
     candidateWindow_.SetPageHandler(this, &TextService::OnCandidatePageThunk);
+    candidateWindow_.SetMenuHandler(this, &TextService::OnCandidateMenuThunk);
   }
 
   ~TextService() {
@@ -2467,6 +2501,13 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     static_cast<TextService *>(owner)->OnCandidatePage(delta);
   }
 
+  static void OnCandidateMenuThunk(void *owner, int absoluteIndex, HWND menuHwnd, POINT screenPoint) {
+    if (!owner) {
+      return;
+    }
+    static_cast<TextService *>(owner)->OnCandidateMenu(absoluteIndex, menuHwnd, screenPoint);
+  }
+
   void OnCandidateClicked(int absoluteIndex) {
     if (!lastContext_ || !session_ || absoluteIndex < 0 ||
         absoluteIndex >= cachedCandidateCount_) {
@@ -2493,6 +2534,78 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
       return;
     }
     MovePage(delta);
+  }
+
+  void OnCandidateMenu(int absoluteIndex, HWND menuHwnd, POINT screenPoint) {
+    if (!session_ || !lastContext_ || absoluteIndex < 0 ||
+        absoluteIndex >= cachedCandidateCount_) {
+      return;
+    }
+    selectedIndex_ = absoluteIndex;
+    pageOffset_ = (selectedIndex_ / CandidatePageSize()) * CandidatePageSize();
+
+    HMENU menu = CreatePopupMenu();
+    if (!menu) {
+      return;
+    }
+
+    constexpr UINT_PTR kCommit = 1001;
+    constexpr UINT_PTR kPin = 1002;
+    constexpr UINT_PTR kForget = 1003;
+    constexpr UINT_PTR kFirstChar = 1004;
+    constexpr UINT_PTR kLastChar = 1005;
+
+    AppendMenuW(menu, MF_STRING, kCommit, L"上屏");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    const bool canPin = g_core.pinCandidate || g_core.candidateAction || g_core.executeCommand;
+    AppendMenuW(menu, MF_STRING | (canPin ? 0 : MF_GRAYED), kPin, L"固定到前排");
+    const bool canForget = g_core.rejectCandidate || g_core.candidateAction || g_core.executeCommand;
+    AppendMenuW(menu, MF_STRING | (canForget ? 0 : MF_GRAYED), kForget, L"隐藏候选");
+    if (g_core.commitCandidateChar) {
+      AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+      AppendMenuW(menu, MF_STRING, kFirstChar, L"首字上屏");
+      AppendMenuW(menu, MF_STRING, kLastChar, L"末字上屏");
+    }
+
+    SetForegroundWindow(menuHwnd);
+    const UINT command = TrackPopupMenu(menu,
+                                        TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+                                        screenPoint.x, screenPoint.y, 0, menuHwnd, nullptr);
+    DestroyMenu(menu);
+    PostMessageW(menuHwnd, WM_NULL, 0, 0);
+
+    switch (command) {
+      case kCommit:
+        CommitCandidate(lastContext_, absoluteIndex);
+        ResetCompositionState();
+        candidateWindow_.Hide();
+        break;
+      case kPin:
+        if (RunCandidateAction("pin", absoluteIndex)) {
+          UpdateCandidateWindow();
+        }
+        break;
+      case kForget:
+        if (ForgetCandidate(absoluteIndex)) {
+          if (selectedIndex_ >= cachedCandidateCount_) {
+            selectedIndex_ = max(0, cachedCandidateCount_ - 1);
+          }
+          UpdateCandidateWindow();
+        }
+        break;
+      case kFirstChar:
+        CommitCandidateChar(lastContext_, absoluteIndex, "first");
+        ResetCompositionState();
+        candidateWindow_.Hide();
+        break;
+      case kLastChar:
+        CommitCandidateChar(lastContext_, absoluteIndex, "last");
+        ResetCompositionState();
+        candidateWindow_.Hide();
+        break;
+      default:
+        break;
+    }
   }
 
   void RememberContext(ITfContext *context) {
@@ -2725,6 +2838,68 @@ class TextService final : public ITfTextInputProcessorEx, public ITfKeyEventSink
     compositionLength_ = 0;
     rawBuffer_.clear();
     CommitText(context, text);
+  }
+
+  void CommitCandidateChar(ITfContext *context, int index, const char *side) {
+    if (!context || !session_ || !g_core.commitCandidateChar || !side) {
+      return;
+    }
+    char *committed = g_core.commitCandidateChar(session_, index, side);
+    std::wstring text = Utf8ToWide(committed);
+    if (committed) {
+      g_core.freeValue(committed);
+    }
+    if (text.empty()) {
+      return;
+    }
+    compositionLength_ = 0;
+    rawBuffer_.clear();
+    CommitText(context, text);
+  }
+
+  bool RunCandidateAction(const char *action, int index) {
+    if (!session_ || !action) {
+      return false;
+    }
+    if (_stricmp(action, "pin") == 0 && g_core.pinCandidate) {
+      char *result = g_core.pinCandidate(session_, index);
+      if (!result) {
+        return false;
+      }
+      const std::string json(result);
+      g_core.freeValue(result);
+      return json.find("\"error\"") == std::string::npos;
+    }
+    char payload[96]{};
+    sprintf_s(payload, "{\"action\":\"%s\",\"index\":%d}", action, index);
+    char *result = nullptr;
+    if (g_core.candidateAction) {
+      result = g_core.candidateAction(session_, payload);
+    } else if (g_core.executeCommand) {
+      result = g_core.executeCommand(session_, "candidate-action", payload);
+    }
+    if (!result) {
+      return false;
+    }
+    const std::string json(result);
+    g_core.freeValue(result);
+    return json.find("\"error\"") == std::string::npos;
+  }
+
+  bool ForgetCandidate(int index) {
+    if (!session_) {
+      return false;
+    }
+    if (g_core.rejectCandidate) {
+      char *result = g_core.rejectCandidate(session_, index);
+      if (!result) {
+        return false;
+      }
+      const std::string json(result);
+      g_core.freeValue(result);
+      return json.find("\"error\"") == std::string::npos;
+    }
+    return RunCandidateAction("forget", index);
   }
 
   std::string BuildCandidatePayloadFromCore(int count) {

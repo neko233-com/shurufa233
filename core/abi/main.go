@@ -244,6 +244,22 @@ func ShurufaRejectCandidate(id C.uint64_t, index C.int) *C.char {
 	})
 }
 
+//export ShurufaPinCandidate
+func ShurufaPinCandidate(id C.uint64_t, index C.int) *C.char {
+	session := getSession(uint64(id))
+	state, pinned, err := session.PinCandidate(int(index))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	persistUserPins(session.UserPins())
+	return jsonCString(map[string]any{
+		"ok":        true,
+		"pinned":    pinned,
+		"state":     state,
+		"updatedAt": state.UpdatedAt,
+	})
+}
+
 //export ShurufaExecuteCommand
 func ShurufaExecuteCommand(id C.uint64_t, command *C.char, payload *C.char) *C.char {
 	return jsonCString(executeExtensionCommand(uint64(id), C.GoString(command), C.GoString(payload)))
