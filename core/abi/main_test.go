@@ -271,6 +271,15 @@ func TestCapabilitiesIncludeUserPhrasesJSON(t *testing.T) {
 	t.Fatalf("capabilities missing user-phrases-json: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeRimeCustomPhraseText(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "rime-custom-phrase-text" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing rime-custom-phrase-text: %#v", abiFeatureList)
+}
+
 func TestCapabilitiesIncludeUserRejectsJSON(t *testing.T) {
 	for _, feature := range abiFeatureList {
 		if feature == "user-rejects-json" {
@@ -438,6 +447,34 @@ func TestExecuteExtensionCommandImportsUserPhrases(t *testing.T) {
 	listResult, ok := list.(map[string]any)
 	if !ok || listResult["count"] != 1 {
 		t.Fatalf("user-phrases = %#v", list)
+	}
+}
+
+func TestExecuteExtensionCommandImportsRimeCustomPhrases(t *testing.T) {
+	t.Setenv("SHURUFA233_USER_PHRASES", filepath.Join(t.TempDir(), "user-phrases.json"))
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "import-rime-custom-phrases", `{"data":"马上到！\tmsd\t1\n开会\tkh\t20\n","merge":true}`)
+	if !handled {
+		t.Fatal("import-rime-custom-phrases command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("import-rime-custom-phrases = %#v", got)
+	}
+	state := session.Preview("msd")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "马上到！" {
+		t.Fatalf("expected Rime custom phrase to rank first, got %#v", state.Candidates)
+	}
+
+	exported, handled := executeSessionExtensionCommand(session, "user-phrases-rime-text", `{}`)
+	if !handled {
+		t.Fatal("user-phrases-rime-text command was not handled")
+	}
+	exportResult, ok := exported.(map[string]any)
+	data, dataOK := exportResult["data"].(string)
+	if !ok || !dataOK || !strings.Contains(data, "马上到！\tmsd\t1") {
+		t.Fatalf("user-phrases-rime-text = %#v", exported)
 	}
 }
 

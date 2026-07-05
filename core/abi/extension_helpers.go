@@ -27,6 +27,7 @@ var abiFeatureList = []string{
 	"reverse-lookup-json",
 	"user-scores-json",
 	"user-phrases-json",
+	"rime-custom-phrase-text",
 	"user-rejects-json",
 	"user-pins-json",
 	"commit-text",
@@ -169,6 +170,8 @@ type extensionCommandPayload struct {
 	Value        *bool              `json:"value,omitempty"`
 	Schema       string             `json:"schema,omitempty"`
 	YAML         string             `json:"yaml,omitempty"`
+	Format       string             `json:"format,omitempty"`
+	Data         string             `json:"data,omitempty"`
 	Reading      string             `json:"reading,omitempty"`
 	Text         string             `json:"text,omitempty"`
 	Kind         string             `json:"kind,omitempty"`
@@ -1246,6 +1249,15 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func isRimeCustomPhraseFormat(format string) bool {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "rime-custom-phrase", "custom-phrase", "custom_phrase", "custom_phrase.txt", "rime":
+		return true
+	default:
+		return false
+	}
+}
+
 func decodeExtensionCommandPayload(payload string) (extensionCommandPayload, error) {
 	var out extensionCommandPayload
 	payload = strings.TrimSpace(payload)
@@ -1450,6 +1462,15 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"count":     len(phrases),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
+	case "rime-custom-phrase-text", "user-phrases-rime-text", "export-rime-custom-phrases":
+		phrases := session.UserPhrases()
+		return map[string]any{
+			"ok":        true,
+			"format":    "rime-custom-phrase",
+			"data":      engine.FormatRimeCustomPhrases(phrases),
+			"count":     len(phrases),
+			"updatedAt": session.State().UpdatedAt,
+		}, true
 	case "user-rejects-json", "user-rejects":
 		rejects := session.UserRejects()
 		return map[string]any{
@@ -1492,6 +1513,33 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		entries := req.Entries
 		if len(entries) == 0 {
 			entries = req.Phrases
+		}
+		if len(entries) == 0 && isRimeCustomPhraseFormat(req.Format) && strings.TrimSpace(req.Data) != "" {
+			parsed, err := engine.ParseRimeCustomPhrases([]byte(req.Data))
+			if err != nil {
+				return errorEnvelope(err.Error()), true
+			}
+			entries = parsed
+		}
+		if req.Merge {
+			merged := session.UserPhrases()
+			merged = append(merged, entries...)
+			entries = merged
+		}
+		session.ReplaceUserPhrases(entries)
+		phrases := session.UserPhrases()
+		persistUserPhrases(phrases)
+		return map[string]any{
+			"ok":        true,
+			"imported":  len(entries),
+			"total":     len(phrases),
+			"phrases":   phrases,
+			"updatedAt": session.State().UpdatedAt,
+		}, true
+	case "import-rime-custom-phrases", "import-rime-custom-phrase-text":
+		entries, err := engine.ParseRimeCustomPhrases([]byte(req.Data))
+		if err != nil {
+			return errorEnvelope(err.Error()), true
 		}
 		if req.Merge {
 			merged := session.UserPhrases()

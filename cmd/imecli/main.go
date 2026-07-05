@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/neko233-com/shurufa233/core/engine"
 )
 
 var apiBase = "http://127.0.0.1:23333"
@@ -417,6 +419,7 @@ Usage:
   shurufa-imecli phrases add msd "马上到！" [weight]
   shurufa-imecli phrases import user-phrases.json [--replace]
   shurufa-imecli phrases export
+  shurufa-imecli phrases export-rime
   shurufa-imecli phrases delete "msd|马上到！"
   shurufa-imecli phrases clear
   shurufa-imecli rejects list
@@ -1249,6 +1252,13 @@ func phrases(client *http.Client, args []string) error {
 		}
 		fmt.Println(string(data))
 		return nil
+	case "export-rime", "export-custom-phrase", "export-custom_phrase":
+		body, err := get(client, "/phrases?format=rime-custom-phrase")
+		if err != nil {
+			return err
+		}
+		fmt.Print(string(body))
+		return nil
 	case "add":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: phrases add <reading> <text> [weight]")
@@ -1336,9 +1346,28 @@ func readPhraseFile(path string) ([]phraseEntry, error) {
 	}
 	var entries []phraseEntry
 	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, err
+		parsed, parseErr := engine.ParseRimeCustomPhrases(data)
+		if parseErr != nil {
+			return nil, err
+		}
+		return phraseEntriesFromEngine(parsed), nil
 	}
 	return entries, nil
+}
+
+func phraseEntriesFromEngine(entries []engine.Entry) []phraseEntry {
+	out := make([]phraseEntry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, phraseEntry{
+			Reading: entry.Reading,
+			Text:    entry.Text,
+			Kind:    entry.Kind,
+			Source:  entry.Source,
+			Comment: entry.Comment,
+			Weight:  entry.Weight,
+		})
+	}
+	return out
 }
 
 func rejects(client *http.Client, args []string) error {

@@ -325,6 +325,34 @@ func TestUserPhrasesCanBeAddedListedAndDeleted(t *testing.T) {
 	}
 }
 
+func TestParseRimeCustomPhrases(t *testing.T) {
+	entries, err := ParseRimeCustomPhrases([]byte(`# Rime custom_phrase.txt
+#@/db_name custom_phrase.txt
+马上到！	msd	1
+开会	kh	20
+http://rime.im/ rime 3
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("entries = %#v", entries)
+	}
+	if entries[0].Reading != "msd" || entries[0].Text != "马上到！" || entries[0].Weight != 50001 || entries[0].Kind != UserPhraseKind || entries[0].Source != UserPhraseSource {
+		t.Fatalf("first phrase = %#v", entries[0])
+	}
+	if entries[2].Reading != "rime" || entries[2].Text != "http://rime.im/" || entries[2].Weight != 50003 {
+		t.Fatalf("whitespace phrase = %#v", entries[2])
+	}
+}
+
+func TestFormatRimeCustomPhrases(t *testing.T) {
+	got := FormatRimeCustomPhrases([]Entry{{Reading: "msd", Text: "马上到！", Weight: 50001}})
+	if !strings.Contains(got, "马上到！\tmsd\t1") {
+		t.Fatalf("custom phrase export = %q", got)
+	}
+}
+
 func TestRejectCandidateHidesAndRestoresCandidate(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddEntries([]Entry{

@@ -169,7 +169,7 @@ C++ export on developer machines that only consume packaged builds.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `profile-sync-json`, `apply-sync-config-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
+`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `user-phrases-json`, `rime-custom-phrase-text`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `profile-sync-json`, `apply-sync-config-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
@@ -241,6 +241,8 @@ user-scores-json
 import-user-scores-json {"userScores":{"nihao|你好":25}}
 user-phrases-json
 import-user-phrases-json {"entries":[{"reading":"msd","text":"马上到！"}],"merge":true}
+rime-custom-phrase-text
+import-rime-custom-phrases {"data":"马上到！\tmsd\t1\n","merge":true}
 delete-user-phrase      {"reading":"msd","text":"马上到！"}
 user-rejects-json
 import-user-rejects-json {"entries":[{"reading":"ceshi","text":"错词"}],"merge":true}
@@ -420,6 +422,16 @@ Rime-style user phrases. These are persisted separately from learned scores in
 
 ```json
 { "entries": [{ "reading": "msd", "text": "马上到！", "weight": 60000 }], "merge": true }
+```
+
+The generic command bus also accepts and exports Rime/Weasel/Squirrel
+`custom_phrase.txt` text directly. Use `rime-custom-phrase-text` or
+`user-phrases-rime-text` to export, and `import-rime-custom-phrases` or
+`import-user-phrases-json` with `{"format":"rime-custom-phrase","data":"..."}`
+to import at runtime:
+
+```json
+{ "format": "rime-custom-phrase", "data": "马上到！\tmsd\t1\n", "merge": true }
 ```
 
 `ShurufaUserRejectsJSON`, `ShurufaImportUserRejectsJSON`, and

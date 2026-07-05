@@ -227,6 +227,8 @@ type phraseRequest struct {
 	Phrases []engine.Entry `json:"phrases,omitempty"`
 	Reading string         `json:"reading,omitempty"`
 	Text    string         `json:"text,omitempty"`
+	Format  string         `json:"format,omitempty"`
+	Data    string         `json:"data,omitempty"`
 	Comment string         `json:"comment,omitempty"`
 	Weight  int            `json:"weight,omitempty"`
 	Merge   bool           `json:"merge,omitempty"`
@@ -754,7 +756,13 @@ func (s *AppState) phrases(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		s.mu.RLock()
 		defer s.mu.RUnlock()
-		writeJSON(w, phraseResponse(s.engine.UserPhrases()))
+		phrases := s.engine.UserPhrases()
+		if isRimeCustomPhraseFormat(r.URL.Query().Get("format")) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_, _ = w.Write([]byte(engine.FormatRimeCustomPhrases(phrases)))
+			return
+		}
+		writeJSON(w, phraseResponse(phrases))
 	case http.MethodPut:
 		var req phraseRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -764,6 +772,14 @@ func (s *AppState) phrases(w http.ResponseWriter, r *http.Request) {
 		entries := req.Entries
 		if len(entries) == 0 {
 			entries = req.Phrases
+		}
+		if len(entries) == 0 && isRimeCustomPhraseFormat(req.Format) && strings.TrimSpace(req.Data) != "" {
+			parsed, err := engine.ParseRimeCustomPhrases([]byte(req.Data))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			entries = parsed
 		}
 		if len(entries) == 0 && strings.TrimSpace(req.Reading) != "" && strings.TrimSpace(req.Text) != "" {
 			entries = []engine.Entry{{
@@ -2161,6 +2177,15 @@ func phraseResponse(entries []engine.Entry) map[string]any {
 		"entries":   entries,
 		"count":     len(entries),
 		"updatedAt": time.Now().UTC(),
+	}
+}
+
+func isRimeCustomPhraseFormat(format string) bool {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "rime-custom-phrase", "custom-phrase", "custom_phrase", "custom_phrase.txt", "rime":
+		return true
+	default:
+		return false
 	}
 }
 

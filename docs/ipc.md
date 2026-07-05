@@ -160,9 +160,13 @@ entries are separate from learned word scores and are loaded as
 `kind=phrase`, `source=user-phrase` candidates with high default weight, matching
 Rime `custom_phrase.txt` expectations. `PUT /phrases` accepts
 `{"entries":[{"reading":"msd","text":"马上到！","weight":60000}],"merge":true}`
-or a single `reading`/`text` pair. `DELETE /phrases?key=msd%7C马上到！` deletes
+or a single `reading`/`text` pair. `GET /phrases?format=rime-custom-phrase`
+exports a plain `custom_phrase.txt`-compatible body, and `PUT /phrases` also
+accepts `{"format":"rime-custom-phrase","data":"马上到！\tmsd\t1\n","merge":true}`
+for runtime migration from Rime/Weasel/Squirrel without rebuilding dictionaries.
+`DELETE /phrases?key=msd%7C马上到！` deletes
 one phrase; `DELETE /phrases` clears all fixed user phrases. The CLI mirrors
-this through `shurufa-imecli phrases list|add|import|export|delete|clear`.
+this through `shurufa-imecli phrases list|add|import|export|export-rime|delete|clear`.
 
 `GET /rejects` returns hidden candidate rows stored in `user-rejects.json`.
 These rows use the same `reading`/`text` shape as dictionary entries and are

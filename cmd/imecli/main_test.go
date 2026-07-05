@@ -795,6 +795,43 @@ func TestReadPhraseFileAcceptsRawEntries(t *testing.T) {
 	}
 }
 
+func TestReadPhraseFileAcceptsRimeCustomPhraseText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom_phrase.txt")
+	if err := os.WriteFile(path, []byte("马上到！\tmsd\t1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := readPhraseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Reading != "msd" || got[0].Text != "马上到！" || got[0].Weight != 50001 {
+		t.Fatalf("phrases = %#v", got)
+	}
+}
+
+func TestPhrasesExportRimeCallsTextEndpoint(t *testing.T) {
+	var called bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/phrases" || r.URL.Query().Get("format") != "rime-custom-phrase" {
+			t.Fatalf("unexpected request %s", r.URL.String())
+		}
+		called = true
+		_, _ = w.Write([]byte("马上到！\tmsd\t1\n"))
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := phrases(server.Client(), []string{"export-rime"}); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("phrases export-rime endpoint was not called")
+	}
+}
+
 func TestParseCatalogArgs(t *testing.T) {
 	kind, query, limit, err := parseCatalogArgs([]string{"emoji", "zan", "--limit", "12"})
 	if err != nil {

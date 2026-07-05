@@ -991,6 +991,38 @@ func TestPhrasesPutAndDeleteManageUserPhrases(t *testing.T) {
 	}
 }
 
+func TestPhrasesImportAndExportRimeCustomPhraseText(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	body := strings.NewReader(`{"format":"rime-custom-phrase","data":"马上到！\tmsd\t1\n开会\tkh\t20\n","merge":true}`)
+	req := httptest.NewRequest(http.MethodPut, "/phrases", body)
+	rec := httptest.NewRecorder()
+	state.phrases(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := session.Preview("msd"); len(got.Candidates) == 0 || got.Candidates[0].Text != "马上到！" || got.Candidates[0].Weight != 50001 {
+		t.Fatalf("expected Rime custom phrase candidate, got %#v", got.Candidates)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/phrases?format=custom_phrase.txt", nil)
+	rec = httptest.NewRecorder()
+	state.phrases(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("export status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "马上到！\tmsd\t1") {
+		t.Fatalf("custom phrase export = %q", rec.Body.String())
+	}
+}
+
 func TestRejectsEndpointAndCandidateActionHideCandidates(t *testing.T) {
 	config := engine.DefaultConfig()
 	session := engine.New(config)

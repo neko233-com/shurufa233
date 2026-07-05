@@ -1528,9 +1528,26 @@ function App() {
 
   async function importPhrases(merge: boolean) {
     try {
-      const parsed = JSON.parse(phraseDraft) as PhraseEntry[] | { entries?: PhraseEntry[]; phrases?: PhraseEntry[] };
-      const entries = Array.isArray(parsed) ? parsed : parsed.entries ?? parsed.phrases ?? [];
-      const nextEntries = await savePhraseEntries(entries, merge, merge ? "已合并" : "已替换");
+      let nextEntries: PhraseEntry[];
+      try {
+        const parsed = JSON.parse(phraseDraft) as PhraseEntry[] | { entries?: PhraseEntry[]; phrases?: PhraseEntry[] };
+        const entries = Array.isArray(parsed) ? parsed : parsed.entries ?? parsed.phrases ?? [];
+        nextEntries = await savePhraseEntries(entries, merge, merge ? "已合并" : "已替换");
+      } catch (jsonErr) {
+        if (!phraseDraft.trim()) throw jsonErr;
+        const res = await fetch(`${apiBase}/phrases`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ format: "rime-custom-phrase", data: phraseDraft, merge }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = (await res.json()) as PhraseResponse;
+        nextEntries = phraseEntries(data);
+        setPhrases(nextEntries);
+        setPhraseDraft(JSON.stringify({ entries: nextEntries }, null, 2));
+        setPhraseText(`${merge ? "已合并 Rime" : "已替换 Rime"} ${data.count ?? nextEntries.length} 条`);
+        setError("");
+      }
       if (nextEntries.length > 0) {
         setPreview(nextEntries[0].reading);
         void runPreview(nextEntries[0].reading);
@@ -1583,6 +1600,26 @@ function App() {
     anchor.download = "shurufa233-user-phrases.json";
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function exportRimePhrases() {
+    try {
+      const res = await fetch(`${apiBase}/phrases?format=rime-custom-phrase`);
+      if (!res.ok) throw new Error(await res.text());
+      const text = await res.text();
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "custom_phrase.txt";
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setPhraseText("已导出 Rime custom_phrase.txt");
+      setError("");
+    } catch (err) {
+      setPhraseText("导出失败");
+      setError(err instanceof Error ? err.message : "rime phrase export failed");
+    }
   }
 
   async function loadRejects() {
@@ -2870,7 +2907,7 @@ function App() {
               {phrases.length === 0 && <div className="emptyWordbook">暂无固定短语</div>}
             </div>
             <label className="field">
-              <span>批量 JSON</span>
+              <span>批量 JSON / Rime custom_phrase.txt</span>
               <textarea
                 className="wordbookDraft phraseDraft"
                 spellCheck={false}
@@ -2886,6 +2923,10 @@ function App() {
               <button className="secondary" onClick={exportPhrases}>
                 <FileDown size={18} />
                 导出
+              </button>
+              <button className="secondary" onClick={() => void exportRimePhrases()}>
+                <FileDown size={18} />
+                导出 Rime
               </button>
               <button className="secondary" onClick={() => void importPhrases(true)}>
                 <FileUp size={18} />
