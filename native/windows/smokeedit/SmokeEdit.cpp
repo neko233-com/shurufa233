@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include <windows.h>
+#include <imm.h>
 #include <msctf.h>
 #include <strsafe.h>
 
@@ -64,6 +65,7 @@ WNDPROC g_originalEditProc = nullptr;
 Metrics g_metrics{};
 wchar_t g_imeStatus[128] = L"F6 activate shurufa233 for this lab";
 bool g_shurufaActive = false;
+bool g_suppressInputMetrics = false;
 
 COLORREF Rgb(int r, int g, int b) {
   return RGB(r, g, b);
@@ -83,13 +85,55 @@ LARGE_INTEGER Now() {
   return value;
 }
 
+void CancelImeComposition(HWND hwnd) {
+  if (!hwnd) {
+    return;
+  }
+  HIMC context = ImmGetContext(hwnd);
+  if (context) {
+    ImmNotifyIME(context, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+    ImmNotifyIME(context, NI_CLOSECANDIDATE, 0, 0);
+    ImmReleaseContext(hwnd, context);
+  }
+  HWND imeWindow = ImmGetDefaultIMEWnd(hwnd);
+  if (imeWindow) {
+    SendMessageW(imeWindow, WM_IME_CONTROL, IMC_CLOSESTATUSWINDOW, 0);
+  }
+}
+
+void SendEscapeToFocusedInput() {
+  if (!g_edit) {
+    return;
+  }
+  g_suppressInputMetrics = true;
+  INPUT input[2]{};
+  input[0].type = INPUT_KEYBOARD;
+  input[0].ki.wVk = VK_ESCAPE;
+  input[1].type = INPUT_KEYBOARD;
+  input[1].ki.wVk = VK_ESCAPE;
+  input[1].ki.dwFlags = KEYEVENTF_KEYUP;
+  SendInput(ARRAYSIZE(input), input, sizeof(INPUT));
+  Sleep(60);
+  g_suppressInputMetrics = false;
+}
+
+void PrepareEditForInputSwitch(bool clearText) {
+  if (!g_edit) {
+    return;
+  }
+  SetFocus(g_edit);
+  SendEscapeToFocusedInput();
+  CancelImeComposition(g_edit);
+  if (clearText) {
+    SetWindowTextW(g_edit, L"");
+  }
+  SendMessageW(g_edit, EM_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
+}
+
 void ResetMetrics(HWND hwnd) {
   g_metrics = Metrics{};
   QueryPerformanceFrequency(&g_metrics.frequency);
-  if (g_edit) {
-    SetWindowTextW(g_edit, L"");
-    SetFocus(g_edit);
-  }
+  PrepareEditForInputSwitch(true);
   InvalidateRect(hwnd, nullptr, TRUE);
 }
 
@@ -249,10 +293,12 @@ HRESULT ActivateShurufaProfileOnce() {
 }
 
 HRESULT ActivateShurufaProfile() {
+  PrepareEditForInputSwitch(false);
   HRESULT hr = S_OK;
   for (int attempt = 0; attempt < 5; ++attempt) {
     hr = ActivateShurufaProfileOnce();
     if (SUCCEEDED(hr) && IsShurufaActive()) {
+      PrepareEditForInputSwitch(false);
       return S_OK;
     }
     Sleep(120);
@@ -555,18 +601,26 @@ LRESULT CALLBACK EditProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
           return 0;
         }
       }
-      RecordKeyDown(wparam, lparam);
+      if (!g_suppressInputMetrics) {
+        RecordKeyDown(wparam, lparam);
+      }
       break;
     case WM_CHAR:
-      EnsureStarted();
-      g_metrics.chars++;
+      if (!g_suppressInputMetrics) {
+        EnsureStarted();
+        g_metrics.chars++;
+      }
       break;
     case WM_IME_STARTCOMPOSITION:
-      EnsureStarted();
-      g_metrics.imeStarts++;
+      if (!g_suppressInputMetrics) {
+        EnsureStarted();
+        g_metrics.imeStarts++;
+      }
       break;
     case WM_IME_ENDCOMPOSITION:
-      g_metrics.imeEnds++;
+      if (!g_suppressInputMetrics) {
+        g_metrics.imeEnds++;
+      }
       break;
     default:
       break;

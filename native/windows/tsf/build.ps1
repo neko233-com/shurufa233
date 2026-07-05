@@ -194,6 +194,7 @@ foreach ($TargetArch in $Arch) {
     "uuid.lib",
     "user32.lib",
     "gdi32.lib",
+    "imm32.lib",
     "/SUBSYSTEM:WINDOWS",
     "/OPT:REF",
     "/OPT:ICF",

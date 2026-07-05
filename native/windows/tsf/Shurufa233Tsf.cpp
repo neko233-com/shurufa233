@@ -581,6 +581,30 @@ bool ModePayloadIsEnglish(const char *value) {
   return payload == "en" || payload.find("\"mode\":\"en\"") != std::string::npos;
 }
 
+std::vector<std::string> SplitTabFields(const std::string &line) {
+  std::vector<std::string> fields;
+  size_t start = 0;
+  while (start <= line.size()) {
+    size_t end = line.find('\t', start);
+    if (end == std::string::npos) {
+      fields.push_back(line.substr(start));
+      break;
+    }
+    fields.push_back(line.substr(start, end - start));
+    start = end + 1;
+  }
+  return fields;
+}
+
+bool PayloadBoolField(const std::string &value) {
+  std::string normalized;
+  normalized.reserve(value.size());
+  for (char ch : value) {
+    normalized.push_back(static_cast<char>(tolower(static_cast<unsigned char>(ch))));
+  }
+  return normalized == "true" || normalized == "1" || normalized == "yes" || normalized == "on";
+}
+
 class CandidateWindow {
  public:
   using CandidateClickHandler = void (*)(void *, int);
@@ -595,6 +619,7 @@ class CandidateWindow {
     std::wstring source;
     std::wstring comment;
     int score = 0;
+    bool pinned = false;
   };
 
   ~CandidateWindow() {
@@ -1367,26 +1392,24 @@ class CandidateWindow {
       }
       std::string line = payload.substr(lineStart, lineEnd - lineStart);
       if (!line.empty()) {
-        size_t first = line.find('\t');
-        size_t second = first == std::string::npos ? std::string::npos : line.find('\t', first + 1);
-        size_t third = second == std::string::npos ? std::string::npos : line.find('\t', second + 1);
-        size_t fourth = third == std::string::npos ? std::string::npos : line.find('\t', third + 1);
-        size_t fifth = fourth == std::string::npos ? std::string::npos : line.find('\t', fourth + 1);
-        size_t sixth = fifth == std::string::npos ? std::string::npos : line.find('\t', fifth + 1);
-        if (first != std::string::npos && second != std::string::npos && third != std::string::npos) {
+        const std::vector<std::string> fields = SplitTabFields(line);
+        if (fields.size() >= 4) {
           CandidateView item;
-          item.index = atoi(line.substr(0, first).c_str());
-          item.text = Utf8ToWide(line.substr(first + 1, second - first - 1).c_str());
-          item.reading = Utf8ToWide(line.substr(second + 1, third - second - 1).c_str());
-          item.score = atoi(line.substr(third + 1, fourth == std::string::npos ? std::string::npos : fourth - third - 1).c_str());
-          if (fourth != std::string::npos) {
-            item.kind = Utf8ToWide(line.substr(fourth + 1, fifth == std::string::npos ? std::string::npos : fifth - fourth - 1).c_str());
+          item.index = atoi(fields[0].c_str());
+          item.text = Utf8ToWide(fields[1].c_str());
+          item.reading = Utf8ToWide(fields[2].c_str());
+          item.score = atoi(fields[3].c_str());
+          if (fields.size() > 4) {
+            item.kind = Utf8ToWide(fields[4].c_str());
           }
-          if (fifth != std::string::npos) {
-            item.source = Utf8ToWide(line.substr(fifth + 1, sixth == std::string::npos ? std::string::npos : sixth - fifth - 1).c_str());
+          if (fields.size() > 5) {
+            item.source = Utf8ToWide(fields[5].c_str());
           }
-          if (sixth != std::string::npos) {
-            item.comment = Utf8ToWide(line.substr(sixth + 1).c_str());
+          if (fields.size() > 6) {
+            item.comment = Utf8ToWide(fields[6].c_str());
+          }
+          if (fields.size() > 7) {
+            item.pinned = PayloadBoolField(fields[7]);
           }
           parsed.push_back(item);
         }
