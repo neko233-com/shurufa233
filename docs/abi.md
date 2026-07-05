@@ -303,7 +303,7 @@ core maps common Rime patch fields such as `schema_list`, `menu/page_size`,
 `speller/algebra`, `switches`, `style/horizontal`, `style/font_face`,
 `style/font_point`, `style/color_scheme`, `preset_color_schemes`, `punctuator/import_preset`,
 `recognizer/import_preset`, `recognizer/patterns`, `key_binder/import_preset`,
-`key_binder/bindings`, and
+`key_binder/bindings`, `app_options`, and
 `ascii_composer/switch_key` into the shared config, persists it, and returns
 `applied` plus `warnings`. Native glue should prefer this JSON command instead
 of learning individual Rime YAML concepts in C++. The raw spelling algebra is
@@ -319,6 +319,9 @@ config file before using its default punctuation table. Rime recognizer patterns
 are exposed as `config.recognizerPatterns` and through
 `rime-recognizer-patterns-json`, so native glue can query or reload URL/email,
 uppercase, reverse-lookup, and future recognizer rules through the command bus.
+Rime `app_options/<app>` patches are converted into shared `appRules`, including
+app-scoped `ascii_mode`, `ascii_punct`, disable-candidate, and disable-learning
+behavior for games, terminals, IDEs, and macOS bundle identifiers.
 
 `app-rules-json`, `resolve-app-context-json`, `ShurufaAppRulesJSON`, and
 `ShurufaResolveAppContextJSON` reserve the app-aware behavior surface that

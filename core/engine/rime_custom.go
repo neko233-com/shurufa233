@@ -70,6 +70,10 @@ func ApplyRimeCustomYAML(base Config, data []byte) (RimeCustomResult, error) {
 	styleApplied, styleWarnings := applyRimeStyleConfig(&config, patch)
 	applied = append(applied, styleApplied...)
 	warnings = append(warnings, styleWarnings...)
+	nextConfig, appOptionsApplied, appOptionsWarnings := applyRimeAppOptions(config, patch)
+	config = nextConfig
+	applied = append(applied, appOptionsApplied...)
+	warnings = append(warnings, appOptionsWarnings...)
 	if raw, ok := rimeLookup(patch, "style/horizontal"); ok {
 		if value, ok := rimeBool(raw); ok {
 			if value {
@@ -240,6 +244,194 @@ func applyRimeStyleConfig(config *Config, patch map[string]any) ([]string, []str
 		}
 	}
 	return uniqueStrings(applied), uniqueStrings(warnings)
+}
+
+func applyRimeAppOptions(config Config, patch map[string]any) (Config, []string, []string) {
+	options := collectRimeAppOptions(patch)
+	applied := []string{}
+	warnings := []string{}
+	rules := []AppRule{}
+	for app, fields := range options {
+		rule, ok, ruleWarnings := rimeAppOptionRule(app, fields)
+		warnings = append(warnings, ruleWarnings...)
+		if !ok {
+			continue
+		}
+		rules = append(rules, rule)
+		applied = append(applied, "app_options:"+app)
+	}
+	if len(rules) > 0 {
+		config.AppRules = mergeRimeAppRules(config.AppRules, rules)
+	}
+	return config, uniqueStrings(applied), uniqueStrings(warnings)
+}
+
+func collectRimeAppOptions(patch map[string]any) map[string]map[string]any {
+	out := map[string]map[string]any{}
+	if raw, ok := rimeLookup(patch, "app_options"); ok {
+		if mapped, ok := rimeMap(raw); ok {
+			for app, value := range mapped {
+				if fields, ok := rimeMap(value); ok {
+					mergeRimeAppOption(out, app, fields)
+				}
+			}
+		}
+	}
+	for key, value := range patch {
+		if !strings.HasPrefix(key, "app_options/") {
+			continue
+		}
+		rest := strings.TrimPrefix(key, "app_options/")
+		parts := strings.Split(rest, "/")
+		if len(parts) == 1 {
+			if fields, ok := rimeMap(value); ok {
+				mergeRimeAppOption(out, parts[0], fields)
+			}
+			continue
+		}
+		app := strings.TrimSpace(parts[0])
+		field := strings.TrimSpace(strings.Join(parts[1:], "/"))
+		if app == "" || field == "" {
+			continue
+		}
+		if _, ok := out[app]; !ok {
+			out[app] = map[string]any{}
+		}
+		out[app][field] = value
+	}
+	return out
+}
+
+func mergeRimeAppOption(out map[string]map[string]any, app string, fields map[string]any) {
+	app = strings.TrimSpace(app)
+	if app == "" {
+		return
+	}
+	if _, ok := out[app]; !ok {
+		out[app] = map[string]any{}
+	}
+	for key, value := range fields {
+		key = strings.TrimSpace(key)
+		if key != "" {
+			out[app][key] = value
+		}
+	}
+}
+
+func rimeAppOptionRule(app string, fields map[string]any) (AppRule, bool, []string) {
+	app = strings.TrimSpace(app)
+	if app == "" {
+		return AppRule{}, false, nil
+	}
+	rule := AppRule{
+		ID:          "rime-app-" + sanitizeRimeAppRuleID(app),
+		Name:        "Rime app option " + app,
+		Description: "Imported from Rime app_options/" + app,
+		Priority:    650,
+	}
+	if rimeAppOptionLooksLikeProcess(app) {
+		rule.ProcessNames = []string{app}
+	} else {
+		rule.WindowClass = []string{strings.ToLower(app)}
+	}
+	mapped := false
+	if value, ok := rimeOptionBool(fields, "ascii_mode"); ok {
+		if value {
+			rule.Mode = "en"
+		} else {
+			rule.Mode = "zh"
+		}
+		mapped = true
+	}
+	if value, ok := rimeOptionBool(fields, "ascii_punct", "ascii_punctuation"); ok {
+		if value {
+			rule.Punctuation = "half"
+		} else {
+			rule.Punctuation = "full"
+		}
+		mapped = true
+	}
+	if value, ok := rimeOptionBool(fields, "disabled", "disable_input_method"); ok && value {
+		rule.Mode = "en"
+		rule.Punctuation = "half"
+		rule.DisableCandidates = true
+		rule.DisableLearning = true
+		mapped = true
+	}
+	if value, ok := rimeOptionBool(fields, "disable_candidates", "no_candidates"); ok {
+		rule.DisableCandidates = value
+		mapped = true
+	}
+	if value, ok := rimeOptionBool(fields, "disable_learning", "no_user_dict"); ok {
+		rule.DisableLearning = value
+		mapped = true
+	}
+	if !mapped {
+		return AppRule{}, false, []string{"app_options/" + app + " has no supported fields"}
+	}
+	return normalizeAppRule(rule), true, nil
+}
+
+func rimeOptionBool(fields map[string]any, names ...string) (bool, bool) {
+	for _, name := range names {
+		if value, ok := fields[name]; ok {
+			return rimeBool(value)
+		}
+	}
+	return false, false
+}
+
+func rimeAppOptionLooksLikeProcess(app string) bool {
+	app = strings.ToLower(strings.TrimSpace(app))
+	if app == "" {
+		return false
+	}
+	if strings.HasSuffix(app, ".exe") {
+		return true
+	}
+	return !strings.Contains(app, ".")
+}
+
+func sanitizeRimeAppRuleID(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var builder strings.Builder
+	lastDash := false
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
+			builder.WriteRune(char)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			builder.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(builder.String(), "-")
+	if out == "" {
+		return "custom"
+	}
+	return out
+}
+
+func mergeRimeAppRules(base []AppRule, imported []AppRule) []AppRule {
+	replacements := map[string]AppRule{}
+	for _, rule := range imported {
+		replacements[rule.ID] = rule
+	}
+	out := make([]AppRule, 0, len(base)+len(imported))
+	for _, rule := range NormalizeAppRules(base) {
+		if replacement, ok := replacements[rule.ID]; ok {
+			out = append(out, replacement)
+			delete(replacements, rule.ID)
+			continue
+		}
+		out = append(out, rule)
+	}
+	for _, rule := range replacements {
+		out = append(out, rule)
+	}
+	return NormalizeAppRules(out)
 }
 
 func rimeFontFace(raw any) string {

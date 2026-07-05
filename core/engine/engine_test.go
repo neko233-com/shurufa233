@@ -958,6 +958,43 @@ patch:
 	}
 }
 
+func TestApplyRimeCustomYAMLMapsAppOptions(t *testing.T) {
+	config := DefaultConfig()
+	config.AppRules = BuiltinAppRules()
+	result, err := ApplyRimeCustomYAML(config, []byte(`
+patch:
+  app_options/gvim.exe:
+    ascii_mode: true
+    ascii_punct: true
+  app_options/notepad.exe/ascii_mode: true
+  app_options/notepad.exe/ascii_punct: false
+  app_options/com.apple.Xcode:
+    ascii_mode: true
+    disable_learning: true
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gvim := ResolveAppContext(result.Config, AppContext{ProcessName: "gvim.exe"})
+	if !gvim.Matched || gvim.Rule == nil || gvim.Rule.ID != "rime-app-gvim-exe" {
+		t.Fatalf("gvim app option did not match: %#v", gvim)
+	}
+	if gvim.Mode != "en" || gvim.Punctuation != "half" {
+		t.Fatalf("gvim app option decision = %#v", gvim)
+	}
+	notepad := ResolveAppContext(result.Config, AppContext{ProcessName: "notepad.exe"})
+	if !notepad.Matched || notepad.Mode != "en" || notepad.Punctuation != "full" {
+		t.Fatalf("notepad flat app option decision = %#v", notepad)
+	}
+	xcode := ResolveAppContext(result.Config, AppContext{WindowClass: "com.apple.Xcode"})
+	if !xcode.Matched || xcode.Mode != "en" || !xcode.DisableLearning {
+		t.Fatalf("bundle-id app option decision = %#v", xcode)
+	}
+	if !containsString(result.Applied, "app_options:gvim.exe") || !containsString(result.Applied, "app_options:notepad.exe") || !containsString(result.Applied, "app_options:com.apple.Xcode") {
+		t.Fatalf("app_options not reported as applied: %#v", result.Applied)
+	}
+}
+
 func TestResolveAppContextUsesPasswordRule(t *testing.T) {
 	decision := ResolveAppContext(DefaultConfig(), AppContext{PasswordField: true, ProcessName: "chrome.exe"})
 	if !decision.OK || !decision.Matched || decision.Rule == nil {

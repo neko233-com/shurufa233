@@ -135,7 +135,7 @@ Supported patch fields include `schema_list`, `schema/schema_id`,
 `style/font_point`, `style/color_scheme`, `preset_color_schemes`, `speller/algebra`,
 `switches`, `translator/enable_sentence`, `punctuator/import_preset`,
 `punctuator/half_shape`, `recognizer/import_preset`, `recognizer/patterns`,
-`key_binder/import_preset`, `key_binder/bindings`, and
+`key_binder/import_preset`, `key_binder/bindings`, `app_options`, and
 `ascii_composer/switch_key/Shift_L|Shift_R`. The response contains the applied
 config plus `applied` and `warnings` arrays so GUI, CLI, Wails, and native
 debugging tools can show which Rime fields were accepted without adding
@@ -153,6 +153,11 @@ persisted. Rime recognizer patterns are stored as
 `config.recognizerPatterns`; default email, URL, reverse-lookup, and uppercase
 patterns can produce Go-core passthrough or explicit reverse-lookup candidates,
 while unsupported regular expressions are still preserved for future native use.
+Rime `app_options/<app>` entries are converted into shared `config.appRules`:
+`ascii_mode` controls app-scoped Chinese/English default mode, `ascii_punct`
+controls app-scoped full/half punctuation, and explicit disable flags can
+suppress candidates or local learning for games, terminals, or other sensitive
+processes without replacing the Windows default input method.
 
 `GET /wordbook` returns learned user word scores. `PUT /wordbook` accepts
 `{"userScores":{"reading|text":1000},"merge":true}` for JSON import or

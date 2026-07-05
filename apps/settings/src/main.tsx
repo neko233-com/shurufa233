@@ -857,6 +857,12 @@ function App() {
       hilited_candidate_text_color: 0xffffff
   key_binder/import_preset: alternative
   punctuator/import_preset: symbols
+  app_options/WeGame.exe:
+    ascii_mode: true
+    ascii_punct: true
+    disable_candidates: true
+  app_options/Code.exe:
+    ascii_punct: true
   switches:
     - name: ascii_punct
       reset: 0
