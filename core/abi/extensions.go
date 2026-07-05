@@ -187,6 +187,15 @@ func ShurufaApplyRimeCustomJSON(id C.uint64_t, payload *C.char) *C.char {
 	return jsonCString(applyRimeCustomPayload(getSession(uint64(id)), C.GoString(payload)))
 }
 
+//export ShurufaImportRimeProfileJSON
+func ShurufaImportRimeProfileJSON(id C.uint64_t, payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(importRimeProfilePayload(getSession(uint64(id)), req))
+}
+
 //export ShurufaRecognizerPatternsJSON
 func ShurufaRecognizerPatternsJSON(id C.uint64_t) *C.char {
 	session := getSession(uint64(id))

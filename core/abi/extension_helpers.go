@@ -29,6 +29,7 @@ var abiFeatureList = []string{
 	"skin-presets-json",
 	"apply-skin-preset-json",
 	"rime-custom-yaml",
+	"rime-profile-import-json",
 	"reverse-lookup-json",
 	"user-scores-json",
 	"rime-userdb-text",
@@ -154,56 +155,62 @@ type profileBundle struct {
 }
 
 type extensionCommandPayload struct {
-	Input          string             `json:"input,omitempty"`
-	Context        string             `json:"context,omitempty"`
-	Action         string             `json:"action,omitempty"`
-	Key            string             `json:"key,omitempty"`
-	Character      string             `json:"character,omitempty"`
-	Code           int                `json:"code,omitempty"`
-	Mode           string             `json:"mode,omitempty"`
-	Toggle         bool               `json:"toggle,omitempty"`
-	Ctrl           bool               `json:"ctrl,omitempty"`
-	Alt            bool               `json:"alt,omitempty"`
-	Shift          bool               `json:"shift,omitempty"`
-	Meta           bool               `json:"meta,omitempty"`
-	Modifiers      []string           `json:"modifiers,omitempty"`
-	Index          int                `json:"index,omitempty"`
-	DisplayIndex   int                `json:"displayIndex,omitempty"`
-	Start          int                `json:"start,omitempty"`
-	Limit          int                `json:"limit,omitempty"`
-	PageSize       int                `json:"pageSize,omitempty"`
-	Delta          int                `json:"delta,omitempty"`
-	Side           string             `json:"side,omitempty"`
-	ID             string             `json:"id,omitempty"`
-	Switch         string             `json:"switch,omitempty"`
-	Value          *bool              `json:"value,omitempty"`
-	Force          *bool              `json:"force,omitempty"`
-	Schema         string             `json:"schema,omitempty"`
-	Preset         string             `json:"preset,omitempty"`
-	ManifestURLs   []string           `json:"manifestUrls,omitempty"`
-	MirrorBaseURLs []string           `json:"mirrorBaseUrls,omitempty"`
-	YAML           string             `json:"yaml,omitempty"`
-	Format         string             `json:"format,omitempty"`
-	Data           string             `json:"data,omitempty"`
-	Reading        string             `json:"reading,omitempty"`
-	Text           string             `json:"text,omitempty"`
-	Kind           string             `json:"kind,omitempty"`
-	Query          string             `json:"query,omitempty"`
-	Config         *engine.Config     `json:"config,omitempty"`
-	Agent          *engine.Agent      `json:"agent,omitempty"`
-	Sync           *engine.Sync       `json:"sync,omitempty"`
-	AppContext     *engine.AppContext `json:"appContext,omitempty"`
-	Rules          []engine.AppRule   `json:"rules,omitempty"`
-	UserScores     map[string]int     `json:"userScores,omitempty"`
-	Scores         map[string]int     `json:"scores,omitempty"`
-	Entries        []engine.Entry     `json:"entries,omitempty"`
-	Phrases        []engine.Entry     `json:"phrases,omitempty"`
-	Rejects        []engine.Entry     `json:"rejects,omitempty"`
-	Pins           []engine.Entry     `json:"pins,omitempty"`
-	Merge          bool               `json:"merge,omitempty"`
-	Directory      string             `json:"directory,omitempty"`
-	Path           string             `json:"path,omitempty"`
-	Raw            *json.RawMessage   `json:"raw,omitempty"`
+	Input                string             `json:"input,omitempty"`
+	Context              string             `json:"context,omitempty"`
+	Action               string             `json:"action,omitempty"`
+	Key                  string             `json:"key,omitempty"`
+	Character            string             `json:"character,omitempty"`
+	Code                 int                `json:"code,omitempty"`
+	Mode                 string             `json:"mode,omitempty"`
+	Toggle               bool               `json:"toggle,omitempty"`
+	Ctrl                 bool               `json:"ctrl,omitempty"`
+	Alt                  bool               `json:"alt,omitempty"`
+	Shift                bool               `json:"shift,omitempty"`
+	Meta                 bool               `json:"meta,omitempty"`
+	Modifiers            []string           `json:"modifiers,omitempty"`
+	Index                int                `json:"index,omitempty"`
+	DisplayIndex         int                `json:"displayIndex,omitempty"`
+	Start                int                `json:"start,omitempty"`
+	Limit                int                `json:"limit,omitempty"`
+	PageSize             int                `json:"pageSize,omitempty"`
+	Delta                int                `json:"delta,omitempty"`
+	Side                 string             `json:"side,omitempty"`
+	ID                   string             `json:"id,omitempty"`
+	Switch               string             `json:"switch,omitempty"`
+	Value                *bool              `json:"value,omitempty"`
+	Force                *bool              `json:"force,omitempty"`
+	Schema               string             `json:"schema,omitempty"`
+	Preset               string             `json:"preset,omitempty"`
+	ManifestURLs         []string           `json:"manifestUrls,omitempty"`
+	MirrorBaseURLs       []string           `json:"mirrorBaseUrls,omitempty"`
+	YAML                 string             `json:"yaml,omitempty"`
+	Format               string             `json:"format,omitempty"`
+	Data                 string             `json:"data,omitempty"`
+	Reading              string             `json:"reading,omitempty"`
+	Text                 string             `json:"text,omitempty"`
+	Kind                 string             `json:"kind,omitempty"`
+	Query                string             `json:"query,omitempty"`
+	Config               *engine.Config     `json:"config,omitempty"`
+	Agent                *engine.Agent      `json:"agent,omitempty"`
+	Sync                 *engine.Sync       `json:"sync,omitempty"`
+	AppContext           *engine.AppContext `json:"appContext,omitempty"`
+	Rules                []engine.AppRule   `json:"rules,omitempty"`
+	UserScores           map[string]int     `json:"userScores,omitempty"`
+	Scores               map[string]int     `json:"scores,omitempty"`
+	Entries              []engine.Entry     `json:"entries,omitempty"`
+	Phrases              []engine.Entry     `json:"phrases,omitempty"`
+	Rejects              []engine.Entry     `json:"rejects,omitempty"`
+	Pins                 []engine.Entry     `json:"pins,omitempty"`
+	Merge                bool               `json:"merge,omitempty"`
+	Replace              bool               `json:"replace,omitempty"`
+	Directory            string             `json:"directory,omitempty"`
+	Path                 string             `json:"path,omitempty"`
+	UserDBText           string             `json:"userdbText,omitempty"`
+	RimeUserDBText       string             `json:"rimeUserDBText,omitempty"`
+	CustomPhraseText     string             `json:"customPhraseText,omitempty"`
+	RimeCustomPhraseText string             `json:"rimeCustomPhraseText,omitempty"`
+	CustomYAML           string             `json:"customYaml,omitempty"`
+	Raw                  *json.RawMessage   `json:"raw,omitempty"`
 }
 
 func buildProfileBundle(session *engine.Engine) profileBundle {
@@ -308,6 +315,88 @@ func applyRimeCustomPayload(session *engine.Engine, payload string) any {
 	_ = persistConfig(config)
 	result.Config = config
 	result.Schema = config.Schema
+	return result
+}
+
+func importRimeProfilePayload(session *engine.Engine, req extensionCommandPayload) any {
+	replace := req.Replace || strings.EqualFold(strings.TrimSpace(req.Action), "replace")
+	merge := !replace || req.Merge
+	counts := map[string]int{}
+	result := map[string]any{
+		"ok":        true,
+		"imported":  true,
+		"format":    "rime-profile",
+		"mode":      map[bool]string{true: "replace", false: "merge"}[replace],
+		"counts":    counts,
+		"updatedAt": time.Now().UTC(),
+	}
+	changed := false
+
+	userDBText := firstNonEmpty(req.UserDBText, req.RimeUserDBText)
+	if strings.TrimSpace(userDBText) == "" && isRimeUserDBFormat(req.Format) && strings.TrimSpace(req.Data) != "" {
+		userDBText = req.Data
+	}
+	if strings.TrimSpace(userDBText) != "" {
+		scores, err := engine.ParseRimeUserDB([]byte(userDBText))
+		if err != nil {
+			return errorEnvelope(err.Error())
+		}
+		if replace {
+			session.ReplaceUserScores(scores)
+		} else {
+			session.ImportUserScores(scores)
+		}
+		persistUserScores(session.UserScores())
+		counts["userScoresImported"] = len(scores)
+		counts["userScoresTotal"] = len(session.UserScores())
+		changed = true
+	}
+
+	customPhraseText := firstNonEmpty(req.CustomPhraseText, req.RimeCustomPhraseText)
+	if strings.TrimSpace(customPhraseText) == "" && isRimeCustomPhraseFormat(req.Format) && strings.TrimSpace(req.Data) != "" {
+		customPhraseText = req.Data
+	}
+	if strings.TrimSpace(customPhraseText) != "" {
+		entries, err := engine.ParseRimeCustomPhrases([]byte(customPhraseText))
+		if err != nil {
+			return errorEnvelope(err.Error())
+		}
+		next := entries
+		if merge {
+			next = append(session.UserPhrases(), entries...)
+		}
+		session.ReplaceUserPhrases(next)
+		phrases := session.UserPhrases()
+		persistUserPhrases(phrases)
+		counts["phrasesImported"] = len(entries)
+		counts["phrasesTotal"] = len(phrases)
+		result["phrases"] = phrases
+		changed = true
+	}
+
+	customYAML := firstNonEmpty(req.CustomYAML, req.YAML)
+	if strings.TrimSpace(customYAML) != "" {
+		custom, err := engine.ApplyRimeCustomYAML(session.Config(), []byte(customYAML))
+		if err != nil {
+			return errorEnvelope(err.Error())
+		}
+		config := normalizeConfig(custom.Config)
+		session.Configure(config)
+		_ = persistConfig(config)
+		custom.Config = config
+		custom.Schema = config.Schema
+		counts["customYAMLApplied"] = len(custom.Applied)
+		result["custom"] = custom
+		changed = true
+	}
+
+	if !changed {
+		return errorEnvelope("no rime profile data provided")
+	}
+	profile := buildProfileBundle(session)
+	result["profile"] = profile
+	result["counts"] = profile.Counts
+	result["migrationCounts"] = counts
 	return result
 }
 
@@ -1473,6 +1562,8 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		return result, true
 	case "rime-custom-json", "rime-custom-yaml", "apply-rime-custom-json", "apply-rime-custom-yaml":
 		return applyRimeCustomPayload(session, payload), true
+	case "rime-profile-import-json", "import-rime-profile-json", "rime-migrate-json", "rime-migration-json":
+		return importRimeProfilePayload(session, req), true
 	case "switches-json", "rime-switches-json", "switches":
 		return map[string]any{
 			"ok":        true,

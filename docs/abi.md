@@ -121,6 +121,7 @@ char* ShurufaApplySchemaJSON(char* json);
 char* ShurufaSkinPresetsJSON(void);
 char* ShurufaApplySkinPresetJSON(char* json);
 char* ShurufaApplyRimeCustomJSON(uint64_t session, char* json);
+char* ShurufaImportRimeProfileJSON(uint64_t session, char* json);
 char* ShurufaRecognizerPatternsJSON(uint64_t session);
 char* ShurufaSwitchesJSON(uint64_t session);
 char* ShurufaApplySwitchJSON(uint64_t session, char* json);
@@ -241,6 +242,7 @@ apply-schema-json       {"id":"double-pinyin-microsoft"}
 skin-presets-json
 apply-skin-preset-json  {"id":"wechat-clean"}
 rime-custom-json        {"yaml":"patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n"}
+rime-profile-import-json {"rimeUserDBText":"cha jian 插件 c=4 d=0.5 t=8\n","rimeCustomPhraseText":"马上到！\tmsd\t1\n","customYaml":"patch:\n  menu/page_size: 8\n"}
 switches-json
 apply-switch-json       {"id":"ascii_mode","value":true}
 toggle-switch           {"id":"ascii_punct"}
@@ -490,6 +492,15 @@ to import at runtime:
 ```json
 { "format": "rime-custom-phrase", "data": "马上到！\tmsd\t1\n", "merge": true }
 ```
+
+For whole-profile migration from Weasel/Squirrel/Rime, use
+`ShurufaImportRimeProfileJSON` or the command alias
+`rime-profile-import-json`. The payload may include `rimeUserDBText`,
+`rimeCustomPhraseText`, and `customYaml`; shurufa233 parses those source formats
+and stores the result as the stable native profile: `userScores`, `userPhrases`,
+and shared config. Imports merge by default to protect existing local learning;
+pass `{"replace":true}` or `{"action":"replace"}` to replace migrated userdb and
+custom phrase rows.
 
 `ShurufaUserRejectsJSON`, `ShurufaImportUserRejectsJSON`,
 `ShurufaRejectCandidate`, `ShurufaUserPinsJSON`, `ShurufaImportUserPinsJSON`,

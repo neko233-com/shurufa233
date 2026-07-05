@@ -133,6 +133,7 @@ struct CoreApi {
   SessionPayloadFn resolveAppContextJson = nullptr;
   SessionStringFn profileJson = nullptr;
   SessionPayloadFn importProfileJson = nullptr;
+  SessionPayloadFn importRimeProfileJson = nullptr;
   SessionStringFn userScoresJson = nullptr;
   ImportUserScoresJsonFn importUserScoresJson = nullptr;
   SessionStringFn userPhrasesJson = nullptr;
@@ -490,6 +491,8 @@ bool TryLoadInProcessCore() {
   api.resolveAppContextJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaResolveAppContextJSON");
   api.profileJson = LoadCoreProc<SessionStringFn>(module, "ShurufaProfileJSON");
   api.importProfileJson = LoadCoreProc<SessionPayloadFn>(module, "ShurufaImportProfileJSON");
+  api.importRimeProfileJson =
+      LoadCoreProc<SessionPayloadFn>(module, "ShurufaImportRimeProfileJSON");
   api.userScoresJson = LoadCoreProc<SessionStringFn>(module, "ShurufaUserScoresJSON");
   api.importUserScoresJson =
       LoadCoreProc<ImportUserScoresJsonFn>(module, "ShurufaImportUserScoresJSON");
@@ -583,6 +586,7 @@ void UseHttpCoreFallback() {
   g_core.resolveAppContextJson = nullptr;
   g_core.profileJson = nullptr;
   g_core.importProfileJson = nullptr;
+  g_core.importRimeProfileJson = nullptr;
   g_core.userScoresJson = nullptr;
   g_core.importUserScoresJson = nullptr;
   g_core.userPhrasesJson = nullptr;

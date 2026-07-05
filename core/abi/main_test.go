@@ -292,12 +292,15 @@ func TestCapabilitiesIncludeUserPhrasesJSON(t *testing.T) {
 }
 
 func TestCapabilitiesIncludeRimeCustomPhraseText(t *testing.T) {
+	seen := map[string]bool{}
 	for _, feature := range abiFeatureList {
-		if feature == "rime-custom-phrase-text" {
-			return
+		seen[feature] = true
+	}
+	for _, feature := range []string{"rime-custom-phrase-text", "rime-profile-import-json"} {
+		if !seen[feature] {
+			t.Fatalf("capabilities missing %s: %#v", feature, abiFeatureList)
 		}
 	}
-	t.Fatalf("capabilities missing rime-custom-phrase-text: %#v", abiFeatureList)
 }
 
 func TestCapabilitiesIncludeUserRejectsJSON(t *testing.T) {
@@ -538,6 +541,50 @@ func TestExecuteExtensionCommandImportsRimeCustomPhrases(t *testing.T) {
 	data, dataOK := exportResult["data"].(string)
 	if !ok || !dataOK || !strings.Contains(data, "马上到！\tmsd\t1") {
 		t.Fatalf("user-phrases-rime-text = %#v", exported)
+	}
+}
+
+func TestExecuteExtensionCommandImportsRimeProfileBundle(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SHURUFA233_CONFIG", filepath.Join(dir, "config.json"))
+	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(dir, "user-scores.json"))
+	t.Setenv("SHURUFA233_USER_PHRASES", filepath.Join(dir, "user-phrases.json"))
+	session := engine.New(engine.DefaultConfig())
+	session.AddEntries([]engine.Entry{
+		{Reading: "chajian", Text: "差件", Weight: 100},
+		{Reading: "chajian", Text: "插件", Weight: 90},
+	})
+	payload, err := json.Marshal(map[string]any{
+		"rimeUserDBText":       "# Rime user dictionary\ncha jian 插件 c=30 d=1 t=9\n",
+		"rimeCustomPhraseText": "马上到！\tmsd\t1\n",
+		"customYaml": "patch:\n" +
+			"  menu/page_size: 8\n" +
+			"  style/candidate_list_layout: stacked\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, handled := executeSessionExtensionCommand(session, "rime-profile-import-json", string(payload))
+	if !handled {
+		t.Fatal("rime-profile-import-json command was not handled")
+	}
+	result, ok := got.(map[string]any)
+	if !ok || result["ok"] != true {
+		t.Fatalf("rime profile import = %#v", got)
+	}
+	migrationCounts, ok := result["migrationCounts"].(map[string]int)
+	if !ok || migrationCounts["userScoresImported"] != 1 || migrationCounts["phrasesImported"] != 1 || migrationCounts["customYAMLApplied"] == 0 {
+		t.Fatalf("migration counts = %#v", result["migrationCounts"])
+	}
+	if state := session.Preview("chajian"); len(state.Candidates) == 0 || state.Candidates[0].Text != "插件" {
+		t.Fatalf("expected imported Rime userdb to rerank candidates, got %#v", state.Candidates)
+	}
+	if state := session.Preview("msd"); len(state.Candidates) == 0 || state.Candidates[0].Text != "马上到！" {
+		t.Fatalf("expected imported custom phrase, got %#v", state.Candidates)
+	}
+	if config := session.Config(); config.CandidatePageSize != 8 || config.CandidateLayout != "vertical" {
+		t.Fatalf("expected custom yaml config, got %#v", config)
 	}
 }
 
