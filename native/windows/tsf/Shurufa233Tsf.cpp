@@ -605,6 +605,33 @@ bool PayloadBoolField(const std::string &value) {
   return normalized == "true" || normalized == "1" || normalized == "yes" || normalized == "on";
 }
 
+bool IsWindowsInputExperienceWindow(HWND hwnd) {
+  if (!IsWindowVisible(hwnd)) {
+    return false;
+  }
+  wchar_t className[128]{};
+  wchar_t title[256]{};
+  GetClassNameW(hwnd, className, ARRAYSIZE(className));
+  GetWindowTextW(hwnd, title, ARRAYSIZE(title));
+  if (lstrcmpiW(className, L"Windows.UI.Core.CoreWindow") != 0) {
+    return false;
+  }
+  const std::wstring titleText(title);
+  return titleText.find(L"Windows 输入体验") != std::wstring::npos ||
+         titleText.find(L"Windows Input Experience") != std::wstring::npos;
+}
+
+BOOL CALLBACK HideWindowsInputExperienceProc(HWND hwnd, LPARAM) {
+  if (IsWindowsInputExperienceWindow(hwnd)) {
+    ShowWindow(hwnd, SW_HIDE);
+  }
+  return TRUE;
+}
+
+void HideWindowsInputExperienceResidue() {
+  EnumWindows(HideWindowsInputExperienceProc, 0);
+}
+
 class CandidateWindow {
  public:
   using CandidateClickHandler = void (*)(void *, int);
@@ -666,8 +693,10 @@ class CandidateWindow {
     const int height = CandidateWindowHeight();
     const POINT origin = FitToWorkArea(anchor, width, height);
     ArmHoverGuard();
+    HideWindowsInputExperienceResidue();
     SetWindowPos(hwnd_, HWND_TOPMOST, origin.x, origin.y, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    HideWindowsInputExperienceResidue();
     InvalidateRect(hwnd_, nullptr, TRUE);
   }
 
@@ -697,8 +726,10 @@ class CandidateWindow {
     const int width = MeasureStatusWidth();
     const int height = max(Scale(42), ScaledFontSize() + Scale(28));
     const POINT origin = FitToWorkArea(anchor, width, height);
+    HideWindowsInputExperienceResidue();
     SetWindowPos(hwnd_, HWND_TOPMOST, origin.x, origin.y, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    HideWindowsInputExperienceResidue();
     SetTimer(hwnd_, kStatusTimerId, 850, nullptr);
     InvalidateRect(hwnd_, nullptr, TRUE);
   }

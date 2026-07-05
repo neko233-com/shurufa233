@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <vector>
 #include <cwchar>
+#include <string>
 
 namespace {
 
@@ -67,6 +68,33 @@ wchar_t g_imeStatus[128] = L"F6 activate shurufa233 for this lab";
 bool g_shurufaActive = false;
 bool g_suppressInputMetrics = false;
 
+bool IsWindowsInputExperienceWindow(HWND hwnd) {
+  if (!IsWindowVisible(hwnd)) {
+    return false;
+  }
+  wchar_t className[128]{};
+  wchar_t title[256]{};
+  GetClassNameW(hwnd, className, ARRAYSIZE(className));
+  GetWindowTextW(hwnd, title, ARRAYSIZE(title));
+  if (lstrcmpiW(className, L"Windows.UI.Core.CoreWindow") != 0) {
+    return false;
+  }
+  const std::wstring titleText(title);
+  return titleText.find(L"Windows 输入体验") != std::wstring::npos ||
+         titleText.find(L"Windows Input Experience") != std::wstring::npos;
+}
+
+BOOL CALLBACK HideWindowsInputExperienceProc(HWND hwnd, LPARAM) {
+  if (IsWindowsInputExperienceWindow(hwnd)) {
+    ShowWindow(hwnd, SW_HIDE);
+  }
+  return TRUE;
+}
+
+void HideWindowsInputExperienceResidue() {
+  EnumWindows(HideWindowsInputExperienceProc, 0);
+}
+
 COLORREF Rgb(int r, int g, int b) {
   return RGB(r, g, b);
 }
@@ -89,6 +117,7 @@ void CancelImeComposition(HWND hwnd) {
   if (!hwnd) {
     return;
   }
+  HideWindowsInputExperienceResidue();
   HIMC context = ImmGetContext(hwnd);
   if (context) {
     ImmNotifyIME(context, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
@@ -99,6 +128,7 @@ void CancelImeComposition(HWND hwnd) {
   if (imeWindow) {
     SendMessageW(imeWindow, WM_IME_CONTROL, IMC_CLOSESTATUSWINDOW, 0);
   }
+  HideWindowsInputExperienceResidue();
 }
 
 void SendEscapeToFocusedInput() {
@@ -113,7 +143,8 @@ void SendEscapeToFocusedInput() {
   input[1].ki.wVk = VK_ESCAPE;
   input[1].ki.dwFlags = KEYEVENTF_KEYUP;
   SendInput(ARRAYSIZE(input), input, sizeof(INPUT));
-  Sleep(60);
+  Sleep(180);
+  HideWindowsInputExperienceResidue();
   g_suppressInputMetrics = false;
 }
 
