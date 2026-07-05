@@ -91,6 +91,15 @@ type updateCheck struct {
 	ManifestURL     string `json:"manifestUrl"`
 }
 
+type updatePlanResponse struct {
+	SourcePreset         string   `json:"sourcePreset"`
+	Language             string   `json:"language"`
+	Channel              string   `json:"channel"`
+	ManifestURLs         []string `json:"manifestUrls"`
+	MirrorBaseURLs       []string `json:"mirrorBaseUrls"`
+	ResolvedManifestURLs []string `json:"resolvedManifestUrls"`
+}
+
 type dictionarySourceResponse struct {
 	Sources  []dictionarySource `json:"sources"`
 	Selected string             `json:"selected"`
@@ -355,6 +364,8 @@ func main() {
 		err = associate(client, os.Args[2:])
 	case "update-check":
 		err = updateCheckCmd(client)
+	case "update-plan":
+		err = updatePlanCmd(client)
 	case "update-apply":
 		err = updateApply(client)
 	case "update-sources":
@@ -457,6 +468,7 @@ Usage:
   shurufa-imecli reverse "你好" [--limit N]
   shurufa-imecli update-sources
   shurufa-imecli update-source shurufa233-github-cn [--mirror URL_OR_TEMPLATE] [--manifest URL]
+  shurufa-imecli update-plan
   shurufa-imecli schemas
   shurufa-imecli schema [current|apply <id>]
   shurufa-imecli skin [list|apply <id>]
@@ -699,6 +711,24 @@ func updateCheckCmd(client *http.Client) error {
 	}
 	fmt.Printf("current=%s latest=%s available=%v\n", check.CurrentVersion, check.LatestVersion, check.UpdateAvailable)
 	fmt.Println(check.ManifestURL)
+	return nil
+}
+
+func updatePlanCmd(client *http.Client) error {
+	var plan updatePlanResponse
+	if err := getJSON(client, "/updates/plan", &plan); err != nil {
+		return err
+	}
+	fmt.Printf("source=%s language=%s channel=%s\n", plan.SourcePreset, plan.Language, plan.Channel)
+	if len(plan.ManifestURLs) > 0 {
+		fmt.Printf("manifest: %s\n", strings.Join(plan.ManifestURLs, ", "))
+	}
+	if len(plan.MirrorBaseURLs) > 0 {
+		fmt.Printf("mirrors: %s\n", strings.Join(plan.MirrorBaseURLs, ", "))
+	}
+	for index, candidate := range plan.ResolvedManifestURLs {
+		fmt.Printf("%d %s\n", index+1, candidate)
+	}
 	return nil
 }
 

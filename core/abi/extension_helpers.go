@@ -22,6 +22,7 @@ var abiFeatureList = []string{
 	"dictionary-manifest-json",
 	"dictionary-source-presets",
 	"apply-dictionary-source-json",
+	"dictionary-update-plan-json",
 	"dictionary-update-check-json",
 	"dictionary-update-apply-json",
 	"schema-presets-json",
@@ -1531,6 +1532,8 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 		}, true
 	case "apply-dictionary-source-json", "apply-dictionary-source", "update-source":
 		return applyDictionarySourcePayload(req), true
+	case "dictionary-update-plan-json", "dictionary-update-plan", "update-plan":
+		return dictionaryUpdatePlanPayload(req), true
 	case "dictionary-update-check-json", "dictionary-update-check", "update-check":
 		return dictionaryUpdateCheckPayload(req), true
 	case "dictionary-update-apply-json", "dictionary-update-apply", "update-apply":

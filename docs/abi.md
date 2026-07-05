@@ -131,6 +131,7 @@ char* ShurufaResolveAppContextJSON(uint64_t session, char* json);
 char* ShurufaReloadConfig(void);
 char* ShurufaReloadDictionaries(void);
 char* ShurufaDictionaryManifestJSON(void);
+char* ShurufaDictionaryUpdatePlanJSON(char* json);
 char* ShurufaDictionaryUpdateCheckJSON(char* json);
 char* ShurufaDictionaryUpdateApplyJSON(char* json);
 char* ShurufaUserScoresJSON(uint64_t session);
@@ -184,7 +185,8 @@ without adding another C ABI entry point.
 
 `ShurufaCapabilities` advertises feature flags such as
 `candidate-payload-v2`, `config-json`, `reload-dictionaries`,
-`dictionary-source-presets`, `schema-presets-json`, `apply-schema-json`, `skin-presets-json`, `apply-skin-preset-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `rime-userdb-text`, `user-phrases-json`, `rime-custom-phrase-text`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `profile-sync-json`, `apply-sync-config-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
+`dictionary-source-presets`, `dictionary-update-plan-json`,
+`schema-presets-json`, `apply-schema-json`, `skin-presets-json`, `apply-skin-preset-json`, `rime-custom-yaml`, `reverse-lookup-json`, `user-scores-json`, `rime-userdb-text`, `user-phrases-json`, `rime-custom-phrase-text`, `user-rejects-json`, `user-pins-json`, `profile-bundle-json`, `profile-sync-json`, `apply-sync-config-json`, `commit-text`, `agent-compose`, `agent-config-json`, `apply-agent-config-json`,
 `rime-compatible-dictionaries`, `gzip-dictionaries`,
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `rime-ice-v-symbol-prefix`,
@@ -213,6 +215,7 @@ Current commands include:
 ```text
 state
 preview                 {"input":"zan"}
+dictionary-update-plan-json {"mirrorBaseUrls":["https://gh-proxy.com/{url}"]}
 input-key               {"input":"z"}
 backspace
 clear

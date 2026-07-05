@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,6 +60,31 @@ type abiUpdateApplyResult struct {
 	Version     string    `json:"version"`
 	Applied     []string  `json:"applied"`
 	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+type abiUpdatePlan struct {
+	OK                   bool      `json:"ok"`
+	SourcePreset         string    `json:"sourcePreset,omitempty"`
+	Language             string    `json:"language,omitempty"`
+	Channel              string    `json:"channel,omitempty"`
+	ManifestURLs         []string  `json:"manifestUrls"`
+	MirrorBaseURLs       []string  `json:"mirrorBaseUrls"`
+	ResolvedManifestURLs []string  `json:"resolvedManifestUrls"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+}
+
+func dictionaryUpdatePlanPayload(req extensionCommandPayload) any {
+	config := dictionaryUpdateConfigFromPayload(req)
+	return abiUpdatePlan{
+		OK:                   true,
+		SourcePreset:         config.Update.SourcePreset,
+		Language:             config.Language,
+		Channel:              config.Update.Channel,
+		ManifestURLs:         append([]string(nil), config.Update.ManifestURLs...),
+		MirrorBaseURLs:       append([]string(nil), config.Update.MirrorBaseURLs...),
+		ResolvedManifestURLs: mirroredUpdateURLs(config, config.Update.ManifestURLs...),
+		UpdatedAt:            time.Now().UTC(),
+	}
 }
 
 func dictionaryUpdateCheckPayload(req extensionCommandPayload) any {
@@ -305,8 +331,17 @@ func renderMirrorUpdateURL(mirror string, rawURL string) string {
 		return ""
 	}
 	name := filepath.Base(strings.ReplaceAll(rawURL, "\\", "/"))
-	if strings.Contains(mirror, "{url}") || strings.Contains(mirror, "{file}") || strings.Contains(mirror, "{filename}") || strings.Contains(mirror, "{name}") {
+	parsed, _ := url.Parse(rawURL)
+	if strings.Contains(mirror, "{url}") || strings.Contains(mirror, "{escapedUrl}") ||
+		strings.Contains(mirror, "{host}") || strings.Contains(mirror, "{path}") ||
+		strings.Contains(mirror, "{file}") || strings.Contains(mirror, "{filename}") ||
+		strings.Contains(mirror, "{name}") {
 		out := strings.ReplaceAll(mirror, "{url}", rawURL)
+		out = strings.ReplaceAll(out, "{escapedUrl}", url.QueryEscape(rawURL))
+		if parsed != nil {
+			out = strings.ReplaceAll(out, "{host}", parsed.Host)
+			out = strings.ReplaceAll(out, "{path}", strings.TrimPrefix(parsed.EscapedPath(), "/"))
+		}
 		out = strings.ReplaceAll(out, "{file}", name)
 		out = strings.ReplaceAll(out, "{filename}", name)
 		out = strings.ReplaceAll(out, "{name}", name)

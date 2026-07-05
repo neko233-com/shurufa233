@@ -11,6 +11,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -205,6 +206,17 @@ type updateApplyResult struct {
 	Applied     []string `json:"applied"`
 }
 
+type updatePlan struct {
+	OK                   bool      `json:"ok"`
+	SourcePreset         string    `json:"sourcePreset,omitempty"`
+	Language             string    `json:"language,omitempty"`
+	Channel              string    `json:"channel,omitempty"`
+	ManifestURLs         []string  `json:"manifestUrls"`
+	MirrorBaseURLs       []string  `json:"mirrorBaseUrls"`
+	ResolvedManifestURLs []string  `json:"resolvedManifestUrls"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+}
+
 type userScoreStore struct {
 	Version   int            `json:"version"`
 	UpdatedAt time.Time      `json:"updatedAt"`
@@ -344,6 +356,7 @@ func main() {
 	mux.HandleFunc("GET /catalog", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /symbols", state.withCORS(state.catalog))
 	mux.HandleFunc("GET /updates/check", state.withCORS(state.checkUpdates))
+	mux.HandleFunc("GET /updates/plan", state.withCORS(state.updatePlan))
 	mux.HandleFunc("POST /updates/apply", state.withCORS(state.applyUpdates))
 	mux.HandleFunc("GET /updates/sources", state.withCORS(state.updateSources))
 	mux.HandleFunc("POST /updates/source", state.withCORS(state.applyUpdateSource))
@@ -1725,6 +1738,26 @@ func (s *AppState) checkUpdates(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, check)
 }
 
+func (s *AppState) updatePlan(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	config := s.config
+	s.mu.RUnlock()
+	writeJSON(w, updatePlanFromConfig(config))
+}
+
+func updatePlanFromConfig(config engine.Config) updatePlan {
+	return updatePlan{
+		OK:                   true,
+		SourcePreset:         config.Update.SourcePreset,
+		Language:             config.Language,
+		Channel:              config.Update.Channel,
+		ManifestURLs:         append([]string(nil), config.Update.ManifestURLs...),
+		MirrorBaseURLs:       append([]string(nil), config.Update.MirrorBaseURLs...),
+		ResolvedManifestURLs: mirroredURLs(config, config.Update.ManifestURLs...),
+		UpdatedAt:            time.Now().UTC(),
+	}
+}
+
 func composeAgentResponse(input string, context string) agentResponse {
 	return engine.ComposeAgent(engine.DefaultConfig(), engine.AgentComposeRequest{Input: input, Context: context})
 }
@@ -2062,8 +2095,17 @@ func renderMirrorDownloadURL(mirror string, rawURL string) string {
 		return ""
 	}
 	name := filepath.Base(strings.ReplaceAll(rawURL, "\\", "/"))
-	if strings.Contains(mirror, "{url}") || strings.Contains(mirror, "{file}") || strings.Contains(mirror, "{filename}") || strings.Contains(mirror, "{name}") {
+	parsed, _ := url.Parse(rawURL)
+	if strings.Contains(mirror, "{url}") || strings.Contains(mirror, "{escapedUrl}") ||
+		strings.Contains(mirror, "{host}") || strings.Contains(mirror, "{path}") ||
+		strings.Contains(mirror, "{file}") || strings.Contains(mirror, "{filename}") ||
+		strings.Contains(mirror, "{name}") {
 		out := strings.ReplaceAll(mirror, "{url}", rawURL)
+		out = strings.ReplaceAll(out, "{escapedUrl}", url.QueryEscape(rawURL))
+		if parsed != nil {
+			out = strings.ReplaceAll(out, "{host}", parsed.Host)
+			out = strings.ReplaceAll(out, "{path}", strings.TrimPrefix(parsed.EscapedPath(), "/"))
+		}
 		out = strings.ReplaceAll(out, "{file}", name)
 		out = strings.ReplaceAll(out, "{filename}", name)
 		out = strings.ReplaceAll(out, "{name}", name)

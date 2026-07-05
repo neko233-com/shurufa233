@@ -123,6 +123,7 @@ struct CoreApi {
   CoreStringFn reloadConfig = nullptr;
   CoreStringFn reloadDictionaries = nullptr;
   CoreStringFn dictionaryManifestJson = nullptr;
+  ApplyConfigJsonFn dictionaryUpdatePlanJson = nullptr;
   ApplyConfigJsonFn dictionaryUpdateCheckJson = nullptr;
   ApplyConfigJsonFn dictionaryUpdateApplyJson = nullptr;
   SessionStringFn recognizerPatternsJson = nullptr;
@@ -479,6 +480,8 @@ bool TryLoadInProcessCore() {
   api.reloadDictionaries = LoadCoreProc<CoreStringFn>(module, "ShurufaReloadDictionaries");
   api.dictionaryManifestJson =
       LoadCoreProc<CoreStringFn>(module, "ShurufaDictionaryManifestJSON");
+  api.dictionaryUpdatePlanJson =
+      LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaDictionaryUpdatePlanJSON");
   api.dictionaryUpdateCheckJson =
       LoadCoreProc<ApplyConfigJsonFn>(module, "ShurufaDictionaryUpdateCheckJSON");
   api.dictionaryUpdateApplyJson =

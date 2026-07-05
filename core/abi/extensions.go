@@ -369,6 +369,15 @@ func ShurufaDictionaryManifestJSON() *C.char {
 	return jsonCString(dictionaryManifestEnvelope())
 }
 
+//export ShurufaDictionaryUpdatePlanJSON
+func ShurufaDictionaryUpdatePlanJSON(payload *C.char) *C.char {
+	req, err := decodeExtensionCommandPayload(C.GoString(payload))
+	if err != nil {
+		return jsonCString(errorEnvelope(err.Error()))
+	}
+	return jsonCString(dictionaryUpdatePlanPayload(req))
+}
+
 //export ShurufaDictionaryUpdateCheckJSON
 func ShurufaDictionaryUpdateCheckJSON(payload *C.char) *C.char {
 	req, err := decodeExtensionCommandPayload(C.GoString(payload))

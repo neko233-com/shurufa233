@@ -227,6 +227,40 @@ func TestUpdateSourcesCallsEndpoint(t *testing.T) {
 	}
 }
 
+func TestUpdatePlanCallsEndpoint(t *testing.T) {
+	var planCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/updates/plan" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		planCalled = true
+		_ = json.NewEncoder(w).Encode(updatePlanResponse{
+			SourcePreset: "shurufa233-github-cn",
+			Language:     "zh-CN",
+			Channel:      "stable",
+			ManifestURLs: []string{"https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json"},
+			MirrorBaseURLs: []string{
+				"https://gh-proxy.com/{url}",
+			},
+			ResolvedManifestURLs: []string{
+				"https://gh-proxy.com/https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json",
+				"https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json",
+			},
+		})
+	}))
+	defer server.Close()
+	previousBase := apiBase
+	apiBase = server.URL
+	defer func() { apiBase = previousBase }()
+
+	if err := updatePlanCmd(server.Client()); err != nil {
+		t.Fatal(err)
+	}
+	if !planCalled {
+		t.Fatal("updates plan endpoint was not called")
+	}
+}
+
 func TestUpdateSourcePostsSelectedID(t *testing.T) {
 	var sourceCalled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -1358,6 +1358,38 @@ func TestDictionaryURLsPreferConfiguredMirrors(t *testing.T) {
 	}
 }
 
+func TestUpdatePlanEndpointShowsResolvedMirrors(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.Update.SourcePreset = "shurufa233-github-cn"
+	config.Update.MirrorBaseURLs = []string{"https://gh.example/proxy?target={escapedUrl}"}
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/updates/plan", nil)
+	rec := httptest.NewRecorder()
+	state.updatePlan(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got updatePlan
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || got.SourcePreset != "shurufa233-github-cn" || got.Language != config.Language {
+		t.Fatalf("update plan = %#v", got)
+	}
+	if len(got.ResolvedManifestURLs) != 2 || !strings.Contains(got.ResolvedManifestURLs[0], "target=https%3A%2F%2Fgithub.com") {
+		t.Fatalf("resolved manifest urls = %#v", got.ResolvedManifestURLs)
+	}
+	if got.ResolvedManifestURLs[1] != config.Update.ManifestURLs[0] {
+		t.Fatalf("canonical fallback = %#v", got.ResolvedManifestURLs)
+	}
+}
+
 func TestUpdateSourcesEndpointListsRimeSources(t *testing.T) {
 	config := engine.DefaultConfig()
 	state := &AppState{
@@ -1471,6 +1503,7 @@ func TestMirroredURLsPreferMirrorsAndKeepCanonicalFallback(t *testing.T) {
 	config := engine.DefaultConfig()
 	config.Update.MirrorBaseURLs = []string{
 		"https://gh-proxy.com/{url}",
+		"https://cdn.example/{host}/{path}",
 		"https://cdn.example/dicts",
 	}
 
@@ -1478,6 +1511,7 @@ func TestMirroredURLsPreferMirrorsAndKeepCanonicalFallback(t *testing.T) {
 
 	want := []string{
 		"https://gh-proxy.com/https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json",
+		"https://cdn.example/github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json",
 		"https://cdn.example/dicts/dictionary-manifest.json",
 		"https://github.com/neko233-com/shurufa233/releases/latest/download/dictionary-manifest.json",
 	}
