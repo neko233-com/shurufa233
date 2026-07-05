@@ -810,6 +810,55 @@ patch:
 	}
 }
 
+func TestApplyRimeCustomYAMLMapsFrontendStyle(t *testing.T) {
+	result, err := ApplyRimeCustomYAML(DefaultConfig(), []byte(`
+patch:
+  style/font_face: "Sarasa Mono SC, Microsoft YaHei UI"
+  style/font_point: 16
+  style/color_scheme: wechat_like
+  preset_color_schemes:
+    wechat_like:
+      horizontal: true
+      inline_preedit: true
+      back_color: 0xffffff
+      candidate_text_color: 0x111111
+      comment_text_color: 0x886644
+      border_color: 0xd8d8d8
+      hilited_candidate_back_color: 0xd77800
+      hilited_candidate_text_color: 0xffffff
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := result.Config
+	if config.Skin.FontFamily != "Sarasa Mono SC" || config.Skin.FontSize != 16 {
+		t.Fatalf("font style not mapped: %#v", config.Skin)
+	}
+	if config.Skin.Theme != "rime-wechat-like" || config.CandidateLayout != "horizontal" || config.ShowCandidateComments {
+		t.Fatalf("frontend style not mapped: %#v", config)
+	}
+	if config.Skin.Surface != "#ffffff" || config.Skin.Text != "#111111" || config.Skin.MutedText != "#446688" || config.Skin.Border != "#d8d8d8" || config.Skin.Accent != "#0078d7" || config.Skin.HighlightText != "#ffffff" {
+		t.Fatalf("color scheme not mapped: %#v", config.Skin)
+	}
+	if !containsString(result.Applied, "style/color_scheme:wechat_like") {
+		t.Fatalf("applied fields = %#v", result.Applied)
+	}
+}
+
+func TestApplyRimeCustomYAMLMapsStyleColorSchemeAlias(t *testing.T) {
+	result, err := ApplyRimeCustomYAML(DefaultConfig(), []byte(`
+patch:
+  style/font_face: "Microsoft YaHei UI"
+  style/color_scheme: rime
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Config.Skin.Theme != "rime-vertical" || result.Config.CandidateLayout != "vertical" || !result.Config.ShowCandidateComments {
+		t.Fatalf("skin preset alias not applied: %#v", result.Config)
+	}
+}
+
 func TestApplyRimeCustomYAMLWarnsForUnsupportedSchema(t *testing.T) {
 	result, err := ApplyRimeCustomYAML(DefaultConfig(), []byte(`
 patch:

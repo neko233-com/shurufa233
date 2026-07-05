@@ -842,6 +842,19 @@ function App() {
   schema_list:
     - schema: double_pinyin_flypy
   menu/page_size: 8
+  style/font_face: "Microsoft YaHei UI"
+  style/font_point: 15
+  style/color_scheme: wechat_like
+  preset_color_schemes:
+    wechat_like:
+      horizontal: true
+      inline_preedit: true
+      back_color: 0xffffff
+      candidate_text_color: 0x111111
+      comment_text_color: 0x886644
+      border_color: 0xd8d8d8
+      hilited_candidate_back_color: 0xd77800
+      hilited_candidate_text_color: 0xffffff
   key_binder/import_preset: alternative
   punctuator/import_preset: symbols
   switches:

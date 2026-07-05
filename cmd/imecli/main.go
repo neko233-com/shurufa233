@@ -144,17 +144,19 @@ type schemaPreset struct {
 }
 
 type configPayload struct {
-	Schema               string              `json:"schema,omitempty"`
-	DoublePinyin         bool                `json:"doublePinyin"`
-	DoublePinyinScheme   string              `json:"doublePinyinScheme"`
-	CandidatePageSize    int                 `json:"candidatePageSize,omitempty"`
-	CandidateLayout      string              `json:"candidateLayout,omitempty"`
-	Punctuation          string              `json:"punctuation,omitempty"`
-	PunctuationFullShape map[string][]string `json:"punctuationFullShape,omitempty"`
-	PunctuationHalfShape map[string][]string `json:"punctuationHalfShape,omitempty"`
-	RecognizerPatterns   map[string]string   `json:"recognizerPatterns,omitempty"`
-	KeyProfile           string              `json:"keyProfile,omitempty"`
-	SpellerAlgebra       []string            `json:"spellerAlgebra,omitempty"`
+	Schema                string              `json:"schema,omitempty"`
+	DoublePinyin          bool                `json:"doublePinyin"`
+	DoublePinyinScheme    string              `json:"doublePinyinScheme"`
+	CandidatePageSize     int                 `json:"candidatePageSize,omitempty"`
+	CandidateLayout       string              `json:"candidateLayout,omitempty"`
+	ShowCandidateComments bool                `json:"showCandidateComments,omitempty"`
+	Punctuation           string              `json:"punctuation,omitempty"`
+	PunctuationFullShape  map[string][]string `json:"punctuationFullShape,omitempty"`
+	PunctuationHalfShape  map[string][]string `json:"punctuationHalfShape,omitempty"`
+	RecognizerPatterns    map[string]string   `json:"recognizerPatterns,omitempty"`
+	KeyProfile            string              `json:"keyProfile,omitempty"`
+	SpellerAlgebra        []string            `json:"spellerAlgebra,omitempty"`
+	Skin                  engine.Skin         `json:"skin,omitempty"`
 }
 
 type switchOption struct {
@@ -956,14 +958,20 @@ func rimeCustom(client *http.Client, args []string) error {
 		if err := postJSON(client, "/rime/custom", map[string]string{"yaml": string(data)}, &result); err != nil {
 			return err
 		}
-		fmt.Printf("schema=%s doublePinyin=%v scheme=%s pageSize=%d layout=%s punctuation=%s keyProfile=%s algebra=%d punctFull=%d punctHalf=%d recognizers=%d\n",
+		fmt.Printf("schema=%s doublePinyin=%v scheme=%s pageSize=%d layout=%s comments=%v punctuation=%s keyProfile=%s skin=%s font=%s/%d accent=%s surface=%s algebra=%d punctFull=%d punctHalf=%d recognizers=%d\n",
 			valueOr(result.Schema, result.Config.Schema),
 			result.Config.DoublePinyin,
 			result.Config.DoublePinyinScheme,
 			result.Config.CandidatePageSize,
 			result.Config.CandidateLayout,
+			result.Config.ShowCandidateComments,
 			result.Config.Punctuation,
 			result.Config.KeyProfile,
+			result.Config.Skin.Theme,
+			result.Config.Skin.FontFamily,
+			result.Config.Skin.FontSize,
+			result.Config.Skin.Accent,
+			result.Config.Skin.Surface,
 			len(result.Config.SpellerAlgebra),
 			len(result.Config.PunctuationFullShape),
 			len(result.Config.PunctuationHalfShape),

@@ -131,7 +131,8 @@ settings into the shared config. It accepts either raw YAML or JSON:
 ```
 
 Supported patch fields include `schema_list`, `schema/schema_id`,
-`menu/page_size`, `style/horizontal`, `style/vertical`, `speller/algebra`,
+`menu/page_size`, `style/horizontal`, `style/vertical`, `style/font_face`,
+`style/font_point`, `style/color_scheme`, `preset_color_schemes`, `speller/algebra`,
 `switches`, `translator/enable_sentence`, `punctuator/import_preset`,
 `punctuator/half_shape`, `recognizer/import_preset`, `recognizer/patterns`,
 `key_binder/import_preset`, `key_binder/bindings`, and
@@ -143,8 +144,12 @@ platform-specific glue. Original `speller/algebra` strings are stored in
 and `derive/^([nl])ue$/$1ve/` are also converted into active fuzzy spelling
 pairs such as `zh=z` and `ue=ve`. Rime punctuation maps are stored as
 `config.punctuationFullShape` and `config.punctuationHalfShape`; Windows TSF
-reads those local config fields and uses them before falling back to the built-in
-WeChat/Microsoft-style punctuation table. Rime recognizer patterns are stored as
+reads those local config fields from the hot path and uses them before falling
+back to the built-in WeChat/Microsoft-style punctuation table. Rime frontend style fields update
+`config.skin`: font family, font size, surface, candidate text, muted comment
+text, border, highlight text, and accent colors. Weasel/Squirrel-style
+`0xBBGGRR` color values are converted to normal `#rrggbb` strings before being
+persisted. Rime recognizer patterns are stored as
 `config.recognizerPatterns`; default email, URL, reverse-lookup, and uppercase
 patterns can produce Go-core passthrough or explicit reverse-lookup candidates,
 while unsupported regular expressions are still preserved for future native use.

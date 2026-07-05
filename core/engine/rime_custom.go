@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,6 +67,9 @@ func ApplyRimeCustomYAML(base Config, data []byte) (RimeCustomResult, error) {
 			warnings = append(warnings, "menu/page_size is not a number")
 		}
 	}
+	styleApplied, styleWarnings := applyRimeStyleConfig(&config, patch)
+	applied = append(applied, styleApplied...)
+	warnings = append(warnings, styleWarnings...)
 	if raw, ok := rimeLookup(patch, "style/horizontal"); ok {
 		if value, ok := rimeBool(raw); ok {
 			if value {
@@ -198,6 +202,185 @@ func ApplyRimeCustomYAML(base Config, data []byte) (RimeCustomResult, error) {
 		Warnings:  uniqueStrings(warnings),
 		UpdatedAt: time.Now().UTC(),
 	}, nil
+}
+
+func applyRimeStyleConfig(config *Config, patch map[string]any) ([]string, []string) {
+	applied := []string{}
+	warnings := []string{}
+	if raw, ok := rimeLookup(patch, "style/font_face"); ok {
+		if font := rimeFontFace(raw); font != "" {
+			config.Skin.FontFamily = font
+			applied = append(applied, "style/font_face")
+		}
+	}
+	if raw, ok := rimeLookup(patch, "style/font_point"); ok {
+		if point, ok := rimeInt(raw); ok {
+			config.Skin.FontSize = clampRimeFontPoint(point)
+			applied = append(applied, fmt.Sprintf("style/font_point:%d", point))
+		} else {
+			warnings = append(warnings, "style/font_point is not a number")
+		}
+	}
+	if raw, ok := rimeLookup(patch, "style/color_scheme"); ok {
+		scheme := strings.TrimSpace(rimeString(raw))
+		if scheme != "" {
+			if schemesRaw, ok := rimeLookup(patch, "preset_color_schemes"); ok {
+				if mapped, ok := rimeNamedColorScheme(schemesRaw, scheme); ok {
+					applyRimeColorScheme(config, scheme, mapped)
+					applied = append(applied, "style/color_scheme:"+scheme)
+					return uniqueStrings(applied), uniqueStrings(warnings)
+				}
+			}
+			if next, ok := ApplySkinPresetConfig(*config, scheme); ok {
+				*config = next
+				applied = append(applied, "style/color_scheme:"+scheme)
+			} else {
+				warnings = append(warnings, "unsupported style/color_scheme: "+scheme)
+			}
+		}
+	}
+	return uniqueStrings(applied), uniqueStrings(warnings)
+}
+
+func rimeFontFace(raw any) string {
+	value := strings.TrimSpace(rimeString(raw))
+	if value == "" {
+		return ""
+	}
+	for _, part := range strings.Split(value, ",") {
+		part = strings.Trim(strings.TrimSpace(part), `"'`)
+		if part != "" {
+			return part
+		}
+	}
+	return ""
+}
+
+func clampRimeFontPoint(point int) int {
+	if point < 12 {
+		return 12
+	}
+	if point > 24 {
+		return 24
+	}
+	return point
+}
+
+func rimeNamedColorScheme(raw any, scheme string) (map[string]any, bool) {
+	schemes, ok := rimeMap(raw)
+	if !ok {
+		return nil, false
+	}
+	mapped, ok := rimeMap(schemes[scheme])
+	return mapped, ok
+}
+
+func applyRimeColorScheme(config *Config, scheme string, mapped map[string]any) {
+	if font := rimeFontFace(mapped["font_face"]); font != "" {
+		config.Skin.FontFamily = font
+	}
+	if point, ok := rimeInt(mapped["font_point"]); ok {
+		config.Skin.FontSize = clampRimeFontPoint(point)
+	}
+	if color, ok := rimeColor(mapped["back_color"]); ok {
+		config.Skin.Surface = color
+	}
+	if color, ok := firstRimeColor(mapped, "candidate_text_color", "text_color", "label_color"); ok {
+		config.Skin.Text = color
+	}
+	if color, ok := firstRimeColor(mapped, "comment_text_color", "candidate_comment_text_color"); ok {
+		config.Skin.MutedText = color
+	}
+	if color, ok := rimeColor(mapped["border_color"]); ok {
+		config.Skin.Border = color
+	}
+	if color, ok := firstRimeColor(mapped, "hilited_candidate_back_color", "hilited_back_color"); ok {
+		config.Skin.Accent = color
+	}
+	if color, ok := firstRimeColor(mapped, "hilited_candidate_text_color", "hilited_text_color"); ok {
+		config.Skin.HighlightText = color
+	}
+	if raw, ok := mapped["horizontal"]; ok {
+		if horizontal, ok := rimeBool(raw); ok {
+			if horizontal {
+				config.CandidateLayout = "horizontal"
+			} else {
+				config.CandidateLayout = "vertical"
+			}
+		}
+	}
+	if raw, ok := mapped["inline_preedit"]; ok {
+		if inline, ok := rimeBool(raw); ok && inline {
+			config.ShowCandidateComments = false
+		}
+	}
+	config.Skin.Theme = "rime-" + sanitizeRimeThemeID(scheme)
+}
+
+func firstRimeColor(mapped map[string]any, keys ...string) (string, bool) {
+	for _, key := range keys {
+		if color, ok := rimeColor(mapped[key]); ok {
+			return color, true
+		}
+	}
+	return "", false
+}
+
+func rimeColor(raw any) (string, bool) {
+	value := strings.TrimSpace(rimeString(raw))
+	value = strings.Trim(value, `"'`)
+	if value == "" {
+		return "", false
+	}
+	if strings.HasPrefix(value, "#") {
+		if len(value) == 7 && isRimeHex(value[1:]) {
+			return strings.ToLower(value), true
+		}
+		return "", false
+	}
+	base := 10
+	if strings.HasPrefix(strings.ToLower(value), "0x") {
+		value = value[2:]
+		base = 16
+	}
+	if strings.HasPrefix(value, "$") {
+		value = value[1:]
+		base = 16
+	}
+	parsed, err := strconv.ParseInt(value, base, 32)
+	if err != nil || parsed < 0 || parsed > 0xffffff {
+		return "", false
+	}
+	// Weasel/Squirrel color schemes commonly encode colors as 0xBBGGRR.
+	red := parsed & 0xff
+	green := (parsed >> 8) & 0xff
+	blue := (parsed >> 16) & 0xff
+	return fmt.Sprintf("#%02x%02x%02x", red, green, blue), true
+}
+
+func isRimeHex(value string) bool {
+	for _, char := range value {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func sanitizeRimeThemeID(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var builder strings.Builder
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-' {
+			builder.WriteRune(char)
+		} else if char == '_' || char == ' ' {
+			builder.WriteByte('-')
+		}
+	}
+	if builder.Len() == 0 {
+		return "custom"
+	}
+	return builder.String()
 }
 
 func applyRimeSchemaList(config *Config, raw any) (string, string, string) {
