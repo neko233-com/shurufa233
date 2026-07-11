@@ -88,6 +88,21 @@ type switchResponse struct {
 	UpdatedAt time.Time             `json:"updatedAt"`
 }
 
+type shortcutRequest struct {
+	KeyBindings []engine.KeyBinding `json:"keyBindings,omitempty"`
+	Bindings    []engine.KeyBinding `json:"bindings,omitempty"`
+}
+
+type shortcutResponse struct {
+	OK          bool                        `json:"ok"`
+	Error       string                      `json:"error,omitempty"`
+	KeyBindings []engine.KeyBinding         `json:"keyBindings"`
+	Bindings    []engine.KeyBinding         `json:"bindings"`
+	Conflicts   []engine.KeyBindingConflict `json:"conflicts"`
+	Config      engine.Config               `json:"config,omitempty"`
+	UpdatedAt   time.Time                   `json:"updatedAt"`
+}
+
 type appRuleRequest struct {
 	Rules []engine.AppRule `json:"rules,omitempty"`
 }
@@ -372,6 +387,9 @@ func main() {
 	mux.HandleFunc("POST /rime/custom", state.withCORS(state.applyRimeCustom))
 	mux.HandleFunc("GET /switches", state.withCORS(state.switches))
 	mux.HandleFunc("POST /switches/apply", state.withCORS(state.applySwitch))
+	mux.HandleFunc("GET /shortcuts", state.withCORS(state.shortcuts))
+	mux.HandleFunc("PUT /shortcuts", state.withCORS(state.putShortcuts))
+	mux.HandleFunc("POST /shortcuts/validate", state.withCORS(state.validateShortcuts))
 	mux.HandleFunc("GET /app-rules", state.withCORS(state.appRules))
 	mux.HandleFunc("PUT /app-rules", state.withCORS(state.putAppRules))
 	mux.HandleFunc("POST /app-context/resolve", state.withCORS(state.resolveAppContext))
@@ -491,6 +509,9 @@ func (s *AppState) putConfig(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next = normalizeConfig(next)
+	if !writeShortcutConflict(w, next) {
+		return
+	}
 	s.config = next
 	s.engine.Configure(next)
 	for _, session := range s.sessions {
@@ -670,6 +691,89 @@ func (s *AppState) applySwitch(w http.ResponseWriter, r *http.Request) {
 		Config:    s.config,
 		UpdatedAt: time.Now().UTC(),
 	})
+}
+
+func (s *AppState) shortcuts(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	writeJSON(w, shortcutEnvelope(s.config))
+}
+
+func (s *AppState) validateShortcuts(w http.ResponseWriter, r *http.Request) {
+	var req shortcutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.RLock()
+	config := s.config
+	s.mu.RUnlock()
+	if len(req.KeyBindings) > 0 {
+		config.KeyProfile = "custom"
+		config.KeyBindings = req.KeyBindings
+	} else if len(req.Bindings) > 0 {
+		config.KeyProfile = "custom"
+		config.KeyBindings = req.Bindings
+	}
+	config = normalizeConfig(config)
+	writeJSON(w, shortcutEnvelope(config))
+}
+
+func (s *AppState) putShortcuts(w http.ResponseWriter, r *http.Request) {
+	var req shortcutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	bindings := req.KeyBindings
+	if len(bindings) == 0 {
+		bindings = req.Bindings
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := s.config
+	next.KeyProfile = "custom"
+	next.KeyBindings = bindings
+	next = normalizeConfig(next)
+	if !writeShortcutConflict(w, next) {
+		return
+	}
+	s.config = next
+	s.engine.Configure(next)
+	for _, session := range s.sessions {
+		session.Configure(next)
+	}
+	if err := s.saveLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, shortcutEnvelope(s.config))
+}
+
+func shortcutEnvelope(config engine.Config) shortcutResponse {
+	config = normalizeConfig(config)
+	bindings := engine.NormalizeKeyBindings(config)
+	return shortcutResponse{
+		OK:          true,
+		KeyBindings: bindings,
+		Bindings:    bindings,
+		Conflicts:   engine.KeyBindingConflicts(config),
+		Config:      config,
+		UpdatedAt:   time.Now().UTC(),
+	}
+}
+
+func writeShortcutConflict(w http.ResponseWriter, config engine.Config) bool {
+	if len(engine.BlockingKeyBindingConflicts(config)) == 0 {
+		return true
+	}
+	response := shortcutEnvelope(config)
+	response.OK = false
+	response.Error = engine.KeyBindingConflictMessage(config)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusConflict)
+	writeJSON(w, response)
+	return false
 }
 
 func (s *AppState) appRules(w http.ResponseWriter, _ *http.Request) {
@@ -2728,7 +2832,7 @@ func isAllowedLocalOrigin(origin string) bool {
 }
 
 func writeJSON(w http.ResponseWriter, value any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -2872,6 +2976,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	}
 	config = engine.NormalizeSchemaConfig(config)
 	config = engine.NormalizeKeyBehavior(config)
+	config.KeyBindings = engine.NormalizeKeyBindings(config)
 	config.RecognizerPatterns = engine.NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = engine.NormalizeAppRules(config.AppRules)
 	config.Agent = engine.NormalizeAgent(config.Agent)
@@ -2937,6 +3042,8 @@ func normalizeDoublePinyinSchemeValue(scheme string, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(scheme)) {
 	case "", "xiaohe", "flypy":
 		return "xiaohe"
+	case "ziranma", "zrm", "natural", "natural-code", "double-pinyin-ziranma":
+		return "ziranma"
 	case "microsoft", "ms", "sogou":
 		return "microsoft"
 	default:

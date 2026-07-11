@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -30,6 +31,7 @@ func main() {
 	gzipOutput := flag.Bool("gzip", false, "write gzip-compressed JSON output; also enabled when -out ends with .gz")
 	includeImports := flag.Bool("imports", true, "resolve Rime import_tables recursively")
 	missingImports := flag.String("missing-imports", "error", "missing import_tables policy: error, warn, or skip")
+	maxEntries := flag.Int("max-entries", 0, "keep at most this many highest-value daily entries; 0 keeps all")
 	flag.Parse()
 	if flag.NArg() == 0 {
 		fmt.Fprintln(os.Stderr, "usage: shurufa-dictimport [flags] file.dict.yaml ...")
@@ -47,10 +49,14 @@ func main() {
 		entries = append(entries, parsed...)
 	}
 
+	mergedEntries := mergeEntries(entries)
+	if *maxEntries > 0 {
+		mergedEntries = compactEntries(mergedEntries, *maxEntries)
+	}
 	dictionary := engine.DictionaryFile{
 		Language: *language,
 		Version:  *version,
-		Entries:  mergeEntries(entries),
+		Entries:  mergedEntries,
 	}
 	data, err := json.MarshalIndent(dictionary, "", "  ")
 	if err != nil {
@@ -1046,6 +1052,90 @@ func mergeEntries(entries []engine.Entry) []engine.Entry {
 		out = append(out, entry)
 	}
 	return out
+}
+
+func compactEntries(entries []engine.Entry, limit int) []engine.Entry {
+	if limit <= 0 || len(entries) <= limit {
+		return entries
+	}
+	type readingGroup struct {
+		reading  string
+		entries  []engine.Entry
+		priority int
+	}
+	byReading := make(map[string][]engine.Entry)
+	for _, entry := range entries {
+		byReading[entry.Reading] = append(byReading[entry.Reading], entry)
+	}
+	groups := make([]readingGroup, 0, len(byReading))
+	for reading, grouped := range byReading {
+		sort.SliceStable(grouped, func(i, j int) bool {
+			if grouped[i].Weight != grouped[j].Weight {
+				return grouped[i].Weight > grouped[j].Weight
+			}
+			return grouped[i].Text < grouped[j].Text
+		})
+		priority := grouped[0].Weight
+		for _, entry := range grouped {
+			priority = max(priority, dailyEntryPriority(entry))
+			special := entry.Kind == "emoji" || entry.Kind == "kaomoji" || entry.Kind == "symbol"
+			if special {
+				priority = max(priority, 1000000000)
+			}
+			if utf8.RuneCountInString(entry.Text) == 1 {
+				priority = max(priority, 500000000)
+			}
+		}
+		groups = append(groups, readingGroup{reading: reading, entries: grouped, priority: priority})
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		if groups[i].priority != groups[j].priority {
+			return groups[i].priority > groups[j].priority
+		}
+		return groups[i].reading < groups[j].reading
+	})
+	const candidatesPerReading = 7
+	out := make([]engine.Entry, 0, limit)
+	for _, group := range groups {
+		for i, entry := range group.entries {
+			if i >= candidatesPerReading || len(out) >= limit {
+				break
+			}
+			out = append(out, entry)
+		}
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+// dailyEntryPriority keeps the compact runtime lexicon phrase-first. Raw Rime
+// frequencies strongly favor isolated characters and two-character words;
+// without a modest phrase multiplier, ordinary chat continuations such as
+// “你好吗/你好啊” disappear long before the compact file reaches its limit.
+// The source weight still decides within each length band, so rare idioms do
+// not displace genuinely common daily phrases.
+func dailyEntryPriority(entry engine.Entry) int {
+	weight := max(1, entry.Weight)
+	scaled := func(factor int) int {
+		if weight >= 1000000000/factor {
+			return 1000000000
+		}
+		return weight * factor
+	}
+	switch count := utf8.RuneCountInString(entry.Text); {
+	case count == 1:
+		return 500000000
+	case count == 2:
+		return scaled(2)
+	case count >= 3 && count <= 4:
+		return scaled(20)
+	case count >= 5 && count <= 8:
+		return scaled(8)
+	default:
+		return weight
+	}
 }
 
 func containsString(items []string, value string) bool {

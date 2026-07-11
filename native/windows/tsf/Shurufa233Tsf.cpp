@@ -13,6 +13,7 @@
 #include <iterator>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -1074,7 +1075,7 @@ class CandidateWindow {
     FillRect(dc, &rect, bg);
     DeleteObject(bg);
 
-    if (statusText_.empty() && !candidates_.empty()) {
+    if (statusText_.empty() && !candidates_.empty() && !IsWin11WindowMode()) {
       RECT candidateBand{rect.left, CandidateBandTop(), rect.right, rect.bottom};
       HBRUSH candidateBg = CreateSolidBrush(CandidateBandColor());
       FillRect(dc, &candidateBand, candidateBg);
@@ -1146,7 +1147,7 @@ class CandidateWindow {
   POINT hoverGuardScreenPoint_{};
   bool hoverGuardArmed_ = false;
   std::wstring fontFamily_ = L"Microsoft YaHei UI";
-  int fontSize_ = 18;
+  int fontSize_ = 12;
   COLORREF accent_ = RGB(37, 99, 235);
   COLORREF surface_ = RGB(255, 255, 255);
   COLORREF text_ = RGB(17, 24, 39);
@@ -1171,6 +1172,9 @@ class CandidateWindow {
   DWORD lastHttpSkinRefreshTick_ = 0;
   FILETIME lastSkinConfigWriteTime_{};
   bool hasSkinConfigWriteTime_ = false;
+  bool systemDark_ = false;
+  COLORREF systemAccent_ = RGB(0, 120, 215);
+  DWORD lastSystemThemeCheckTick_ = 0;
   HFONT font_ = nullptr;
   HFONT emojiFont_ = nullptr;
   std::wstring fontFamilyKey_;
@@ -1179,6 +1183,9 @@ class CandidateWindow {
   UINT dpi_ = 96;
 
   int CandidateWindowHeight() const {
+    if (IsWin11WindowMode()) {
+      return max(Scale(46), ScaledFontSize() + Scale(28));
+    }
     if (IsVerticalLayout()) {
       const int rows = max(1, min(static_cast<int>(candidates_.size()), pageSize_));
       const int itemHeight = max(Scale(34), ScaledFontSize() + Scale(paddingY_ * 2 + 4));
@@ -1190,11 +1197,18 @@ class CandidateWindow {
   }
 
   int CandidateBandTop() const {
+    if (IsWin11WindowMode()) {
+      return 0;
+    }
     return ScaledFontSize() + Scale(paddingY_ + 15);
   }
 
   bool IsVerticalLayout() const {
-    return layout_ == "vertical";
+    return !IsWin11WindowMode() && layout_ == "vertical";
+  }
+
+  bool IsWin11WindowMode() const {
+    return candidateWindowMode_ == "win11";
   }
 
   static std::string NormalizeCandidateLayout(const std::string &layout) {
@@ -1339,8 +1353,11 @@ class CandidateWindow {
 
   int CandidateItemWidth(HDC dc, const CandidateView &candidate, bool selected) const {
     const int textWidth = TextWidth(dc, candidate.text);
-    const int commentWidth = !showComments_ || candidate.comment.empty() ? 0 : min(Scale(88), TextWidth(dc, candidate.comment) + Scale(10));
-    const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
+    if (IsWin11WindowMode()) {
+      return max(Scale(58), min(Scale(190), textWidth + Scale(50)));
+    }
+    const int commentWidth = !EffectiveShowComments() || candidate.comment.empty() ? 0 : min(Scale(88), TextWidth(dc, candidate.comment) + Scale(10));
+    const std::wstring kindLabel = CandidateKindLabel(candidate);
     const int kindWidth = kindLabel.empty() ? 0 : CandidateBadgeWidth(dc, kindLabel) + Scale(10);
     return max(Scale(62), min(Scale(300), Scale(paddingX_ * 2 + 24) + textWidth + commentWidth + kindWidth));
   }
@@ -1357,9 +1374,16 @@ class CandidateWindow {
     return candidateWindowMode_ == "minimal";
   }
 
+  bool EffectiveShowComments() const {
+    return showComments_ && !IsWin11WindowMode();
+  }
+
   int ToolControlsWidth() const {
     if (IsVerticalLayout() || IsMinimalWindowMode()) {
       return 0;
+    }
+    if (IsWin11WindowMode()) {
+      return Scale(150);
     }
     if (IsLiteWindowMode()) {
       return HasPageControls() ? Scale(68) : 0;
@@ -1370,8 +1394,9 @@ class CandidateWindow {
   int MeasureWindowWidth() {
     HDC dc = GetDC(hwnd_);
     HGDIOBJ oldFont = SelectObject(dc, EnsureFont());
-    int width = max(Scale(260), TextWidth(dc, composing_) + Scale(paddingX_ * 2 + 20));
+    int width = Scale(IsWin11WindowMode() ? 10 : paddingX_ * 2 + 20);
     if (IsVerticalLayout()) {
+      width = max(Scale(220), TextWidth(dc, composing_) + Scale(paddingX_ * 2 + 20));
       for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
         width = max(width, CandidateItemWidth(dc, candidates_[i], static_cast<int>(i) == selectedIndex_) + Scale(paddingX_ * 2 + 14));
       }
@@ -1383,7 +1408,7 @@ class CandidateWindow {
     }
     SelectObject(dc, oldFont);
     ReleaseDC(hwnd_, dc);
-    return max(Scale(180), min(IsVerticalLayout() ? Scale(460) : Scale(940), width));
+    return max(Scale(180), min(IsVerticalLayout() ? Scale(460) : Scale(900), width));
   }
 
   int MeasureStatusWidth() {
@@ -1429,10 +1454,14 @@ class CandidateWindow {
   }
 
   bool IsDarkSkin() const {
-    return theme_ == "dark" || ColorLuminance(surface_) < 96;
+    return theme_ == "dark" || (theme_ == "system" && systemDark_) ||
+           (theme_ != "system" && ColorLuminance(surface_) < 96);
   }
 
   COLORREF PreeditSurfaceColor() const {
+    if (IsWin11WindowMode()) {
+      return IsDarkSkin() ? RGB(45, 45, 45) : RGB(249, 249, 249);
+    }
     return IsDarkSkin() ? RGB(36, 36, 36) : RGB(250, 250, 250);
   }
 
@@ -1441,6 +1470,9 @@ class CandidateWindow {
   }
 
   COLORREF PreeditBorderColor() const {
+    if (IsWin11WindowMode()) {
+      return IsDarkSkin() ? RGB(58, 58, 58) : RGB(224, 224, 224);
+    }
     return IsDarkSkin() ? RGB(78, 78, 78) : RGB(218, 220, 224);
   }
 
@@ -1449,16 +1481,25 @@ class CandidateWindow {
   }
 
   COLORREF CandidateBandColor() const {
+    if (IsWin11WindowMode()) {
+      return PreeditSurfaceColor();
+    }
     const COLORREF base = IsDarkSkin() ? RGB(30, 32, 36) : RGB(255, 255, 255);
     return MixColor(surface_, base, 18);
   }
 
   COLORREF CandidateIdleColor() const {
+    if (IsWin11WindowMode()) {
+      return CandidateBandColor();
+    }
     return IsDarkSkin() ? MixColor(surface_, RGB(255, 255, 255), 5)
                             : MixColor(surface_, accent_, 4);
   }
 
   COLORREF CandidateSelectedColor() const {
+    if (IsWin11WindowMode()) {
+      return IsDarkSkin() ? RGB(61, 61, 61) : RGB(232, 232, 232);
+    }
     return IsDarkSkin() ? MixColor(surface_, RGB(255, 255, 255), 10)
                             : MixColor(surface_, RGB(0, 0, 0), 5);
   }
@@ -1469,7 +1510,46 @@ class CandidateWindow {
   }
 
   COLORREF CandidateAccentEdgeColor() const {
-    return MixColor(accent_, RGB(255, 255, 255), IsDarkSkin() ? 18 : 10);
+    const COLORREF accent = IsWin11WindowMode() ? systemAccent_ : accent_;
+    return MixColor(accent, RGB(255, 255, 255), IsDarkSkin() ? 8 : 4);
+  }
+
+  COLORREF CandidateTextColor() const {
+    if (IsWin11WindowMode()) {
+      return IsDarkSkin() ? RGB(245, 245, 245) : RGB(31, 31, 31);
+    }
+    return text_;
+  }
+
+  COLORREF CandidateMutedTextColor() const {
+    if (IsWin11WindowMode()) {
+      return IsDarkSkin() ? RGB(190, 190, 190) : RGB(92, 92, 92);
+    }
+    return mutedText_;
+  }
+
+  void RefreshSystemTheme() {
+    const DWORD now = GetTickCount();
+    if (lastSystemThemeCheckTick_ != 0 &&
+        now - lastSystemThemeCheckTick_ < kHttpSkinPollMs) {
+      return;
+    }
+    lastSystemThemeCheckTick_ = now;
+    DWORD useLightTheme = 1;
+    DWORD valueSize = sizeof(useLightTheme);
+    if (RegGetValueW(HKEY_CURRENT_USER,
+                     L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                     L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &useLightTheme,
+                     &valueSize) == ERROR_SUCCESS) {
+      systemDark_ = useLightTheme == 0;
+    }
+    DWORD colorization = 0;
+    BOOL opaque = FALSE;
+    if (SUCCEEDED(DwmGetColorizationColor(&colorization, &opaque))) {
+      systemAccent_ = RGB((colorization >> 16) & 0xff,
+                          (colorization >> 8) & 0xff,
+                          colorization & 0xff);
+    }
   }
 
   std::wstring SkinConfigPath() {
@@ -1610,7 +1690,7 @@ class CandidateWindow {
     if (nextFontFamily.empty()) {
       nextFontFamily = L"Microsoft YaHei UI";
     }
-    const int nextFontSize = max(13, min(28, atoi(fields[1].c_str()) + 3));
+    const int nextFontSize = max(12, min(24, atoi(fields[1].c_str())));
     if (nextFontFamily != fontFamily_ || nextFontSize != fontSize_) {
       fontFamily_ = nextFontFamily;
       fontSize_ = nextFontSize;
@@ -1658,6 +1738,15 @@ class CandidateWindow {
     }
     if (fields.size() > 20) {
       emojiCandidates_ = ParseBoolLike(fields[20], true);
+    }
+    if (IsWin11WindowMode()) {
+      pageSize_ = kDefaultCandidatesPerPage;
+      layout_ = "horizontal";
+      showComments_ = false;
+      cornerRadius_ = 8;
+      paddingX_ = 10;
+      paddingY_ = 5;
+      rowGap_ = 2;
     }
     ApplyWindowOpacity();
     return true;
@@ -1810,7 +1899,8 @@ class CandidateWindow {
     return fallback;
   }
 
-  std::wstring CandidateKindLabel(const std::wstring &kind) const {
+  std::wstring CandidateKindLabel(const CandidateView &candidate) const {
+    const std::wstring &kind = candidate.kind;
     if (kind == L"emoji") {
       return L"表情";
     }
@@ -1825,6 +1915,9 @@ class CandidateWindow {
     }
     if (kind == L"agent") {
       return L"AI";
+    }
+    if (kind == L"dynamic" && candidate.source == L"builtin-calculator") {
+      return L"算";
     }
     if (kind == L"dynamic") {
       return L"时";
@@ -1957,27 +2050,41 @@ class CandidateWindow {
   void DrawCandidateItem(HDC dc, const CandidateView &candidate, bool selected,
                          const RECT &itemRect) {
     if (selected) {
-      DrawRoundedRect(dc, itemRect, CandidateSelectedColor(), CandidateIdleBorderColor(), 7);
-      RECT accentRect{itemRect.left, itemRect.top + Scale(7),
-                      itemRect.left + max(Scale(3), 2), itemRect.bottom - Scale(7)};
-      HBRUSH accentBrush = CreateSolidBrush(accent_);
-      FillRect(dc, &accentRect, accentBrush);
+      const COLORREF selectedColor = CandidateSelectedColor();
+      DrawRoundedRect(dc, itemRect, selectedColor,
+                      IsWin11WindowMode() ? selectedColor : CandidateIdleBorderColor(),
+                      IsWin11WindowMode() ? 6 : 7);
+      RECT accentRect{itemRect.left + Scale(IsWin11WindowMode() ? 1 : 0),
+                      itemRect.top + Scale(IsWin11WindowMode() ? 7 : 7),
+                      itemRect.left + max(Scale(IsWin11WindowMode() ? 4 : 3), 2),
+                      itemRect.bottom - Scale(IsWin11WindowMode() ? 7 : 7)};
+      const COLORREF accentColor = CandidateAccentEdgeColor();
+      HBRUSH accentBrush = CreateSolidBrush(accentColor);
+      HPEN accentPen = CreatePen(PS_SOLID, 1, accentColor);
+      HGDIOBJ oldBrush = SelectObject(dc, accentBrush);
+      HGDIOBJ oldPen = SelectObject(dc, accentPen);
+      RoundRect(dc, accentRect.left, accentRect.top, accentRect.right, accentRect.bottom,
+                Scale(4), Scale(4));
+      SelectObject(dc, oldPen);
+      SelectObject(dc, oldBrush);
+      DeleteObject(accentPen);
       DeleteObject(accentBrush);
     }
 
     wchar_t number[8]{};
     StringCchPrintfW(number, ARRAYSIZE(number), L"%d", candidate.index);
-    SetTextColor(dc, selected ? text_ : mutedText_);
-    RECT numberRect{itemRect.left + Scale(paddingX_), itemRect.top,
-                    itemRect.left + Scale(paddingX_ + 20), itemRect.bottom};
+    SetTextColor(dc, selected ? CandidateTextColor() : CandidateMutedTextColor());
+    const int numberLeft = itemRect.left + Scale(IsWin11WindowMode() ? 12 : paddingX_);
+    RECT numberRect{numberLeft, itemRect.top,
+                    numberLeft + Scale(IsWin11WindowMode() ? 18 : 20), itemRect.bottom};
     DrawTextW(dc, number, -1, &numberRect, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
 
-    SetTextColor(dc, text_);
-    RECT textRect{itemRect.left + Scale(paddingX_ + 20), itemRect.top,
-                  itemRect.right - Scale(paddingX_), itemRect.bottom};
-    const std::wstring kindLabel = CandidateKindLabel(candidate.kind);
+    SetTextColor(dc, CandidateTextColor());
+    RECT textRect{numberRect.right, itemRect.top,
+                  itemRect.right - Scale(IsWin11WindowMode() ? 10 : paddingX_), itemRect.bottom};
+    const std::wstring kindLabel = CandidateKindLabel(candidate);
     int rightEdge = itemRect.right - Scale(8);
-    if (!kindLabel.empty()) {
+    if (!IsWin11WindowMode() && !kindLabel.empty()) {
       const int badgeWidth = CandidateBadgeWidth(dc, kindLabel);
       rightEdge = itemRect.right - badgeWidth - Scale(8);
       textRect.right = max(textRect.left + Scale(24), rightEdge);
@@ -1989,17 +2096,17 @@ class CandidateWindow {
       SetTextColor(dc, CandidateBadgeTextColor(selected));
       DrawTextW(dc, kindLabel.c_str(), static_cast<int>(kindLabel.size()), &badgeRect,
                 DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS);
-      SetTextColor(dc, text_);
+      SetTextColor(dc, CandidateTextColor());
     }
-    if (showComments_ && !candidate.comment.empty()) {
+    if (EffectiveShowComments() && !candidate.comment.empty()) {
       const int commentWidth = min(Scale(88), max(Scale(30), TextWidth(dc, candidate.comment) + Scale(8)));
       RECT commentRect{max(textRect.left + Scale(30), rightEdge - commentWidth), itemRect.top,
                        rightEdge - Scale(4), itemRect.bottom};
       textRect.right = max(textRect.left + Scale(24), commentRect.left - Scale(6));
-      SetTextColor(dc, mutedText_);
+      SetTextColor(dc, CandidateMutedTextColor());
       DrawTextW(dc, candidate.comment.c_str(), static_cast<int>(candidate.comment.size()),
                 &commentRect, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_END_ELLIPSIS);
-      SetTextColor(dc, text_);
+      SetTextColor(dc, CandidateTextColor());
     }
     HGDIOBJ oldFont = nullptr;
     if ((candidate.kind == L"emoji" || candidate.kind == L"kaomoji") && emojiCandidates_) {
@@ -2016,10 +2123,14 @@ class CandidateWindow {
     statusText_.clear();
     candidateHits_.clear();
     pageHits_.clear();
-    DrawComposition(dc, rect);
-    int x = rect.left + Scale(paddingX_ + 3);
+    if (!IsWin11WindowMode()) {
+      DrawComposition(dc, rect);
+    }
+    int x = rect.left + Scale(IsWin11WindowMode() ? 5 : paddingX_ + 3);
     const int y = CandidateBandTop() + Scale(paddingY_);
-    const int itemHeight = max(Scale(34), ScaledFontSize() + Scale(paddingY_ * 2 + 4));
+    const int itemHeight = IsWin11WindowMode()
+                               ? max(Scale(36), ScaledFontSize() + Scale(20))
+                               : max(Scale(34), ScaledFontSize() + Scale(paddingY_ * 2 + 4));
     const int candidateRight = IsVerticalLayout() ? rect.right - Scale(paddingX_ + 2)
                                                   : rect.right - ToolControlsWidth() - Scale(8);
     for (size_t i = 0; i < candidates_.size() && i < static_cast<size_t>(pageSize_); ++i) {
@@ -2119,6 +2230,47 @@ class CandidateWindow {
     SelectObject(dc, oldPen);
     DeleteObject(dividerPen);
 
+    if (IsWin11WindowMode()) {
+      const COLORREF active = CandidateTextColor();
+      const COLORREF inactive = IsDarkSkin() ? RGB(118, 118, 118) : RGB(155, 155, 155);
+      RECT prevRect{left, centerY - Scale(15), left + Scale(28), centerY + Scale(15)};
+      RECT nextRect{prevRect.right + Scale(2), centerY - Scale(15),
+                    prevRect.right + Scale(30), centerY + Scale(15)};
+      DrawChevron(dc, prevRect, -1, HasPageControls() ? inactive : CandidateIdleBorderColor());
+      DrawChevron(dc, nextRect, 1, HasPageControls() ? active : CandidateIdleBorderColor());
+      if (HasPageControls()) {
+        pageHits_.push_back(PageHit{prevRect, -1});
+        pageHits_.push_back(PageHit{nextRect, 1});
+      }
+
+      const int firstDividerX = nextRect.right + Scale(8);
+      dividerPen = CreatePen(PS_SOLID, max(1, Scale(1)), CandidateIdleBorderColor());
+      oldPen = SelectObject(dc, dividerPen);
+      MoveToEx(dc, firstDividerX, centerY - Scale(16), nullptr);
+      LineTo(dc, firstDividerX, centerY + Scale(16));
+      SelectObject(dc, oldPen);
+      DeleteObject(dividerPen);
+
+      RECT favoriteRect{firstDividerX + Scale(8), centerY - Scale(16),
+                        firstDividerX + Scale(42), centerY + Scale(16)};
+      SetTextColor(dc, active);
+      DrawTextW(dc, L"♡", -1, &favoriteRect,
+                DT_SINGLELINE | DT_VCENTER | DT_CENTER);
+
+      const int secondDividerX = favoriteRect.right + Scale(5);
+      dividerPen = CreatePen(PS_SOLID, max(1, Scale(1)), CandidateIdleBorderColor());
+      oldPen = SelectObject(dc, dividerPen);
+      MoveToEx(dc, secondDividerX, centerY - Scale(16), nullptr);
+      LineTo(dc, secondDividerX, centerY + Scale(16));
+      SelectObject(dc, oldPen);
+      DeleteObject(dividerPen);
+
+      RECT dropdownRect{secondDividerX + Scale(5), centerY - Scale(15),
+                        rect.right - Scale(5), centerY + Scale(15)};
+      DrawDownChevron(dc, dropdownRect, active);
+      return;
+    }
+
     RECT prevRect{left, centerY - Scale(15), left + Scale(28), centerY + Scale(15)};
     RECT nextRect{prevRect.right + Scale(4), centerY - Scale(15),
                   prevRect.right + Scale(32), centerY + Scale(15)};
@@ -2172,6 +2324,7 @@ class CandidateWindow {
   }
 
   void RefreshSkin() {
+    RefreshSystemTheme();
     if (RefreshSkinFromConfigFile()) {
       return;
     }
@@ -2208,8 +2361,123 @@ bool IsAltPressed() {
   return (GetKeyState(VK_MENU) & 0x8000) != 0;
 }
 
+bool IsMetaPressed() {
+  return (GetKeyState(VK_LWIN) & 0x8000) != 0 ||
+         (GetKeyState(VK_RWIN) & 0x8000) != 0;
+}
+
 bool HasSystemModifier() {
   return IsControlPressed() || IsAltPressed();
+}
+
+std::string ShortcutKeyLabel(WPARAM key) {
+  if (key >= L'A' && key <= L'Z') {
+    return std::string(1, static_cast<char>(key));
+  }
+  if (key >= L'a' && key <= L'z') {
+    return std::string(1, static_cast<char>(key - L'a' + L'A'));
+  }
+  if (key >= L'0' && key <= L'9') {
+    return std::string(1, static_cast<char>(key));
+  }
+  if (key >= VK_NUMPAD0 && key <= VK_NUMPAD9) {
+    return std::string(1, static_cast<char>('0' + (key - VK_NUMPAD0)));
+  }
+  switch (key) {
+    case VK_SHIFT:
+    case VK_LSHIFT:
+    case VK_RSHIFT:
+      return "Shift";
+    case VK_CONTROL:
+    case VK_LCONTROL:
+    case VK_RCONTROL:
+      return "Ctrl";
+    case VK_MENU:
+    case VK_LMENU:
+    case VK_RMENU:
+      return "Alt";
+    case VK_SPACE:
+      return "Space";
+    case VK_RETURN:
+      return "Enter";
+    case VK_ESCAPE:
+      return "Escape";
+    case VK_BACK:
+      return "Backspace";
+    case VK_TAB:
+      return "Tab";
+    case VK_LEFT:
+      return "ArrowLeft";
+    case VK_RIGHT:
+      return "ArrowRight";
+    case VK_UP:
+      return "ArrowUp";
+    case VK_DOWN:
+      return "ArrowDown";
+    case VK_PRIOR:
+      return "PageUp";
+    case VK_NEXT:
+      return "PageDown";
+    case VK_DELETE:
+      return "Delete";
+    case VK_HOME:
+      return "Home";
+    case VK_END:
+      return "End";
+    case VK_OEM_1:
+      return ";";
+    case VK_OEM_2:
+      return "/";
+    case VK_OEM_4:
+      return "[";
+    case VK_OEM_6:
+      return "]";
+    case VK_OEM_7:
+      return "'";
+    case VK_OEM_COMMA:
+      return ",";
+    case VK_OEM_PERIOD:
+      return ".";
+    case VK_OEM_MINUS:
+      return "-";
+    case VK_OEM_PLUS:
+      return "=";
+    default:
+      return "";
+  }
+}
+
+std::string ShortcutForKey(WPARAM key) {
+  const std::string label = ShortcutKeyLabel(key);
+  if (label.empty()) {
+    return "";
+  }
+  const bool keyIsCtrl = key == VK_CONTROL || key == VK_LCONTROL || key == VK_RCONTROL;
+  const bool keyIsAlt = key == VK_MENU || key == VK_LMENU || key == VK_RMENU;
+  const bool keyIsShift = IsShiftKey(key);
+  const bool keyIsMeta = key == VK_LWIN || key == VK_RWIN;
+  std::vector<std::string> parts;
+  if (!keyIsCtrl && IsControlPressed()) {
+    parts.push_back("Ctrl");
+  }
+  if (!keyIsAlt && IsAltPressed()) {
+    parts.push_back("Alt");
+  }
+  if (!keyIsShift && IsShiftPressed()) {
+    parts.push_back("Shift");
+  }
+  if (!keyIsMeta && IsMetaPressed()) {
+    parts.push_back("Win");
+  }
+  parts.push_back(label);
+  std::string out;
+  for (size_t i = 0; i < parts.size(); ++i) {
+    if (i > 0) {
+      out.push_back('+');
+    }
+    out += parts[i];
+  }
+  return out;
 }
 
 bool IsChinesePunctuationKey(WPARAM key) {
@@ -2264,6 +2532,20 @@ char RecognizerAsciiCharForKey(WPARAM key) {
   if (key >= VK_NUMPAD0 && key <= VK_NUMPAD9) {
     return static_cast<char>('0' + (key - VK_NUMPAD0));
   }
+  switch (key) {
+    case VK_DECIMAL:
+      return '.';
+    case VK_DIVIDE:
+      return '/';
+    case VK_MULTIPLY:
+      return '*';
+    case VK_SUBTRACT:
+      return '-';
+    case VK_ADD:
+      return '+';
+    default:
+      break;
+  }
   if (!shifted) {
     switch (key) {
       case VK_OEM_PERIOD:
@@ -2303,6 +2585,12 @@ char RecognizerAsciiCharForKey(WPARAM key) {
     case VK_OEM_PLUS:
     case L'=':
       return '+';
+    case L'8':
+      return '*';
+    case L'9':
+      return '(';
+    case L'0':
+      return ')';
     case VK_OEM_1:
     case L';':
       return ':';
@@ -2336,10 +2624,39 @@ bool IsRecognizerContinuingChar(char ch) {
     case '=':
     case '%':
     case '+':
+    case '*':
+    case '(':
+    case ')':
+    case '^':
       return true;
     default:
       return false;
   }
+}
+
+bool IsCalculatorInputChar(char ch) {
+  if (ch >= '0' && ch <= '9') {
+    return true;
+  }
+  switch (ch) {
+    case '+':
+    case '-':
+    case '*':
+    case '/':
+    case '%':
+    case '^':
+    case '.':
+    case '(':
+    case ')':
+    case '=':
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool IsCalculatorStartChar(char ch) {
+  return (ch >= '0' && ch <= '9') || ch == '(';
 }
 
 int CandidateIndexFromKey(WPARAM key) {
@@ -2465,10 +2782,214 @@ class EditSession final : public ITfEditSession {
   std::wstring text_;
 };
 
+class CompositionEditSession final : public ITfEditSession {
+ public:
+  enum class Operation {
+    Update,
+    Commit,
+    Cancel,
+  };
+
+  CompositionEditSession(ITfContext *context, ITfCompositionSink *sink,
+                         ITfComposition **compositionSlot, std::wstring text,
+                         Operation operation)
+      : context_(context), sink_(sink), compositionSlot_(compositionSlot),
+        text_(std::move(text)), operation_(operation) {
+    AddDllRef();
+    if (context_) {
+      context_->AddRef();
+    }
+    if (sink_) {
+      sink_->AddRef();
+    }
+  }
+
+  ~CompositionEditSession() {
+    if (sink_) {
+      sink_->Release();
+    }
+    if (context_) {
+      context_->Release();
+    }
+    ReleaseDllRef();
+  }
+
+  STDMETHODIMP QueryInterface(REFIID riid, void **out) override {
+    if (!out) {
+      return E_INVALIDARG;
+    }
+    *out = nullptr;
+    if (riid == IID_IUnknown || riid == IID_ITfEditSession) {
+      *out = static_cast<ITfEditSession *>(this);
+      AddRef();
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  STDMETHODIMP_(ULONG) AddRef() override {
+    return InterlockedIncrement(&refCount_);
+  }
+
+  STDMETHODIMP_(ULONG) Release() override {
+    const ULONG count = InterlockedDecrement(&refCount_);
+    if (count == 0) {
+      delete this;
+    }
+    return count;
+  }
+
+  STDMETHODIMP DoEditSession(TfEditCookie ec) override {
+    if (!context_ || !compositionSlot_) {
+      return E_INVALIDARG;
+    }
+    if (operation_ == Operation::Update) {
+      return Update(ec);
+    }
+    return Finish(ec, operation_ == Operation::Commit ? text_ : L"");
+  }
+
+ private:
+  HRESULT CurrentSelectionRange(TfEditCookie ec, ITfRange **range) const {
+    if (!range) {
+      return E_INVALIDARG;
+    }
+    *range = nullptr;
+    TF_SELECTION selection{};
+    ULONG fetched = 0;
+    HRESULT hr = context_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
+    if (FAILED(hr) || fetched == 0 || !selection.range) {
+      return FAILED(hr) ? hr : E_FAIL;
+    }
+    *range = selection.range;
+    return S_OK;
+  }
+
+  HRESULT MoveCaretToEnd(TfEditCookie ec, ITfRange *range) const {
+    if (!range) {
+      return E_INVALIDARG;
+    }
+    ITfRange *caret = nullptr;
+    HRESULT hr = range->Clone(&caret);
+    if (FAILED(hr) || !caret) {
+      return hr;
+    }
+    hr = caret->Collapse(ec, TF_ANCHOR_END);
+    if (SUCCEEDED(hr)) {
+      TF_SELECTION selection{};
+      selection.range = caret;
+      selection.style.ase = TF_AE_NONE;
+      selection.style.fInterimChar = FALSE;
+      hr = context_->SetSelection(ec, 1, &selection);
+    }
+    caret->Release();
+    return hr;
+  }
+
+  void SetComposingProperty(TfEditCookie ec, ITfRange *range, bool composing) const {
+    if (!range) {
+      return;
+    }
+    ITfProperty *property = nullptr;
+    if (FAILED(context_->GetProperty(GUID_PROP_COMPOSING, &property)) || !property) {
+      return;
+    }
+    if (composing) {
+      VARIANT value{};
+      value.vt = VT_I4;
+      value.lVal = 1;
+      property->SetValue(ec, range, &value);
+    } else {
+      property->Clear(ec, range);
+    }
+    property->Release();
+  }
+
+  HRESULT Update(TfEditCookie ec) {
+    if (!*compositionSlot_) {
+      ITfRange *selection = nullptr;
+      HRESULT hr = CurrentSelectionRange(ec, &selection);
+      if (FAILED(hr) || !selection) {
+        return hr;
+      }
+      ITfContextComposition *contextComposition = nullptr;
+      hr = context_->QueryInterface(IID_ITfContextComposition,
+                                    reinterpret_cast<void **>(&contextComposition));
+      if (SUCCEEDED(hr) && contextComposition) {
+        hr = contextComposition->StartComposition(ec, selection, sink_, compositionSlot_);
+        contextComposition->Release();
+      }
+      selection->Release();
+      if (FAILED(hr) || !*compositionSlot_) {
+        return FAILED(hr) ? hr : E_FAIL;
+      }
+    }
+
+    ITfRange *range = nullptr;
+    HRESULT hr = (*compositionSlot_)->GetRange(&range);
+    if (FAILED(hr) || !range) {
+      return hr;
+    }
+    hr = range->SetText(ec, 0, text_.c_str(), static_cast<LONG>(text_.size()));
+    if (SUCCEEDED(hr)) {
+      SetComposingProperty(ec, range, true);
+      hr = MoveCaretToEnd(ec, range);
+    }
+    range->Release();
+    return hr;
+  }
+
+  HRESULT Finish(TfEditCookie ec, const std::wstring &text) {
+    ITfComposition *active = *compositionSlot_;
+    if (!active) {
+      if (text.empty()) {
+        return S_OK;
+      }
+      ITfRange *selection = nullptr;
+      HRESULT hr = CurrentSelectionRange(ec, &selection);
+      if (FAILED(hr) || !selection) {
+        return hr;
+      }
+      hr = selection->SetText(ec, 0, text.c_str(), static_cast<LONG>(text.size()));
+      if (SUCCEEDED(hr)) {
+        hr = MoveCaretToEnd(ec, selection);
+      }
+      selection->Release();
+      return hr;
+    }
+
+    // Clear the owner's slot before EndComposition. Windows calls
+    // OnCompositionTerminated synchronously in many hosts; clearing first
+    // distinguishes a normal commit/cancel from host-forced termination.
+    *compositionSlot_ = nullptr;
+    ITfRange *range = nullptr;
+    HRESULT hr = active->GetRange(&range);
+    if (SUCCEEDED(hr) && range) {
+      hr = range->SetText(ec, 0, text.c_str(), static_cast<LONG>(text.size()));
+      if (SUCCEEDED(hr)) {
+        SetComposingProperty(ec, range, false);
+        hr = MoveCaretToEnd(ec, range);
+      }
+      range->Release();
+    }
+    const HRESULT endHr = active->EndComposition(ec);
+    active->Release();
+    return FAILED(hr) ? hr : endHr;
+  }
+
+  long refCount_ = 1;
+  ITfContext *context_ = nullptr;
+  ITfCompositionSink *sink_ = nullptr;
+  ITfComposition **compositionSlot_ = nullptr;
+  std::wstring text_;
+  Operation operation_ = Operation::Update;
+};
+
 class TextService final : public ITfTextInputProcessorEx,
                           public ITfKeyEventSink,
                           public ITfActiveLanguageProfileNotifySink,
-                          public ITfThreadMgrEventSink {
+                          public ITfThreadMgrEventSink,
+                          public ITfCompositionSink {
  public:
   TextService() {
     AddDllRef();
@@ -2502,6 +3023,8 @@ class TextService final : public ITfTextInputProcessorEx,
       *out = static_cast<ITfActiveLanguageProfileNotifySink *>(this);
     } else if (riid == IID_ITfThreadMgrEventSink) {
       *out = static_cast<ITfThreadMgrEventSink *>(this);
+    } else if (riid == IID_ITfCompositionSink) {
+      *out = static_cast<ITfCompositionSink *>(this);
     } else {
       return E_NOINTERFACE;
     }
@@ -2616,19 +3139,36 @@ class TextService final : public ITfTextInputProcessorEx,
     return S_OK;
   }
 
+  STDMETHODIMP OnCompositionTerminated(TfEditCookie, ITfComposition *composition) override {
+    if (!composition_ || composition_ != composition) {
+      return S_OK;
+    }
+    composition_->Release();
+    composition_ = nullptr;
+    if (session_ && g_core.clearSession) {
+      char *cleared = g_core.clearSession(session_);
+      if (cleared && g_core.freeValue) {
+        g_core.freeValue(cleared);
+      }
+    }
+    ResetCompositionState();
+    candidateWindow_.Hide();
+    return S_OK;
+  }
+
   STDMETHODIMP OnTestKeyDown(ITfContext *, WPARAM key, LPARAM, BOOL *eaten) override {
     if (!eaten) {
       return E_INVALIDARG;
     }
-    if (HasSystemModifier()) {
+    RefreshTypingConfigFromConfig();
+    if (HasSystemModifier() && !HasConfiguredShortcutForKey(key)) {
       CloseCandidateUI(true, true);
       *eaten = FALSE;
       return S_OK;
     }
-    if (shiftDown_ && !IsShiftKey(key)) {
+    if (shiftDown_ && !IsToggleModeKey(key)) {
       shiftToggleCandidate_ = false;
     }
-    RefreshTypingConfigFromConfig();
     *eaten = ShouldEatKey(key);
     return S_OK;
   }
@@ -2638,17 +3178,17 @@ class TextService final : public ITfTextInputProcessorEx,
       return E_INVALIDARG;
     }
     *eaten = FALSE;
-    if (HasSystemModifier()) {
+    RefreshTypingConfigFromConfig();
+    if (HasSystemModifier() && !HasConfiguredShortcutForKey(key)) {
       CloseCandidateUI(true, true);
       return S_OK;
     }
-    RefreshTypingConfigFromConfig();
     if (!session_ || !ShouldEatKey(key)) {
       return S_OK;
     }
     RememberContext(context);
 
-    if (shiftToggleMode_ && IsShiftKey(key)) {
+    if (IsToggleModeKey(key)) {
       if (!shiftDown_) {
         shiftDown_ = true;
         shiftToggleCandidate_ = rawBuffer_.empty() && cachedCandidateCount_ == 0;
@@ -2661,36 +3201,42 @@ class TextService final : public ITfTextInputProcessorEx,
       shiftToggleCandidate_ = false;
     }
 
-    if (IsAsciiLetter(key)) {
+    if (IsAsciiLetter(key) && !HasSystemModifier()) {
       char ch = static_cast<char>(key);
       if (ch >= 'A' && ch <= 'Z') {
         ch = static_cast<char>(ch - 'A' + 'a');
       }
-      InputCompositionChar(ch);
+      InputCompositionChar(context, ch);
       *eaten = TRUE;
       return S_OK;
     }
 
     if (IsMicrosoftDoublePinyinSemicolonKey(key)) {
-      InputCompositionChar(';');
+      InputCompositionChar(context, ';');
       *eaten = TRUE;
       return S_OK;
     }
 
     if (ShouldStartSlashSymbolPrefix(key)) {
-      InputCompositionChar('/');
+      InputCompositionChar(context, '/');
       *eaten = TRUE;
       return S_OK;
     }
 
     const char recognizerChar = RecognizerAsciiCharForKey(key);
     if (!asciiMode_ && ShouldUseRecognizerLiteralChar(recognizerChar)) {
-      InputCompositionChar(recognizerChar);
+      InputCompositionChar(context, recognizerChar);
       *eaten = TRUE;
       return S_OK;
     }
 
-    if (key == VK_BACK) {
+    if (!asciiMode_ && ShouldUseCalculatorChar(recognizerChar)) {
+      InputCompositionChar(context, recognizerChar);
+      *eaten = TRUE;
+      return S_OK;
+    }
+
+    if (IsBackspaceKey(key)) {
       selectedIndex_ = 0;
       pageOffset_ = 0;
       const int count = g_core.backspaceFast(session_);
@@ -2698,13 +3244,19 @@ class TextService final : public ITfTextInputProcessorEx,
         rawBuffer_.pop_back();
       }
       compositionLength_ = static_cast<int>(rawBuffer_.size());
+      if (rawBuffer_.empty()) {
+        CancelComposition(context);
+      } else {
+        UpdateCompositionText(context);
+      }
       UpdateCandidateWindow(count);
       *eaten = TRUE;
       return S_OK;
     }
 
-    if (key == VK_ESCAPE) {
+    if (IsClearCompositionKey(key)) {
       selectedIndex_ = 0;
+      CancelComposition(context);
       ClearSession();
       candidateWindow_.Hide();
       cachedCandidateCount_ = 0;
@@ -2713,20 +3265,16 @@ class TextService final : public ITfTextInputProcessorEx,
       return S_OK;
     }
 
-    if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB) {
-      MoveSelection(key == VK_TAB && IsShiftPressed() ? -1 : 1);
+    const int moveDelta = ConfiguredMoveDeltaForKey(key);
+    if (moveDelta != 0) {
+      MoveSelection(moveDelta);
       *eaten = TRUE;
       return S_OK;
     }
 
-    if (key == VK_LEFT || key == VK_UP) {
-      MoveSelection(-1);
-      *eaten = TRUE;
-      return S_OK;
-    }
-
-    if (key == VK_HOME || key == VK_END) {
-      MoveSelectionTo(key == VK_HOME ? 0 : cachedCandidateCount_ - 1);
+    const int absoluteMoveIndex = ConfiguredMoveAbsoluteForKey(key);
+    if (absoluteMoveIndex >= 0) {
+      MoveSelectionTo(absoluteMoveIndex);
       *eaten = TRUE;
       return S_OK;
     }
@@ -2740,11 +3288,6 @@ class TextService final : public ITfTextInputProcessorEx,
     const int quickIndex = ConfiguredQuickSelectIndexFromKey(key);
     if (quickIndex >= 0 && cachedCandidateCount_ > pageOffset_ + quickIndex) {
       CommitCandidate(context, pageOffset_ + quickIndex);
-      selectedIndex_ = 0;
-      pageOffset_ = 0;
-      candidateWindow_.Hide();
-      cachedCandidateCount_ = 0;
-      compositionLength_ = 0;
       *eaten = TRUE;
       return S_OK;
     }
@@ -2761,11 +3304,9 @@ class TextService final : public ITfTextInputProcessorEx,
         }
         CommitRawBuffer(context, suffix);
       } else if (cachedCandidateCount_ > 0) {
-        CommitCandidate(context, selectedIndex_);
-        selectedIndex_ = 0;
-        pageOffset_ = 0;
-        candidateWindow_.Hide();
-        cachedCandidateCount_ = 0;
+        // A punctuation key is a hard boundary. Do not leave post-commit
+        // associations visible after it has also committed punctuation.
+        CommitCandidate(context, selectedIndex_, false);
         CommitText(context, punctuation);
       } else if (!rawBuffer_.empty()) {
         CommitRawBuffer(context, punctuation);
@@ -2776,22 +3317,17 @@ class TextService final : public ITfTextInputProcessorEx,
       return S_OK;
     }
 
-    if ((key == VK_SPACE || key == VK_RETURN) && cachedCandidateCount_ <= 0 && !rawBuffer_.empty()) {
+    if (IsCommitSelectionKey(key) && cachedCandidateCount_ <= 0 && !rawBuffer_.empty()) {
       CommitRawBuffer(context, key == VK_SPACE ? L" " : L"");
       candidateWindow_.Hide();
       *eaten = TRUE;
       return S_OK;
     }
 
-    if (key == VK_SPACE || key == VK_RETURN || IsCandidateNumberKey(key)) {
-      const int index =
-          IsCandidateNumberKey(key) ? pageOffset_ + CandidateIndexFromKey(key) : selectedIndex_;
+    const int candidateIndex = ConfiguredCandidateIndexFromKey(key);
+    if (IsCommitSelectionKey(key) || candidateIndex >= 0) {
+      const int index = candidateIndex >= 0 ? pageOffset_ + candidateIndex : selectedIndex_;
       CommitCandidate(context, index);
-      selectedIndex_ = 0;
-      pageOffset_ = 0;
-      candidateWindow_.Hide();
-      cachedCandidateCount_ = 0;
-      compositionLength_ = 0;
       *eaten = TRUE;
       return S_OK;
     }
@@ -2803,7 +3339,9 @@ class TextService final : public ITfTextInputProcessorEx,
     if (!eaten) {
       return E_INVALIDARG;
     }
-    *eaten = shiftToggleMode_ && IsShiftKey(key) && shiftDown_ && shiftToggleCandidate_ && !HasSystemModifier();
+    RefreshTypingConfigFromConfig();
+    *eaten = IsToggleModeKey(key) && shiftDown_ && shiftToggleCandidate_ &&
+             (!HasSystemModifier() || HasConfiguredShortcutForKey(key));
     return S_OK;
   }
 
@@ -2811,8 +3349,10 @@ class TextService final : public ITfTextInputProcessorEx,
     if (!eaten) {
       return E_INVALIDARG;
     }
-    if (shiftToggleMode_ && IsShiftKey(key)) {
-      const bool shouldToggle = shiftDown_ && shiftToggleCandidate_ && !HasSystemModifier();
+    RefreshTypingConfigFromConfig();
+    if (IsToggleModeKey(key)) {
+      const bool shouldToggle = shiftDown_ && shiftToggleCandidate_ &&
+                                (!HasSystemModifier() || HasConfiguredShortcutForKey(key));
       if (shouldToggle) {
         ToggleAsciiMode();
       }
@@ -2892,13 +3432,14 @@ class TextService final : public ITfTextInputProcessorEx,
 
   void CloseCandidateUI(bool clearCoreSession, bool destroyWindow) {
     const bool hasComposition = cachedCandidateCount_ > 0 || compositionLength_ > 0 ||
-                                !rawBuffer_.empty();
+                                !rawBuffer_.empty() || composition_ != nullptr;
     const bool hasWindow = candidateWindow_.HasWindow();
     if (!hasComposition && !hasWindow) {
       shiftDown_ = false;
       shiftToggleCandidate_ = false;
       return;
     }
+    CancelComposition(lastContext_);
     if (clearCoreSession && hasComposition && session_ && g_core.clearSession) {
       char *cleared = g_core.clearSession(session_);
       if (cleared && g_core.freeValue) {
@@ -2943,11 +3484,6 @@ class TextService final : public ITfTextInputProcessorEx,
       return;
     }
     CommitCandidate(lastContext_, absoluteIndex);
-    selectedIndex_ = 0;
-    pageOffset_ = 0;
-    candidateWindow_.Hide();
-    cachedCandidateCount_ = 0;
-    compositionLength_ = 0;
   }
 
   void OnCandidateSelected(int absoluteIndex) {
@@ -3006,8 +3542,6 @@ class TextService final : public ITfTextInputProcessorEx,
     switch (command) {
       case kCommit:
         CommitCandidate(lastContext_, absoluteIndex);
-        ResetCompositionState();
-        candidateWindow_.Hide();
         break;
       case kPin:
         if (RunCandidateAction("pin", absoluteIndex)) {
@@ -3024,13 +3558,9 @@ class TextService final : public ITfTextInputProcessorEx,
         break;
       case kFirstChar:
         CommitCandidateChar(lastContext_, absoluteIndex, "first");
-        ResetCompositionState();
-        candidateWindow_.Hide();
         break;
       case kLastChar:
         CommitCandidateChar(lastContext_, absoluteIndex, "last");
-        ResetCompositionState();
-        candidateWindow_.Hide();
         break;
       default:
         break;
@@ -3095,16 +3625,45 @@ class TextService final : public ITfTextInputProcessorEx,
     return IsRecognizerLiteralProspective(ch);
   }
 
-  void InputCompositionChar(char ch) {
+  bool ShouldUseCalculatorChar(char ch) const {
+    if (!IsCalculatorInputChar(ch)) {
+      return false;
+    }
+    if (rawBuffer_.empty()) {
+      // Keep number keys available for selecting post-commit association
+      // candidates. A numeric expression can begin only when no candidate
+      // list is open, then remains an ordinary composition until an operator
+      // produces a calculator candidate in the Go core.
+      return cachedCandidateCount_ == 0 && IsCalculatorStartChar(ch);
+    }
+    for (char buffered : rawBuffer_) {
+      if (!IsCalculatorInputChar(buffered)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void InputCompositionChar(ITfContext *context, char ch) {
     selectedIndex_ = 0;
     pageOffset_ = 0;
     compositionLength_++;
     rawBuffer_.push_back(ch);
     const int count = g_core.inputKeyFast(session_, ch);
+    UpdateCompositionText(context);
     UpdateCandidateWindow(count);
   }
 
   int ConfiguredQuickSelectIndexFromKey(WPARAM key) const {
+    if (customKeyBindingsEnabled_) {
+      if (ShortcutMatches("quick-select-2", key) && !IsMicrosoftDoublePinyinSemicolonKey(key)) {
+        return 1;
+      }
+      if (ShortcutMatches("quick-select-3", key)) {
+        return 2;
+      }
+      return -1;
+    }
     if (IsShiftPressed()) {
       return -1;
     }
@@ -3123,6 +3682,9 @@ class TextService final : public ITfTextInputProcessorEx,
   }
 
   bool IsConfiguredPageKey(WPARAM key) const {
+    if (customKeyBindingsEnabled_) {
+      return ShortcutMatches("page-prev", key) || ShortcutMatches("page-next", key);
+    }
     if (IsConfiguredBracketPageKey(key)) {
       return true;
     }
@@ -3135,6 +3697,15 @@ class TextService final : public ITfTextInputProcessorEx,
   }
 
   int ConfiguredPageDeltaForKey(WPARAM key) const {
+    if (customKeyBindingsEnabled_) {
+      if (ShortcutMatches("page-prev", key)) {
+        return -1;
+      }
+      if (ShortcutMatches("page-next", key)) {
+        return 1;
+      }
+      return 0;
+    }
     if (IsConfiguredBracketPageKey(key)) {
       return CandidatePageDeltaForKey(key);
     }
@@ -3153,14 +3724,96 @@ class TextService final : public ITfTextInputProcessorEx,
     return 0;
   }
 
+  bool IsToggleModeKey(WPARAM key) const {
+    if (customKeyBindingsEnabled_) {
+      return ShortcutMatches("toggle-mode", key);
+    }
+    return shiftToggleMode_ && IsShiftKey(key);
+  }
+
+  bool IsBackspaceKey(WPARAM key) const {
+    return customKeyBindingsEnabled_ ? ShortcutMatches("backspace", key) : key == VK_BACK;
+  }
+
+  bool IsClearCompositionKey(WPARAM key) const {
+    return customKeyBindingsEnabled_ ? ShortcutMatches("clear-composition", key) : key == VK_ESCAPE;
+  }
+
+  bool IsCommitSelectionKey(WPARAM key) const {
+    return customKeyBindingsEnabled_ ? ShortcutMatches("commit-selection", key) : (key == VK_SPACE || key == VK_RETURN);
+  }
+
+  int ConfiguredMoveDeltaForKey(WPARAM key) const {
+    if (customKeyBindingsEnabled_) {
+      if (ShortcutMatches("move-selection-prev", key)) {
+        return -1;
+      }
+      if (ShortcutMatches("move-selection-next", key)) {
+        return 1;
+      }
+      return 0;
+    }
+    if (key == VK_RIGHT || key == VK_DOWN) {
+      return 1;
+    }
+    if (key == VK_TAB) {
+      return IsShiftPressed() ? -1 : 1;
+    }
+    if (key == VK_LEFT || key == VK_UP) {
+      return -1;
+    }
+    return 0;
+  }
+
+  int ConfiguredMoveAbsoluteForKey(WPARAM key) const {
+    if (customKeyBindingsEnabled_) {
+      if (ShortcutMatches("move-selection-first", key)) {
+        return 0;
+      }
+      if (ShortcutMatches("move-selection-last", key)) {
+        return cachedCandidateCount_ - 1;
+      }
+      return -1;
+    }
+    if (key == VK_HOME) {
+      return 0;
+    }
+    if (key == VK_END) {
+      return cachedCandidateCount_ - 1;
+    }
+    return -1;
+  }
+
+  int ConfiguredCandidateIndexFromKey(WPARAM key) const {
+    if (!customKeyBindingsEnabled_) {
+      return CandidateIndexFromKey(key);
+    }
+    for (int i = 1; i <= 9; ++i) {
+      char action[32]{};
+      StringCchPrintfA(action, ARRAYSIZE(action), "select-candidate-%d", i);
+      if (ShortcutMatches(action, key)) {
+        return i - 1;
+      }
+    }
+    return -1;
+  }
+
+  bool HasConfiguredShortcutForKey(WPARAM key) const {
+    if (!customKeyBindingsEnabled_) {
+      return false;
+    }
+    const std::string shortcut = ShortcutForKey(key);
+    return !shortcut.empty() && configuredShortcutKeys_.find(shortcut) != configuredShortcutKeys_.end();
+  }
+
   bool ShouldEatKey(WPARAM key) const {
     if (!session_) {
       return false;
     }
-    if (HasSystemModifier()) {
+    if (HasSystemModifier() && !HasConfiguredShortcutForKey(key)) {
       return false;
     }
-    if (shiftToggleMode_ && IsShiftKey(key)) {
+    if (IsToggleModeKey(key)) {
       return true;
     }
     if (asciiMode_) {
@@ -3175,31 +3828,34 @@ class TextService final : public ITfTextInputProcessorEx,
     if (ShouldStartSlashSymbolPrefix(key)) {
       return true;
     }
+    const char compositionChar = RecognizerAsciiCharForKey(key);
+    if (!asciiMode_ && ShouldUseCalculatorChar(compositionChar)) {
+      return true;
+    }
     if (!rawBuffer_.empty()) {
-      const char recognizerChar = RecognizerAsciiCharForKey(key);
-      if (ShouldUseRecognizerLiteralChar(recognizerChar)) {
+      if (ShouldUseRecognizerLiteralChar(compositionChar)) {
         return true;
       }
-      if (recognizerChar != 0 && IsChinesePunctuationKey(key) && IsRecognizerLiteralCurrent()) {
+      if (compositionChar != 0 && IsChinesePunctuationKey(key) && IsRecognizerLiteralCurrent()) {
         return true;
       }
     }
-    if (key == VK_BACK) {
+    if (IsBackspaceKey(key)) {
       return compositionLength_ > 0;
     }
-    if (key == VK_ESCAPE) {
+    if (IsClearCompositionKey(key)) {
       return cachedCandidateCount_ > 0 || compositionLength_ > 0;
     }
-    if (key == VK_RIGHT || key == VK_DOWN || key == VK_TAB || key == VK_LEFT || key == VK_UP) {
+    if (ConfiguredMoveDeltaForKey(key) != 0) {
       return cachedCandidateCount_ > 0;
     }
-    if (key == VK_HOME || key == VK_END) {
+    if (ConfiguredMoveAbsoluteForKey(key) >= 0) {
       return cachedCandidateCount_ > 0;
     }
     if (IsConfiguredPageKey(key) && (!IsConfiguredBracketPageKey(key) || cachedCandidateCount_ > CandidatePageSize())) {
       return cachedCandidateCount_ > CandidatePageSize();
     }
-    if (key == VK_SPACE || key == VK_RETURN) {
+    if (IsCommitSelectionKey(key)) {
       return cachedCandidateCount_ > 0 || !rawBuffer_.empty();
     }
     const int quickIndex = ConfiguredQuickSelectIndexFromKey(key);
@@ -3209,8 +3865,8 @@ class TextService final : public ITfTextInputProcessorEx,
     if (!asciiMode_ && IsChinesePunctuationKey(key)) {
       return punctuationFullWidth_ || cachedCandidateCount_ > 0 || !rawBuffer_.empty();
     }
-    if (IsCandidateNumberKey(key)) {
-      const int relativeIndex = CandidateIndexFromKey(key);
+    const int relativeIndex = ConfiguredCandidateIndexFromKey(key);
+    if (relativeIndex >= 0) {
       return relativeIndex < CandidatePageSize() &&
              cachedCandidateCount_ > pageOffset_ + relativeIndex;
     }
@@ -3222,28 +3878,57 @@ class TextService final : public ITfTextInputProcessorEx,
            (key == VK_OEM_2 || key == L'/');
   }
 
-  void CommitText(ITfContext *context, const std::wstring &text) {
-    if (!context || text.empty()) {
-      LogLine(L"CommitText skipped: no context/text");
+  void RequestCompositionEdit(
+      ITfContext *context,
+      const std::wstring &text,
+      CompositionEditSession::Operation operation) {
+    if (!context) {
+      LogLine(L"RequestCompositionEdit skipped: no context");
       return;
     }
-
-    EditSession *session = new EditSession(context, text);
+    CompositionEditSession *session = new CompositionEditSession(
+        context, static_cast<ITfCompositionSink *>(this), &composition_, text, operation);
     HRESULT editResult = E_FAIL;
     HRESULT hr = context->RequestEditSession(
         clientId_, session, TF_ES_READWRITE | TF_ES_SYNC, &editResult);
     session->Release();
     wchar_t message[192]{};
     StringCchPrintfW(message, ARRAYSIZE(message),
-                     L"CommitText text_len=%zu request_hr=0x%08X edit_hr=0x%08X",
-                     text.size(), static_cast<unsigned int>(hr), static_cast<unsigned int>(editResult));
+                     L"CompositionEdit op=%d text_len=%zu request_hr=0x%08X edit_hr=0x%08X",
+                     static_cast<int>(operation), text.size(), static_cast<unsigned int>(hr),
+                     static_cast<unsigned int>(editResult));
     LogDebugLine(message);
     if (hr == TF_E_SYNCHRONOUS || FAILED(hr)) {
-      EditSession *asyncSession = new EditSession(context, text);
+      CompositionEditSession *asyncSession = new CompositionEditSession(
+          context, static_cast<ITfCompositionSink *>(this), &composition_, text, operation);
       HRESULT ignored = E_FAIL;
       context->RequestEditSession(clientId_, asyncSession, TF_ES_READWRITE | TF_ES_ASYNC, &ignored);
       asyncSession->Release();
     }
+  }
+
+  void UpdateCompositionText(ITfContext *context) {
+    if (!context || rawBuffer_.empty()) {
+      return;
+    }
+    RequestCompositionEdit(context, Utf8ToWide(rawBuffer_.c_str()),
+                           CompositionEditSession::Operation::Update);
+  }
+
+  void CancelComposition(ITfContext *context) {
+    if (!composition_) {
+      return;
+    }
+    RequestCompositionEdit(context ? context : lastContext_, L"",
+                           CompositionEditSession::Operation::Cancel);
+  }
+
+  void CommitText(ITfContext *context, const std::wstring &text) {
+    if (!context || text.empty()) {
+      LogLine(L"CommitText skipped: no context/text");
+      return;
+    }
+    RequestCompositionEdit(context, text, CompositionEditSession::Operation::Commit);
   }
 
   void CommitRawBuffer(ITfContext *context, const std::wstring &suffix = L"") {
@@ -3257,7 +3942,11 @@ class TextService final : public ITfTextInputProcessorEx,
     CommitText(context, text);
   }
 
-  void CommitCandidate(ITfContext *context, int index) {
+  // The Go engine replaces a selected candidate with its post-commit
+  // associations when they are enabled. Keeping that state in the TSF strip
+  // gives normal typing the same one-tap follow-up flow as a modern Windows
+  // IME, while a new pinyin key naturally replaces the association list.
+  void CommitCandidate(ITfContext *context, int index, bool showAssociations = true) {
     if (!context || !session_) {
       LogLine(L"CommitCandidate skipped: no context/session");
       return;
@@ -3275,9 +3964,18 @@ class TextService final : public ITfTextInputProcessorEx,
     compositionLength_ = 0;
     rawBuffer_.clear();
     CommitText(context, text);
+    if (showAssociations) {
+      ShowPostCommitAssociations();
+    } else {
+      HideCandidateWindowAfterCommit();
+    }
   }
 
-  void CommitCandidateChar(ITfContext *context, int index, const char *side) {
+  void CommitCandidateChar(
+      ITfContext *context,
+      int index,
+      const char *side,
+      bool showAssociations = true) {
     if (!context || !session_ || !g_core.commitCandidateChar || !side) {
       return;
     }
@@ -3292,6 +3990,34 @@ class TextService final : public ITfTextInputProcessorEx,
     compositionLength_ = 0;
     rawBuffer_.clear();
     CommitText(context, text);
+    if (showAssociations) {
+      ShowPostCommitAssociations();
+    } else {
+      HideCandidateWindowAfterCommit();
+    }
+  }
+
+  void ShowPostCommitAssociations() {
+    selectedIndex_ = 0;
+    pageOffset_ = 0;
+    if (!session_ || !g_core.candidateCount) {
+      HideCandidateWindowAfterCommit();
+      return;
+    }
+    const int count = g_core.candidateCount(session_);
+    if (count <= 0) {
+      HideCandidateWindowAfterCommit();
+      return;
+    }
+    UpdateCandidateWindow(count);
+  }
+
+  void HideCandidateWindowAfterCommit() {
+    selectedIndex_ = 0;
+    pageOffset_ = 0;
+    cachedCandidateCount_ = 0;
+    compositionLength_ = 0;
+    candidateWindow_.Hide();
   }
 
   bool RunCandidateAction(const char *action, int index) {
@@ -4022,6 +4748,154 @@ class TextService final : public ITfTextInputProcessorEx,
     return out;
   }
 
+  static bool ParseJsonBoolValue(const std::string &json, size_t &pos, bool fallback) {
+    SkipJsonWhitespace(json, pos);
+    if (json.compare(pos, 4, "true") == 0) {
+      pos += 4;
+      return true;
+    }
+    if (json.compare(pos, 5, "false") == 0) {
+      pos += 5;
+      return false;
+    }
+    SkipJsonValue(json, pos);
+    return fallback;
+  }
+
+  static std::vector<std::string> ParseJsonStringArrayValue(const std::string &json, size_t &pos) {
+    std::vector<std::string> out;
+    SkipJsonWhitespace(json, pos);
+    if (pos >= json.size() || json[pos] != '[') {
+      SkipJsonValue(json, pos);
+      return out;
+    }
+    ++pos;
+    for (;;) {
+      SkipJsonWhitespace(json, pos);
+      if (pos >= json.size() || json[pos] == ']') {
+        if (pos < json.size()) {
+          ++pos;
+        }
+        break;
+      }
+      std::string value;
+      if (ParseJsonStringAt(json, pos, value) && !value.empty()) {
+        out.push_back(value);
+      } else {
+        SkipJsonValue(json, pos);
+      }
+      SkipJsonWhitespace(json, pos);
+      if (pos < json.size() && json[pos] == ',') {
+        ++pos;
+        continue;
+      }
+    }
+    return out;
+  }
+
+  static bool ParseKeyBindingObject(
+      const std::string &json,
+      size_t &pos,
+      std::string &action,
+      std::vector<std::string> &keys,
+      bool &enabled) {
+    action.clear();
+    keys.clear();
+    enabled = true;
+    SkipJsonWhitespace(json, pos);
+    if (pos >= json.size() || json[pos] != '{') {
+      return false;
+    }
+    ++pos;
+    for (;;) {
+      SkipJsonWhitespace(json, pos);
+      if (pos >= json.size()) {
+        return false;
+      }
+      if (json[pos] == '}') {
+        ++pos;
+        return !action.empty();
+      }
+      std::string field;
+      if (!ParseJsonStringAt(json, pos, field)) {
+        return false;
+      }
+      SkipJsonWhitespace(json, pos);
+      if (pos >= json.size() || json[pos] != ':') {
+        return false;
+      }
+      ++pos;
+      if (field == "action") {
+        ParseJsonStringAt(json, pos, action);
+      } else if (field == "keys") {
+        keys = ParseJsonStringArrayValue(json, pos);
+      } else if (field == "enabled") {
+        enabled = ParseJsonBoolValue(json, pos, true);
+      } else {
+        SkipJsonValue(json, pos);
+      }
+      SkipJsonWhitespace(json, pos);
+      if (pos < json.size() && json[pos] == ',') {
+        ++pos;
+        continue;
+      }
+    }
+  }
+
+  static std::unordered_map<std::string, std::vector<std::string>> JsonConfigKeyBindings(
+      const std::string &json) {
+    std::unordered_map<std::string, std::vector<std::string>> out;
+    const std::string key = "\"keyBindings\"";
+    size_t pos = json.find(key);
+    if (pos == std::string::npos) {
+      return out;
+    }
+    pos = json.find(':', pos + key.size());
+    if (pos == std::string::npos) {
+      return out;
+    }
+    ++pos;
+    SkipJsonWhitespace(json, pos);
+    if (pos >= json.size() || json[pos] != '[') {
+      return out;
+    }
+    ++pos;
+    for (;;) {
+      SkipJsonWhitespace(json, pos);
+      if (pos >= json.size() || json[pos] == ']') {
+        break;
+      }
+      std::string action;
+      std::vector<std::string> keys;
+      bool enabled = true;
+      if (!ParseKeyBindingObject(json, pos, action, keys, enabled)) {
+        break;
+      }
+      if (enabled && !action.empty()) {
+        out[action] = keys;
+      }
+      SkipJsonWhitespace(json, pos);
+      if (pos < json.size() && json[pos] == ',') {
+        ++pos;
+        continue;
+      }
+    }
+    return out;
+  }
+
+  void ApplyCustomKeyBindings(const std::string &json) {
+    keyBindings_ = JsonConfigKeyBindings(json);
+    configuredShortcutKeys_.clear();
+    customKeyBindingsEnabled_ = !keyBindings_.empty();
+    for (const auto &item : keyBindings_) {
+      for (const std::string &shortcut : item.second) {
+        if (!shortcut.empty()) {
+          configuredShortcutKeys_.insert(shortcut);
+        }
+      }
+    }
+  }
+
   void RefreshTypingConfigFromConfig() {
     const std::wstring path = ConfigPath();
     if (path.empty()) {
@@ -4059,6 +4933,14 @@ class TextService final : public ITfTextInputProcessorEx,
     if (pageSize <= 0) {
       pageSize = kDefaultCandidatesPerPage;
     }
+    std::string windowMode = JsonConfigStringField(json, "candidateWindowMode");
+    for (char &ch : windowMode) {
+      ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
+    }
+    if (windowMode.empty() || windowMode == "win11" || windowMode == "windows11" ||
+        windowMode == "microsoft") {
+      pageSize = kDefaultCandidatesPerPage;
+    }
     candidatePageSize_ = max(kMinCandidatesPerPage, min(kMaxCandidatesPerPage, pageSize));
     ApplyKeyBehaviorConfig(json);
     lastConfigWriteTime_ = attrs.ftLastWriteTime;
@@ -4073,6 +4955,9 @@ class TextService final : public ITfTextInputProcessorEx,
     doublePinyinEnabled_ = false;
     microsoftDoublePinyin_ = false;
     candidatePageSize_ = kDefaultCandidatesPerPage;
+    customKeyBindingsEnabled_ = false;
+    keyBindings_.clear();
+    configuredShortcutKeys_.clear();
     ApplyWechatKeyBehavior();
   }
 
@@ -4097,6 +4982,9 @@ class TextService final : public ITfTextInputProcessorEx,
   void ApplyKeyBehaviorConfig(const std::string &json) {
     const std::string profile = JsonConfigStringField(json, "keyProfile");
     if (profile == "rime" || profile == "weasel" || profile == "squirrel") {
+      customKeyBindingsEnabled_ = false;
+      keyBindings_.clear();
+      configuredShortcutKeys_.clear();
       ApplyRimeKeyBehavior();
       return;
     }
@@ -4107,9 +4995,30 @@ class TextService final : public ITfTextInputProcessorEx,
       bracketPageKeys_ = JsonConfigBoolField(json, "bracketPageKeys");
       minusEqualPageKeys_ = JsonConfigBoolField(json, "minusEqualPageKeys");
       commaPeriodPageKeys_ = JsonConfigBoolField(json, "commaPeriodPageKeys");
+      ApplyCustomKeyBindings(json);
       return;
     }
+    customKeyBindingsEnabled_ = false;
+    keyBindings_.clear();
+    configuredShortcutKeys_.clear();
     ApplyWechatKeyBehavior();
+  }
+
+  bool ShortcutMatches(const std::string &action, WPARAM key) const {
+    const auto it = keyBindings_.find(action);
+    if (it == keyBindings_.end()) {
+      return false;
+    }
+    const std::string shortcut = ShortcutForKey(key);
+    if (shortcut.empty()) {
+      return false;
+    }
+    for (const std::string &candidate : it->second) {
+      if (candidate == shortcut) {
+        return true;
+      }
+    }
+    return false;
   }
 
   void RefreshAsciiModeFromCore() {
@@ -4125,6 +5034,7 @@ class TextService final : public ITfTextInputProcessorEx,
   }
 
   void ToggleAsciiMode() {
+    CancelComposition(lastContext_);
     if (session_ && g_core.toggleMode) {
       char *state = g_core.toggleMode(session_);
       asciiMode_ = ModePayloadIsEnglish(state);
@@ -4178,6 +5088,9 @@ class TextService final : public ITfTextInputProcessorEx,
   bool bracketPageKeys_ = true;
   bool minusEqualPageKeys_ = true;
   bool commaPeriodPageKeys_ = false;
+  bool customKeyBindingsEnabled_ = false;
+  std::unordered_map<std::string, std::vector<std::string>> keyBindings_;
+  std::unordered_set<std::string> configuredShortcutKeys_;
   int candidatePageSize_ = kDefaultCandidatesPerPage;
   std::wstring configPath_;
   bool configPathResolved_ = false;
@@ -4185,6 +5098,7 @@ class TextService final : public ITfTextInputProcessorEx,
   FILETIME lastConfigWriteTime_{};
   bool hasConfigWriteTime_ = false;
   ITfContext *lastContext_ = nullptr;
+  ITfComposition *composition_ = nullptr;
   CandidateWindow candidateWindow_;
 };
 

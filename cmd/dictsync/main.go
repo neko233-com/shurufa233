@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ type options struct {
 	BaseURL        string
 	SourceRef      string
 	MissingImports string
+	MaxEntries     int
 	SkipPull       bool
 	DictImport     string
 	DictManifest   string
@@ -97,6 +99,7 @@ func parseFlags() options {
 	baseURL := flag.String("base-url", "https://github.com/neko233-com/shurufa233/releases/latest/download", "base URL used in generated manifests")
 	sourceRef := flag.String("ref", "", "optional upstream branch, tag, or commit to checkout after fetch/clone")
 	missingImports := flag.String("missing-imports", "error", "Rime import_tables missing policy: error, warn, or skip")
+	maxEntries := flag.Int("max-entries", 0, "compact generated dictionary to this many daily entries; 0 keeps all")
 	skipPull := flag.Bool("skip-pull", false, "reuse an existing checkout without fetching")
 	dictImport := flag.String("dictimport", "", "path to shurufa-dictimport; defaults to sibling executable, PATH, or go run ./cmd/dictimport in a source checkout")
 	dictManifest := flag.String("dictmanifest", "", "path to shurufa-dictmanifest; defaults to sibling executable, PATH, or go run ./cmd/dictmanifest in a source checkout")
@@ -113,6 +116,7 @@ func parseFlags() options {
 		BaseURL:        *baseURL,
 		SourceRef:      *sourceRef,
 		MissingImports: *missingImports,
+		MaxEntries:     *maxEntries,
 		SkipPull:       *skipPull,
 		DictImport:     *dictImport,
 		DictManifest:   *dictManifest,
@@ -151,6 +155,9 @@ func run(opts options) (syncReport, error) {
 		"-source", plan.SourceLabel,
 		"-missing-imports", opts.MissingImports,
 		"-out", plan.ArtifactPath,
+	}
+	if opts.MaxEntries > 0 {
+		importArgs = append(importArgs, "-max-entries", strconv.Itoa(opts.MaxEntries))
 	}
 	importArgs = append(importArgs, inputs...)
 	if err := runTool(importTool, importArgs, "convert Rime dictionaries"); err != nil {

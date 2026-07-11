@@ -53,12 +53,15 @@ var abiFeatureList = []string{
 	"emoji-kaomoji-symbol-candidates",
 	"catalog-json",
 	"dynamic-datetime-candidates",
+	"calculator-candidates",
 	"candidate-char-commit",
 	"candidate-comments",
 	"association-candidates",
 	"candidate-action-json",
 	"extension-command-json",
 	"key-behavior-config",
+	"key-bindings-json",
+	"shortcut-conflict-detection",
 	"rime-switches-json",
 	"rime-recognizer-patterns-json",
 	"recognizer-decision-json",
@@ -156,63 +159,65 @@ type profileBundle struct {
 }
 
 type extensionCommandPayload struct {
-	Input                string             `json:"input,omitempty"`
-	Context              string             `json:"context,omitempty"`
-	Action               string             `json:"action,omitempty"`
-	Key                  string             `json:"key,omitempty"`
-	Character            string             `json:"character,omitempty"`
-	Code                 int                `json:"code,omitempty"`
-	Mode                 string             `json:"mode,omitempty"`
-	Toggle               bool               `json:"toggle,omitempty"`
-	Ctrl                 bool               `json:"ctrl,omitempty"`
-	Alt                  bool               `json:"alt,omitempty"`
-	Shift                bool               `json:"shift,omitempty"`
-	Meta                 bool               `json:"meta,omitempty"`
-	Modifiers            []string           `json:"modifiers,omitempty"`
-	Index                int                `json:"index,omitempty"`
-	DisplayIndex         int                `json:"displayIndex,omitempty"`
-	Start                int                `json:"start,omitempty"`
-	Limit                int                `json:"limit,omitempty"`
-	PageSize             int                `json:"pageSize,omitempty"`
-	Delta                int                `json:"delta,omitempty"`
-	Side                 string             `json:"side,omitempty"`
-	ID                   string             `json:"id,omitempty"`
-	Switch               string             `json:"switch,omitempty"`
-	Value                *bool              `json:"value,omitempty"`
-	Force                *bool              `json:"force,omitempty"`
-	Schema               string             `json:"schema,omitempty"`
-	Preset               string             `json:"preset,omitempty"`
-	ManifestURLs         []string           `json:"manifestUrls,omitempty"`
-	MirrorBaseURLs       []string           `json:"mirrorBaseUrls,omitempty"`
-	Language             string             `json:"language,omitempty"`
-	YAML                 string             `json:"yaml,omitempty"`
-	Format               string             `json:"format,omitempty"`
-	Data                 string             `json:"data,omitempty"`
-	Reading              string             `json:"reading,omitempty"`
-	Text                 string             `json:"text,omitempty"`
-	Kind                 string             `json:"kind,omitempty"`
-	Query                string             `json:"query,omitempty"`
-	Config               *engine.Config     `json:"config,omitempty"`
-	Agent                *engine.Agent      `json:"agent,omitempty"`
-	Sync                 *engine.Sync       `json:"sync,omitempty"`
-	AppContext           *engine.AppContext `json:"appContext,omitempty"`
-	Rules                []engine.AppRule   `json:"rules,omitempty"`
-	UserScores           map[string]int     `json:"userScores,omitempty"`
-	Scores               map[string]int     `json:"scores,omitempty"`
-	Entries              []engine.Entry     `json:"entries,omitempty"`
-	Phrases              []engine.Entry     `json:"phrases,omitempty"`
-	Rejects              []engine.Entry     `json:"rejects,omitempty"`
-	Pins                 []engine.Entry     `json:"pins,omitempty"`
-	Merge                bool               `json:"merge,omitempty"`
-	Replace              bool               `json:"replace,omitempty"`
-	Directory            string             `json:"directory,omitempty"`
-	Path                 string             `json:"path,omitempty"`
-	UserDBText           string             `json:"userdbText,omitempty"`
-	RimeUserDBText       string             `json:"rimeUserDBText,omitempty"`
-	CustomPhraseText     string             `json:"customPhraseText,omitempty"`
-	RimeCustomPhraseText string             `json:"rimeCustomPhraseText,omitempty"`
-	CustomYAML           string             `json:"customYaml,omitempty"`
-	Raw                  *json.RawMessage   `json:"raw,omitempty"`
+	Input                string              `json:"input,omitempty"`
+	Context              string              `json:"context,omitempty"`
+	Action               string              `json:"action,omitempty"`
+	Key                  string              `json:"key,omitempty"`
+	Character            string              `json:"character,omitempty"`
+	Code                 int                 `json:"code,omitempty"`
+	Mode                 string              `json:"mode,omitempty"`
+	Toggle               bool                `json:"toggle,omitempty"`
+	Ctrl                 bool                `json:"ctrl,omitempty"`
+	Alt                  bool                `json:"alt,omitempty"`
+	Shift                bool                `json:"shift,omitempty"`
+	Meta                 bool                `json:"meta,omitempty"`
+	Modifiers            []string            `json:"modifiers,omitempty"`
+	Index                int                 `json:"index,omitempty"`
+	DisplayIndex         int                 `json:"displayIndex,omitempty"`
+	Start                int                 `json:"start,omitempty"`
+	Limit                int                 `json:"limit,omitempty"`
+	PageSize             int                 `json:"pageSize,omitempty"`
+	Delta                int                 `json:"delta,omitempty"`
+	Side                 string              `json:"side,omitempty"`
+	ID                   string              `json:"id,omitempty"`
+	Switch               string              `json:"switch,omitempty"`
+	Value                *bool               `json:"value,omitempty"`
+	Force                *bool               `json:"force,omitempty"`
+	Schema               string              `json:"schema,omitempty"`
+	Preset               string              `json:"preset,omitempty"`
+	ManifestURLs         []string            `json:"manifestUrls,omitempty"`
+	MirrorBaseURLs       []string            `json:"mirrorBaseUrls,omitempty"`
+	Language             string              `json:"language,omitempty"`
+	YAML                 string              `json:"yaml,omitempty"`
+	Format               string              `json:"format,omitempty"`
+	Data                 string              `json:"data,omitempty"`
+	Reading              string              `json:"reading,omitempty"`
+	Text                 string              `json:"text,omitempty"`
+	Kind                 string              `json:"kind,omitempty"`
+	Query                string              `json:"query,omitempty"`
+	Config               *engine.Config      `json:"config,omitempty"`
+	Agent                *engine.Agent       `json:"agent,omitempty"`
+	Sync                 *engine.Sync        `json:"sync,omitempty"`
+	AppContext           *engine.AppContext  `json:"appContext,omitempty"`
+	Rules                []engine.AppRule    `json:"rules,omitempty"`
+	KeyBindings          []engine.KeyBinding `json:"keyBindings,omitempty"`
+	Bindings             []engine.KeyBinding `json:"bindings,omitempty"`
+	UserScores           map[string]int      `json:"userScores,omitempty"`
+	Scores               map[string]int      `json:"scores,omitempty"`
+	Entries              []engine.Entry      `json:"entries,omitempty"`
+	Phrases              []engine.Entry      `json:"phrases,omitempty"`
+	Rejects              []engine.Entry      `json:"rejects,omitempty"`
+	Pins                 []engine.Entry      `json:"pins,omitempty"`
+	Merge                bool                `json:"merge,omitempty"`
+	Replace              bool                `json:"replace,omitempty"`
+	Directory            string              `json:"directory,omitempty"`
+	Path                 string              `json:"path,omitempty"`
+	UserDBText           string              `json:"userdbText,omitempty"`
+	RimeUserDBText       string              `json:"rimeUserDBText,omitempty"`
+	CustomPhraseText     string              `json:"customPhraseText,omitempty"`
+	RimeCustomPhraseText string              `json:"rimeCustomPhraseText,omitempty"`
+	CustomYAML           string              `json:"customYaml,omitempty"`
+	Raw                  *json.RawMessage    `json:"raw,omitempty"`
 }
 
 func buildProfileBundle(session *engine.Engine) profileBundle {
@@ -862,13 +867,35 @@ func executeKeyEvent(session *engine.Engine, req extensionCommandPayload) keyEve
 			return buildKeyEventResult(session, "pass-through", key, character, "", character, "app-context", decision, false, req.Start, limit)
 		}
 	}
+	// A calculator expression starts with a provisional numeric composition.
+	// It must be evaluated before default number-key candidate bindings so the
+	// first digit is not mistaken for candidate 1 when no list is visible.
+	if before.Mode != "en" && keyEventCalculatorStartInput(before, character) {
+		runes := []rune(character)
+		state := session.InputKey(runes[0])
+		return buildKeyEventResultFromState("input-calculator", key, character, "", "", "", decision, true, req.Start, limit, state)
+	}
+	recognizer := keyEventRecognizerDecision(session, before)
+	stroke := engine.KeyStroke{
+		Key:       key,
+		Character: character,
+		Ctrl:      req.Ctrl,
+		Alt:       req.Alt,
+		Shift:     req.Shift,
+		Meta:      req.Meta,
+		Modifiers: req.Modifiers,
+	}
+	if action := engine.ShortcutActionForStroke(session.Config(), stroke); action != "" {
+		if result, ok := executeConfiguredShortcut(session, req, key, character, action, before, decision, recognizer, limit); ok {
+			return result
+		}
+	}
 	if hasSystemModifier(req) {
 		return buildKeyEventResult(session, "pass-through", key, character, "", character, "system-modifier", decision, false, req.Start, limit)
 	}
 	if before.Mode == "en" && character != "" {
 		return buildKeyEventResult(session, "pass-through", key, character, "", character, "ascii-mode", decision, false, req.Start, limit)
 	}
-	recognizer := keyEventRecognizerDecision(session, before)
 
 	switch key {
 	case "shift", "leftshift", "rightshift":
@@ -934,6 +961,11 @@ func executeKeyEvent(session *engine.Engine, req extensionCommandPayload) keyEve
 		result.Recognizer = prospective
 		return result
 	}
+	if keyEventProspectiveCalculatorInput(before, character) {
+		runes := []rune(character)
+		state := session.InputKey(runes[0])
+		return buildKeyEventResultFromState("input-calculator", key, character, "", "", "", decision, true, req.Start, limit, state)
+	}
 	if quickIndex, ok := keyEventQuickSelectIndex(session, key, character, before); ok {
 		state, err := session.Select(quickIndex)
 		if err != nil {
@@ -992,6 +1024,160 @@ func executeKeyEvent(session *engine.Engine, req extensionCommandPayload) keyEve
 		return buildKeyEventResultFromState("input", key, character, "", "", "", decision, true, req.Start, limit, state)
 	}
 	return buildKeyEventResult(session, "pass-through", key, character, "", "", "unhandled-key", decision, false, req.Start, limit)
+}
+
+func executeConfiguredShortcut(session *engine.Engine, req extensionCommandPayload, key string, character string, action string, before engine.State, decision *engine.AppContextDecision, recognizer *engine.RecognizerDecision, limit int) (keyEventResult, bool) {
+	switch action {
+	case "toggle-mode":
+		state := session.ToggleMode()
+		return buildKeyEventResultFromState("toggle-mode", key, character, "", "", "shortcut", decision, true, req.Start, limit, state), true
+	case "backspace":
+		if before.Buffer == "" {
+			return buildKeyEventResult(session, "pass-through", key, character, "", "", "empty-buffer", decision, false, req.Start, limit), true
+		}
+		return buildKeyEventResultFromState("backspace", key, character, "", "", "shortcut", decision, true, req.Start, limit, session.Backspace()), true
+	case "clear-composition":
+		if before.Buffer == "" && len(before.Candidates) == 0 {
+			return buildKeyEventResult(session, "pass-through", key, character, "", "", "empty-buffer", decision, false, req.Start, limit), true
+		}
+		return buildKeyEventResultFromState("clear", key, character, "", "", "shortcut", decision, true, req.Start, limit, session.Clear()), true
+	case "commit-selection":
+		return executeConfiguredCommitSelection(session, req, key, character, before, decision, recognizer, limit), true
+	case "move-selection-prev":
+		if len(before.Candidates) == 0 {
+			return buildKeyEventResult(session, "pass-through", key, character, "", "", "no-candidates", decision, false, req.Start, limit), true
+		}
+		return buildKeyEventResultFromStateWithNavigation("move-selection", key, character, req.Index, 0, -1, "", "", "shortcut", decision, true, req.Start, limit, before), true
+	case "move-selection-next":
+		if len(before.Candidates) == 0 {
+			return buildKeyEventResult(session, "pass-through", key, character, "", "", "no-candidates", decision, false, req.Start, limit), true
+		}
+		return buildKeyEventResultFromStateWithNavigation("move-selection", key, character, req.Index, 0, 1, "", "", "shortcut", decision, true, req.Start, limit, before), true
+	case "move-selection-first":
+		if len(before.Candidates) == 0 {
+			return buildKeyEventResult(session, "pass-through", key, character, "", "", "no-candidates", decision, false, req.Start, limit), true
+		}
+		return buildKeyEventResultFromStateWithNavigation("move-selection", key, character, 0, 0, 0, "", "", "shortcut", decision, true, req.Start, limit, before), true
+	case "move-selection-last":
+		if len(before.Candidates) == 0 {
+			return buildKeyEventResult(session, "pass-through", key, character, "", "", "no-candidates", decision, false, req.Start, limit), true
+		}
+		return buildKeyEventResultFromStateWithNavigation("move-selection", key, character, len(before.Candidates)-1, 0, 0, "", "", "shortcut", decision, true, req.Start, limit, before), true
+	case "page-prev":
+		if len(before.Candidates) <= limit {
+			return buildKeyEventResult(session, "pass-through", key, character, "", "", "single-page", decision, false, req.Start, limit), true
+		}
+		return buildKeyEventResultFromStateWithNavigation("page-candidates", key, character, req.Index, -1, 0, "", "", "shortcut", decision, true, req.Start, limit, before), true
+	case "page-next":
+		if len(before.Candidates) <= limit {
+			return buildKeyEventResult(session, "pass-through", key, character, "", "", "single-page", decision, false, req.Start, limit), true
+		}
+		return buildKeyEventResultFromStateWithNavigation("page-candidates", key, character, req.Index, 1, 0, "", "", "shortcut", decision, true, req.Start, limit, before), true
+	case "quick-select-2":
+		return executeConfiguredCandidateSelect(session, req, key, character, 1, before, decision, limit, "quick-select"), true
+	case "quick-select-3":
+		return executeConfiguredCandidateSelect(session, req, key, character, 2, before, decision, limit, "quick-select"), true
+	case "commit-first-char":
+		return executeConfiguredCandidateChar(session, req, key, character, "first", before, decision, limit), true
+	case "commit-last-char":
+		return executeConfiguredCandidateChar(session, req, key, character, "last", before, decision, limit), true
+	default:
+		if strings.HasPrefix(action, "select-candidate-") {
+			suffix := strings.TrimPrefix(action, "select-candidate-")
+			if len(suffix) == 1 && suffix[0] >= '1' && suffix[0] <= '9' {
+				if len(before.Candidates) == 0 && keyEventProspectiveCalculatorInput(before, character) {
+					return keyEventResult{}, false
+				}
+				return executeConfiguredCandidateSelect(session, req, key, character, req.Start+int(suffix[0]-'1'), before, decision, limit, "shortcut"), true
+			}
+		}
+	}
+	return keyEventResult{}, false
+}
+
+func executeConfiguredCommitSelection(session *engine.Engine, req extensionCommandPayload, key string, character string, before engine.State, decision *engine.AppContextDecision, recognizer *engine.RecognizerDecision, limit int) keyEventResult {
+	if recognizer != nil {
+		committed := before.Buffer
+		if engine.NormalizeShortcutKey(key) == "Space" || strings.EqualFold(key, "space") {
+			committed += " "
+		}
+		state := session.Clear()
+		result := buildKeyEventResultFromState("commit-recognizer-literal", key, character, committed, "", recognizer.Name, decision, true, 0, limit, state)
+		result.Recognizer = recognizer
+		return result
+	}
+	if len(before.Candidates) > 0 {
+		return executeConfiguredCandidateSelect(session, req, key, character, req.Index, before, decision, limit, "shortcut")
+	}
+	if before.Buffer != "" {
+		committed := before.Buffer
+		if engine.NormalizeShortcutKey(key) == "Space" || strings.EqualFold(key, "space") {
+			committed += " "
+		}
+		state := session.Clear()
+		return buildKeyEventResultFromState("commit-raw", key, character, committed, "", "shortcut", decision, true, 0, limit, state)
+	}
+	return buildKeyEventResult(session, "pass-through", key, character, "", character, "empty-buffer", decision, false, req.Start, limit)
+}
+
+func executeConfiguredCandidateSelect(session *engine.Engine, req extensionCommandPayload, key string, character string, index int, before engine.State, decision *engine.AppContextDecision, limit int, reason string) keyEventResult {
+	if len(before.Candidates) == 0 || index < 0 || index >= len(before.Candidates) {
+		return buildKeyEventResult(session, "pass-through", key, character, "", "", "candidate-out-of-range", decision, false, req.Start, limit)
+	}
+	state, err := session.Select(index)
+	if err != nil {
+		return buildKeyEventResult(session, "error", key, character, "", "", err.Error(), decision, true, req.Start, limit)
+	}
+	persistUserScores(session.UserScores())
+	return buildKeyEventResultFromStateWithNavigation("commit-candidate", key, character, index, 0, 0, state.Committed, "", reason, decision, true, 0, limit, state)
+}
+
+func executeConfiguredCandidateChar(session *engine.Engine, req extensionCommandPayload, key string, character string, side string, before engine.State, decision *engine.AppContextDecision, limit int) keyEventResult {
+	index := req.Index
+	if index < 0 {
+		index = 0
+	}
+	if len(before.Candidates) == 0 || index >= len(before.Candidates) {
+		return buildKeyEventResult(session, "pass-through", key, character, "", "", "candidate-out-of-range", decision, false, req.Start, limit)
+	}
+	state, err := session.SelectChar(index, side)
+	if err != nil {
+		return buildKeyEventResult(session, "error", key, character, "", "", err.Error(), decision, true, req.Start, limit)
+	}
+	return buildKeyEventResultFromState("commit-candidate-char", key, character, state.Committed, "", "shortcut", decision, true, 0, limit, state)
+}
+
+func applyKeyBindingsPayload(session *engine.Engine, req extensionCommandPayload) any {
+	bindings := req.KeyBindings
+	if len(bindings) == 0 {
+		bindings = req.Bindings
+	}
+	config := session.Config()
+	config.KeyProfile = "custom"
+	config.KeyBindings = bindings
+	config = engine.NormalizeConfig(config)
+	if len(engine.BlockingKeyBindingConflicts(config)) > 0 {
+		return map[string]any{
+			"ok":          false,
+			"error":       engine.KeyBindingConflictMessage(config),
+			"keyBindings": engine.NormalizeKeyBindings(config),
+			"bindings":    engine.NormalizeKeyBindings(config),
+			"conflicts":   engine.KeyBindingConflicts(config),
+			"config":      session.Config(),
+			"state":       session.State(),
+			"updatedAt":   session.State().UpdatedAt,
+		}
+	}
+	session.Configure(config)
+	return map[string]any{
+		"ok":          true,
+		"keyBindings": engine.NormalizeKeyBindings(config),
+		"bindings":    engine.NormalizeKeyBindings(config),
+		"conflicts":   engine.KeyBindingConflicts(config),
+		"config":      config,
+		"state":       session.State(),
+		"updatedAt":   session.State().UpdatedAt,
+	}
 }
 
 func buildKeyEventResult(session *engine.Engine, action string, key string, character string, committed string, passThrough string, reason string, decision *engine.AppContextDecision, handled bool, start int, limit int) keyEventResult {
@@ -1284,6 +1470,28 @@ func keyEventProspectiveRecognizerDecision(session *engine.Engine, state engine.
 	return &decision
 }
 
+func keyEventProspectiveCalculatorInput(state engine.State, character string) bool {
+	if strings.TrimSpace(state.Buffer) == "" || character == "" {
+		return false
+	}
+	runes := []rune(character)
+	if len(runes) != 1 || !isABIKeyEventInputRune(runes[0]) {
+		return false
+	}
+	return engine.CalculatorInputShouldCompose(state.Buffer + character)
+}
+
+func keyEventCalculatorStartInput(state engine.State, character string) bool {
+	if state.Buffer != "" || len(state.Candidates) > 0 || character == "" {
+		return false
+	}
+	runes := []rune(character)
+	if len(runes) != 1 || !isABIKeyEventInputRune(runes[0]) {
+		return false
+	}
+	return (runes[0] >= '0' && runes[0] <= '9') || runes[0] == '('
+}
+
 func keyEventRecognizerPunctuation(label string, fallback string) string {
 	label = strings.TrimSpace(label)
 	if label != "" {
@@ -1387,7 +1595,7 @@ func isABIKeyEventInputRune(r rune) bool {
 		return true
 	}
 	switch r {
-	case ';', '\'', '/', '`', '@', '.', '-', '_', ':', '?', '&', '=', '%', '+':
+	case ';', '\'', '/', '`', '@', '.', '-', '_', ':', '?', '&', '=', '%', '+', '*', '(', ')', '^':
 		return true
 	default:
 		return false
@@ -1575,6 +1783,18 @@ func executeSessionExtensionCommand(session *engine.Engine, command string, payl
 			"config":    session.Config(),
 			"updatedAt": session.State().UpdatedAt,
 		}, true
+	case "shortcuts-json", "key-bindings-json", "keybindings-json", "shortcut-conflicts-json":
+		config := session.Config()
+		return map[string]any{
+			"ok":          true,
+			"keyBindings": engine.NormalizeKeyBindings(config),
+			"bindings":    engine.NormalizeKeyBindings(config),
+			"conflicts":   engine.KeyBindingConflicts(config),
+			"config":      config,
+			"updatedAt":   session.State().UpdatedAt,
+		}, true
+	case "apply-shortcuts-json", "apply-key-bindings-json", "apply-keybindings-json":
+		return applyKeyBindingsPayload(session, req), true
 	case "recognizer-json", "recognizer-patterns-json", "rime-recognizer-patterns-json":
 		return map[string]any{
 			"ok":        true,

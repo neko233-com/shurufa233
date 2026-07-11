@@ -48,7 +48,7 @@ var builtinSkinPresets = []SkinPreset{
 func skinWithTheme(accent string, surface string, text string, muted string, border string, highlight string, theme string, radius int, paddingX int, paddingY int, rowGap int, shadow int, opacity int) Skin {
 	return Skin{
 		FontFamily:    "Microsoft YaHei UI",
-		FontSize:      15,
+		FontSize:      12,
 		Accent:        accent,
 		Surface:       surface,
 		Text:          text,

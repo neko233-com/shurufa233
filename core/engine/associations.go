@@ -6,6 +6,7 @@ import (
 )
 
 const associationWeightBase = 7600
+const contextualAssociationWeightBase = associationWeightBase - 260
 
 var builtinAssociations = map[string][]Entry{
 	"你好": {
@@ -56,6 +57,66 @@ var builtinAssociations = map[string][]Entry{
 	},
 }
 
+var contextualAssociations = []struct {
+	Keywords []string
+	Entries  []Entry
+}{
+	{
+		Keywords: []string{"输入法", "打字", "键盘", "候选"},
+		Entries: []Entry{
+			{Reading: "shurufa", Text: "输入法", Weight: contextualAssociationWeightBase},
+			{Reading: "houxuan", Text: "候选", Weight: contextualAssociationWeightBase - 20},
+			{Reading: "shangping", Text: "上屏", Weight: contextualAssociationWeightBase - 40},
+			{Reading: "kuaijiejian", Text: "快捷键", Weight: contextualAssociationWeightBase - 60},
+		},
+	},
+	{
+		Keywords: []string{"词库", "短语", "自定义", "用户词"},
+		Entries: []Entry{
+			{Reading: "ciku", Text: "词库", Weight: contextualAssociationWeightBase},
+			{Reading: "duanyu", Text: "短语", Weight: contextualAssociationWeightBase - 20},
+			{Reading: "daoru", Text: "导入", Weight: contextualAssociationWeightBase - 40},
+			{Reading: "beifen", Text: "备份", Weight: contextualAssociationWeightBase - 60},
+		},
+	},
+	{
+		Keywords: []string{"微信", "聊天", "消息", "回复"},
+		Entries: []Entry{
+			{Reading: "xiaoxi", Text: "消息", Weight: contextualAssociationWeightBase},
+			{Reading: "liaotian", Text: "聊天", Weight: contextualAssociationWeightBase - 20},
+			{Reading: "huifu", Text: "回复", Weight: contextualAssociationWeightBase - 40},
+			{Reading: "mashang", Text: "马上", Weight: contextualAssociationWeightBase - 60},
+		},
+	},
+	{
+		Keywords: []string{"会议", "安排", "日程", "时间"},
+		Entries: []Entry{
+			{Reading: "huiyi", Text: "会议", Weight: contextualAssociationWeightBase},
+			{Reading: "shijian", Text: "时间", Weight: contextualAssociationWeightBase - 20},
+			{Reading: "anpai", Text: "安排", Weight: contextualAssociationWeightBase - 40},
+			{Reading: "mingtianshangwu", Text: "明天上午", Weight: contextualAssociationWeightBase - 60},
+		},
+	},
+	{
+		Keywords: []string{"今天", "明天", "天气", "上午", "下午", "晚上"},
+		Entries: []Entry{
+			{Reading: "tianqi", Text: "天气", Weight: contextualAssociationWeightBase},
+			{Reading: "shangwu", Text: "上午", Weight: contextualAssociationWeightBase - 20},
+			{Reading: "xiawu", Text: "下午", Weight: contextualAssociationWeightBase - 40},
+			{Reading: "wanshang", Text: "晚上", Weight: contextualAssociationWeightBase - 60},
+		},
+	},
+	{
+		Keywords: []string{"谢谢", "感谢", "辛苦", "收到"},
+		Entries: []Entry{
+			{Reading: "xiexie", Text: "谢谢", Weight: contextualAssociationWeightBase},
+			{Reading: "xinkule", Text: "辛苦了", Weight: contextualAssociationWeightBase - 20},
+			{Reading: "shoudao", Text: "收到", Weight: contextualAssociationWeightBase - 40},
+			{Reading: "mashangchuli", Text: "马上处理", Weight: contextualAssociationWeightBase - 60},
+		},
+	},
+}
+
 func (e *Engine) associationCandidatesLocked(context string, limit int) []Candidate {
 	context = normalizeAssociationContext(context)
 	if context == "" || !e.config.Associations {
@@ -77,7 +138,7 @@ func (e *Engine) associationCandidatesLocked(context string, limit int) []Candid
 		if e.isRejectedLocked(entry.Reading, displayText) {
 			continue
 		}
-		key := displayText + "\x00" + entry.Reading + "\x00" + entry.Kind + "\x00" + entry.Source
+		key := displayText + "\x00" + entry.Reading
 		if seen[key] {
 			continue
 		}
@@ -132,6 +193,42 @@ func (e *Engine) associationEntriesLocked(context string) []Entry {
 				entry.Weight = associationWeightBase - index*20
 			}
 			out = append(out, entry)
+		}
+	}
+	for _, entry := range contextualAssociationEntries(context) {
+		out = append(out, entry)
+	}
+	return out
+}
+
+func contextualAssociationEntries(context string) []Entry {
+	var out []Entry
+	seenRules := map[int]bool{}
+	for index, rule := range contextualAssociations {
+		for _, keyword := range rule.Keywords {
+			if keyword == "" || !strings.Contains(context, keyword) {
+				continue
+			}
+			if seenRules[index] {
+				break
+			}
+			seenRules[index] = true
+			for entryIndex, entry := range rule.Entries {
+				if entry.Kind == "" {
+					entry.Kind = "association"
+				}
+				if entry.Source == "" {
+					entry.Source = "context-association"
+				}
+				if entry.Comment == "" {
+					entry.Comment = "上下文联想"
+				}
+				if entry.Weight <= 0 {
+					entry.Weight = contextualAssociationWeightBase - entryIndex*20
+				}
+				out = append(out, entry)
+			}
+			break
 		}
 	}
 	return out

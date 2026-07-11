@@ -288,6 +288,15 @@ func executeExtensionCommand(id uint64, command string, payload string) any {
 		if err != nil {
 			return errorEnvelope(err.Error())
 		}
+		if len(engine.BlockingKeyBindingConflicts(config)) > 0 {
+			return map[string]any{
+				"ok":        false,
+				"error":     engine.KeyBindingConflictMessage(config),
+				"conflicts": engine.KeyBindingConflicts(config),
+				"config":    loadConfig(),
+				"updatedAt": time.Now().UTC(),
+			}
+		}
 		return applyConfigEnvelope(config)
 	case "schema-presets-json", "schemas", "schemas-json":
 		config := loadConfig()

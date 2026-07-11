@@ -21,7 +21,7 @@ var builtinSchemaPresets = []SchemaPreset{
 		MinusEqualPageKeys:    true,
 		CommaPeriodPageKeys:   false,
 		CandidateLayout:       "horizontal",
-		ShowCandidateComments: true,
+		ShowCandidateComments: false,
 	},
 	{
 		ID:                     "rime-luna-pinyin",
@@ -108,7 +108,29 @@ var builtinSchemaPresets = []SchemaPreset{
 		MinusEqualPageKeys:    true,
 		CommaPeriodPageKeys:   false,
 		CandidateLayout:       "horizontal",
-		ShowCandidateComments: true,
+		ShowCandidateComments: false,
+	},
+	{
+		ID:                    "double-pinyin-ziranma",
+		Name:                  "自然码双拼",
+		Kind:                  "double-pinyin",
+		RimeID:                "double_pinyin_ziranma",
+		Description:           "自然码双拼键位，兼容主流输入法的经典双拼方案，无零声母键。",
+		Tags:                  []string{"ziranma", "natural-code", "double-pinyin"},
+		Language:              "zh-CN",
+		DoublePinyin:          true,
+		DoublePinyinScheme:    "ziranma",
+		FuzzyInitials:         []string{"zh=z", "ch=c", "sh=s"},
+		Punctuation:           "full",
+		KeyProfile:            "wechat",
+		ShiftToggleMode:       true,
+		SemicolonQuickSelect:  true,
+		QuoteQuickSelect:      true,
+		BracketPageKeys:       true,
+		MinusEqualPageKeys:    true,
+		CommaPeriodPageKeys:   false,
+		CandidateLayout:       "horizontal",
+		ShowCandidateComments: false,
 	},
 	{
 		ID:                    "double-pinyin-sogou",
@@ -129,7 +151,7 @@ var builtinSchemaPresets = []SchemaPreset{
 		MinusEqualPageKeys:    true,
 		CommaPeriodPageKeys:   false,
 		CandidateLayout:       "horizontal",
-		ShowCandidateComments: true,
+		ShowCandidateComments: false,
 	},
 }
 
@@ -163,6 +185,8 @@ func NormalizeSchemaID(id string) string {
 		return "rime-ice-pinyin"
 	case "xiaohe", "flypy", "double-pinyin-flypy", "double_pinyin_flypy", "double-pinyin-xiaohe":
 		return "double-pinyin-xiaohe"
+	case "ziranma", "zrm", "natural", "natural-code", "double-pinyin-ziranma", "double_pinyin_ziranma":
+		return "double-pinyin-ziranma"
 	case "microsoft", "ms", "double-pinyin-ms", "double-pinyin-microsoft":
 		return "double-pinyin-microsoft"
 	case "sogou", "double-pinyin-sogou":
@@ -186,6 +210,8 @@ func DeriveSchemaID(config Config) string {
 		switch normalizeDoublePinyinScheme(config.DoublePinyinScheme) {
 		case "microsoft":
 			return "double-pinyin-microsoft"
+		case "ziranma":
+			return "double-pinyin-ziranma"
 		default:
 			return "double-pinyin-xiaohe"
 		}
@@ -229,6 +255,14 @@ func ApplySchemaPresetConfig(config Config, id string) (Config, bool) {
 		config.CandidateLayout = preset.CandidateLayout
 	}
 	config.ShowCandidateComments = preset.ShowCandidateComments
+	// Product profiles are an experience preset, not only a spelling table.
+	// Switching back from a Rime-oriented profile must immediately restore the
+	// Microsoft/WeChat strip contract instead of retaining a tall legacy page.
+	if NormalizeKeyProfile(preset.KeyProfile) != "rime" {
+		config.CandidatePageSize = 7
+		config.CandidateWindowMode = "win11"
+		config.ShowCandidateComments = false
+	}
 	if preset.DictionarySourcePreset != "" {
 		config.Update.SourcePreset = preset.DictionarySourcePreset
 	}

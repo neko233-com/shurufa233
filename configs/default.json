@@ -4,7 +4,7 @@
   "candidatePageSize": 7,
   "candidateLayout": "horizontal",
   "candidateWindowMode": "win11",
-  "showCandidateComments": true,
+  "showCandidateComments": false,
   "performanceMode": "balanced",
   "emojiCandidates": true,
   "fuzzyInitials": ["zh=z", "ch=c", "sh=s"],
@@ -30,7 +30,7 @@
   "commaPeriodPageKeys": false,
   "skin": {
     "fontFamily": "Microsoft YaHei UI",
-    "fontSize": 15,
+    "fontSize": 12,
     "accent": "#2563eb",
     "surface": "#ffffff",
     "text": "#111827",

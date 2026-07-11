@@ -32,6 +32,7 @@ var defaultEntries = []Entry{
 	{Reading: "shurufa", Text: "输入法", Weight: 13000},
 	{Reading: "weixin", Text: "微信", Weight: 11500},
 	{Reading: "doubao", Text: "豆包", Weight: 11000},
+	{Reading: "judawubi", Text: "巨大无比", Weight: 14800},
 	{Reading: "rime", Text: "中州韵", Weight: 5000},
 	{Reading: "zhongwen", Text: "中文", Weight: 9500},
 	{Reading: "yingwen", Text: "英文", Weight: 8500},

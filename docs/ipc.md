@@ -67,6 +67,12 @@ preedit display, lookup resolves the imported Rime symbol code without the
 prefix, and the candidate list is filtered to symbol, emoji, kaomoji, and
 agent-style entries so ordinary pinyin words do not leak into symbol mode.
 
+It also accepts local arithmetic expressions made of numbers, decimals,
+parentheses, and `+ - * / % ^`. Expressions such as `1+2*3`, `(1+2)*3=`, and
+`8/2` return `kind=dynamic`, `source=builtin-calculator` result candidates.
+The parser is local-only, length-limited, and rejects unsupported characters or
+division by zero instead of evaluating arbitrary code.
+
 The settings UI uses this IPC directly in development. A Wails v3 shell can host the same React bundle and call the same daemon API or proxy these methods through its Go backend.
 
 `POST /engine/associate` body:
@@ -75,12 +81,13 @@ The settings UI uses this IPC directly in development. A Wails v3 shell can host
 { "context": "你好", "limit": 7 }
 ```
 
-It clears active composition and returns next-word association candidates in the
-normal `State` shape. Rows use `kind=association`, carry a `source`, and are
-already converted through the configured `script`. The same association path is
-returned after `select` when the committed text has follow-up suggestions, so a
-native candidate strip can show WeChat-style post-commit choices without adding
-platform-specific prediction logic.
+It clears active composition and returns next-word or local context association
+candidates in the normal `State` shape. Rows use `kind=association`, carry a
+`source` such as `builtin-association` or `context-association`, and are already
+converted through the configured `script`. The same association path is returned
+after `select` when the committed text has follow-up suggestions, so a native
+candidate strip can show WeChat-style post-commit choices and offline
+keyword-aware follow-ups without adding platform-specific prediction logic.
 
 `GET /config` and `PUT /config` include `punctuation`, which is normalized to
 `full` or `half`. `full` is the default Chinese punctuation mode; `half` keeps
@@ -107,19 +114,25 @@ It defaults to `true`; disabling it keeps selection behavior traditional and
 returns an empty candidate page after commit.
 
 They also include `doublePinyin` and `doublePinyinScheme`. The scheme is
-normalized to `xiaohe` or `microsoft`; old configs with only
-`"doublePinyin": true` continue to use Xiaohe. The Microsoft scheme is kept
-explicit because its `;` key is an `ing` final, so native glue must treat it as
-input code instead of the second-candidate shortcut while that scheme is active.
+normalized to `xiaohe`, `ziranma`, or `microsoft`; old configs with only
+`"doublePinyin": true` continue to use Xiaohe. The Natural Code scheme is
+available as `double-pinyin-ziranma` and keeps the no-zero-initial-key behavior
+used by mainstream Chinese IMEs. The Microsoft scheme is kept explicit because
+its `;` key is an `ing` final, so native glue must treat it as input code
+instead of the second-candidate shortcut while that scheme is active.
 
 They also include key behavior fields: `keyProfile`, `shiftToggleMode`,
 `semicolonQuickSelect`, `quoteQuickSelect`, `bracketPageKeys`,
-`minusEqualPageKeys`, and `commaPeriodPageKeys`. `keyProfile=wechat` and
-`keyProfile=microsoft` keep the default WeChat/Microsoft feel: Shift toggles
-Chinese/English, `;` and `'` select the second and third candidates, and `[]`
-plus `-=` page candidates. `keyProfile=rime` keeps Shift and bracket/minus-equal
-paging while enabling `,`/`.` Rime-style paging and disabling semicolon/quote
-quick select. `keyProfile=custom` honors each boolean switch directly. The
+`minusEqualPageKeys`, `commaPeriodPageKeys`, and `keyBindings`.
+`keyProfile=wechat` and `keyProfile=microsoft` keep the default
+WeChat/Microsoft feel: Shift toggles Chinese/English, `;` and `'` select the
+second and third candidates, and `[]` plus `-=` page candidates.
+`keyProfile=rime` keeps Shift and bracket/minus-equal paging while enabling
+`,`/`.` Rime-style paging and disabling semicolon/quote quick select.
+`keyProfile=custom` honors each boolean switch directly. `keyBindings` stores
+the editable per-action shortcuts used by daemon, C ABI, settings UI, and
+Windows TSF; `GET /shortcuts`, `PUT /shortcuts`, and `POST /shortcuts/validate`
+return normalized bindings plus conflict metadata before changes are saved. The
 Windows TSF layer reads these values from the shared config file, so shortcut
 changes do not require new C++ builds.
 
@@ -475,6 +488,13 @@ and the selected config id:
   "selected": "wechat-pinyin",
   "schemas": [
     {
+      "id": "double-pinyin-ziranma",
+      "name": "自然码双拼",
+      "kind": "double-pinyin",
+      "doublePinyin": true,
+      "doublePinyinScheme": "ziranma"
+    },
+    {
       "id": "double-pinyin-microsoft",
       "name": "微软双拼",
       "kind": "double-pinyin",
@@ -486,7 +506,8 @@ and the selected config id:
 }
 ```
 
-`POST /schemas/apply` accepts `{"id":"rime-ice-pinyin"}` and expands the preset
+`POST /schemas/apply` accepts `{"id":"rime-ice-pinyin"}` or
+`{"id":"double-pinyin-ziranma"}` and expands the preset
 into the ordinary shared config fields, then saves `config.json` and refreshes
 active sessions. Native code only needs to keep reading the same normalized
 `doublePinyin`, `doublePinyinScheme`, `candidateLayout`, punctuation, and skin

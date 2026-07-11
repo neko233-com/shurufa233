@@ -646,6 +646,18 @@ func TestMergeEntriesKeepsHighestWeight(t *testing.T) {
 	}
 }
 
+func TestCompactEntriesKeepsCommonDailyPhraseGroups(t *testing.T) {
+	entries := []engine.Entry{
+		{Reading: "gaopin", Text: "高频", Weight: 200000},
+		{Reading: "nihaoma", Text: "你好吗", Weight: 25000},
+	}
+
+	got := compactEntries(entries, 1)
+	if len(got) != 1 || got[0].Reading != "nihaoma" {
+		t.Fatalf("compact entries = %#v, want daily phrase group", got)
+	}
+}
+
 func writeFile(t *testing.T, path string, data string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

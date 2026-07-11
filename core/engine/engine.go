@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
@@ -18,13 +19,17 @@ type Engine struct {
 	mu            sync.RWMutex
 	config        Config
 	dict          map[string][]Entry
-	prefix        map[string][]Entry
-	abbr          map[string][]Entry
+	prefix        map[string][]string
+	abbr          map[string][]string
 	user          map[string]int
 	rejects       map[string]Entry
 	pins          map[string]Entry
 	buffer        string
 	maxReadingLen int
+	cachedBuffer  string
+	cachedMode    string
+	cachedEntries []Candidate
+	cacheValid    bool
 }
 
 const maxPrefixEntries = 256
@@ -32,8 +37,9 @@ const fuzzyCandidatePenalty = 120
 const fuzzyVariantLimit = 64
 const doublePinyinVariantLimit = 64
 const abbreviationCandidatePenalty = 600
-const segmentedCandidatePenalty = 9000
+const segmentedCandidatePenalty = 600
 const segmentedPiecePenalty = 220
+const separatorCandidateWeight = 500000000
 const dynamicCandidateWeightBase = 8800
 const pinnedCandidateBonus = 1000000
 
@@ -46,7 +52,7 @@ func DefaultConfig() Config {
 		CandidatePageSize:     7,
 		CandidateLayout:       "horizontal",
 		CandidateWindowMode:   "win11",
-		ShowCandidateComments: true,
+		ShowCandidateComments: false,
 		PerformanceMode:       "balanced",
 		EmojiCandidates:       true,
 		FuzzyInitials: []string{
@@ -72,7 +78,7 @@ func DefaultConfig() Config {
 		AppRules:             BuiltinAppRules(),
 		Skin: Skin{
 			FontFamily:    "Microsoft YaHei UI",
-			FontSize:      15,
+			FontSize:      12,
 			Accent:        "#2563eb",
 			Surface:       "#ffffff",
 			Text:          "#111827",
@@ -108,8 +114,8 @@ func New(config Config) *Engine {
 	e := &Engine{
 		config:  config,
 		dict:    make(map[string][]Entry),
-		prefix:  make(map[string][]Entry),
-		abbr:    make(map[string][]Entry),
+		prefix:  make(map[string][]string),
+		abbr:    make(map[string][]string),
 		user:    make(map[string]int),
 		rejects: make(map[string]Entry),
 		pins:    make(map[string]Entry),
@@ -123,6 +129,7 @@ func (e *Engine) Configure(config Config) {
 	defer e.mu.Unlock()
 	config = NormalizeConfig(config)
 	e.config = config
+	e.invalidateCandidateCacheLocked()
 }
 
 func NormalizeConfig(config Config) Config {
@@ -157,6 +164,7 @@ func NormalizeConfig(config Config) Config {
 	}
 	config = NormalizeSchemaConfig(config)
 	config = NormalizeKeyBehavior(config)
+	config.KeyBindings = NormalizeKeyBindings(config)
 	config.Skin = NormalizeSkin(config.Skin)
 	config.RecognizerPatterns = NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = NormalizeAppRules(config.AppRules)
@@ -273,31 +281,31 @@ func (e *Engine) AddEntries(entries []Entry) {
 
 func (e *Engine) addEntriesLocked(entries []Entry) {
 	for _, entry := range entries {
-		entry.Reading = normalizeReading(entry.Reading)
-		if entry.Reading == "" || entry.Text == "" {
-			continue
-		}
-		merged := false
-		for i := range e.dict[entry.Reading] {
-			if e.dict[entry.Reading][i].Text == entry.Text &&
-				e.dict[entry.Reading][i].Kind == entry.Kind &&
-				e.dict[entry.Reading][i].Source == entry.Source {
-				if entry.Weight > e.dict[entry.Reading][i].Weight {
-					e.dict[entry.Reading][i].Weight = entry.Weight
-				}
-				if e.dict[entry.Reading][i].Comment == "" && entry.Comment != "" {
-					e.dict[entry.Reading][i].Comment = entry.Comment
-				}
-				merged = true
-				break
-			}
-		}
-		if !merged {
-			e.dict[entry.Reading] = append(e.dict[entry.Reading], entry)
-		}
+		e.addEntryLocked(entry)
 	}
 	e.rebuildPrefixLocked()
 	e.sortIndexLocked()
+}
+
+func (e *Engine) addEntryLocked(entry Entry) {
+	entry.Reading = normalizeReading(entry.Reading)
+	if entry.Reading == "" || entry.Text == "" {
+		return
+	}
+	for i := range e.dict[entry.Reading] {
+		if e.dict[entry.Reading][i].Text == entry.Text &&
+			e.dict[entry.Reading][i].Kind == entry.Kind &&
+			e.dict[entry.Reading][i].Source == entry.Source {
+			if entry.Weight > e.dict[entry.Reading][i].Weight {
+				e.dict[entry.Reading][i].Weight = entry.Weight
+			}
+			if e.dict[entry.Reading][i].Comment == "" && entry.Comment != "" {
+				e.dict[entry.Reading][i].Comment = entry.Comment
+			}
+			return
+		}
+	}
+	e.dict[entry.Reading] = append(e.dict[entry.Reading], entry)
 }
 
 func (e *Engine) AddUserPhrases(entries []Entry) []Entry {
@@ -636,66 +644,208 @@ func pinKey(reading string, text string) string {
 }
 
 func (e *Engine) rebuildPrefixLocked() {
-	e.prefix = make(map[string][]Entry, len(e.dict)*2)
-	e.abbr = make(map[string][]Entry, len(e.dict))
+	type rankedReading struct {
+		reading string
+		weight  int
+	}
+	prefixRanks := make(map[string][]rankedReading, len(e.dict)/2)
+	abbrRanks := make(map[string][]rankedReading, len(e.dict)/3)
 	e.maxReadingLen = 0
 	for reading, entries := range e.dict {
 		if len(reading) > e.maxReadingLen {
 			e.maxReadingLen = len(reading)
 		}
-		abbreviations := abbreviationsForReading(reading)
+		bestWeight := 0
 		for _, entry := range entries {
-			for i := 1; i <= len(reading); i++ {
-				prefix := reading[:i]
-				if len(e.prefix[prefix]) < maxPrefixEntries {
-					e.prefix[prefix] = append(e.prefix[prefix], entry)
-				}
-			}
-			for _, abbr := range abbreviations {
-				if len(e.abbr[abbr]) < maxPrefixEntries {
-					e.abbr[abbr] = append(e.abbr[abbr], entry)
-				}
+			if entry.Weight > bestWeight {
+				bestWeight = entry.Weight
 			}
 		}
+		ranked := rankedReading{reading: reading, weight: bestWeight}
+		for i := 1; i <= len(reading); i++ {
+			prefix := reading[:i]
+			prefixRanks[prefix] = append(prefixRanks[prefix], ranked)
+		}
+		abbreviations := abbreviationsForReading(reading)
+		for _, abbr := range abbreviations {
+			abbrRanks[abbr] = append(abbrRanks[abbr], ranked)
+		}
 	}
+	buildIndex := func(ranks map[string][]rankedReading) map[string][]string {
+		index := make(map[string][]string, len(ranks))
+		for key, items := range ranks {
+			sort.Slice(items, func(i, j int) bool {
+				if items[i].weight != items[j].weight {
+					return items[i].weight > items[j].weight
+				}
+				return items[i].reading < items[j].reading
+			})
+			if len(items) > maxPrefixEntries {
+				items = items[:maxPrefixEntries]
+			}
+			readings := make([]string, len(items))
+			for i, item := range items {
+				readings[i] = item.reading
+			}
+			index[key] = readings
+		}
+		return index
+	}
+	e.prefix = buildIndex(prefixRanks)
+	e.abbr = buildIndex(abbrRanks)
+	e.invalidateCandidateCacheLocked()
 }
 
 func (e *Engine) sortIndexLocked() {
 	for key := range e.dict {
 		sortEntries(e.dict[key])
 	}
-	for key := range e.prefix {
-		sortEntries(e.prefix[key])
-	}
-	for key := range e.abbr {
-		sortEntries(e.abbr[key])
-	}
 }
 
 func (e *Engine) LoadDictionary(reader io.Reader) (DictionaryFile, error) {
-	file, err := DecodeDictionary(reader)
+	file, entries, err := decodeDictionaryIndex(reader)
 	if err != nil {
 		return file, err
 	}
-	e.AddEntries(file.Entries)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for reading, loaded := range entries {
+		if len(e.dict[reading]) == 0 {
+			e.dict[reading] = loaded
+			continue
+		}
+		for _, entry := range loaded {
+			e.addEntryLocked(entry)
+		}
+	}
+	e.rebuildPrefixLocked()
+	e.sortIndexLocked()
 	return file, nil
 }
 
 func DecodeDictionary(reader io.Reader) (DictionaryFile, error) {
 	var file DictionaryFile
-	data, err := io.ReadAll(reader)
+	jsonReader, closeReader, err := dictionaryJSONReader(reader)
 	if err != nil {
 		return file, err
 	}
-	data, err = decompressDictionaryData(data)
-	if err != nil {
-		return file, err
+	if closeReader != nil {
+		defer closeReader.Close()
 	}
-	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
-	if err := json.Unmarshal(data, &file); err != nil {
+	if err := json.NewDecoder(jsonReader).Decode(&file); err != nil {
 		return file, err
 	}
 	return file, nil
+}
+
+// decodeDictionaryIndex parses entries directly into their reading buckets.
+// Large production dictionaries therefore never coexist with a second giant
+// flat []Entry copy while the engine index is being built.
+func decodeDictionaryIndex(reader io.Reader) (DictionaryFile, map[string][]Entry, error) {
+	var file DictionaryFile
+	jsonReader, closeReader, err := dictionaryJSONReader(reader)
+	if err != nil {
+		return file, nil, err
+	}
+	if closeReader != nil {
+		defer closeReader.Close()
+	}
+	decoder := json.NewDecoder(jsonReader)
+	token, err := decoder.Token()
+	if err != nil {
+		return file, nil, err
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+		return file, nil, errors.New("dictionary root must be an object")
+	}
+	entries := make(map[string][]Entry)
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return file, nil, err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return file, nil, errors.New("dictionary field name must be a string")
+		}
+		switch key {
+		case "language":
+			err = decoder.Decode(&file.Language)
+		case "version":
+			err = decoder.Decode(&file.Version)
+		case "entries":
+			var start json.Token
+			start, err = decoder.Token()
+			if err == nil {
+				if delimiter, ok := start.(json.Delim); !ok || delimiter != '[' {
+					err = errors.New("dictionary entries must be an array")
+				}
+			}
+			for err == nil && decoder.More() {
+				var entry Entry
+				if err = decoder.Decode(&entry); err != nil {
+					break
+				}
+				entry.Reading = normalizeReading(entry.Reading)
+				if entry.Reading == "" || entry.Text == "" {
+					continue
+				}
+				bucket := entries[entry.Reading]
+				merged := false
+				for i := range bucket {
+					if bucket[i].Text == entry.Text && bucket[i].Kind == entry.Kind &&
+						bucket[i].Source == entry.Source {
+						if entry.Weight > bucket[i].Weight {
+							bucket[i].Weight = entry.Weight
+						}
+						if bucket[i].Comment == "" && entry.Comment != "" {
+							bucket[i].Comment = entry.Comment
+						}
+						merged = true
+						break
+					}
+				}
+				if !merged {
+					bucket = append(bucket, entry)
+				}
+				entries[entry.Reading] = bucket
+			}
+			if err == nil {
+				_, err = decoder.Token()
+			}
+		default:
+			var ignored any
+			err = decoder.Decode(&ignored)
+		}
+		if err != nil {
+			return file, nil, err
+		}
+	}
+	if _, err := decoder.Token(); err != nil {
+		return file, nil, err
+	}
+	return file, entries, nil
+}
+
+func dictionaryJSONReader(reader io.Reader) (io.Reader, io.Closer, error) {
+	buffered := bufio.NewReader(reader)
+	header, _ := buffered.Peek(2)
+	var jsonReader *bufio.Reader
+	var closeReader io.Closer
+	if len(header) == 2 && header[0] == 0x1f && header[1] == 0x8b {
+		gzipReader, err := gzip.NewReader(buffered)
+		if err != nil {
+			return nil, nil, err
+		}
+		closeReader = gzipReader
+		jsonReader = bufio.NewReader(gzipReader)
+	} else {
+		jsonReader = buffered
+	}
+	if bom, _ := jsonReader.Peek(3); bytes.Equal(bom, []byte{0xef, 0xbb, 0xbf}) {
+		_, _ = jsonReader.Discard(3)
+	}
+	return jsonReader, closeReader, nil
 }
 
 func decompressDictionaryData(data []byte) ([]byte, error) {
@@ -715,6 +865,7 @@ func (e *Engine) InputKey(key rune) State {
 	defer e.mu.Unlock()
 	if isRecognizerInputRune(key) {
 		e.buffer += normalizeInputRuneForBuffer(key)
+		e.invalidateCandidateCacheLocked()
 	}
 	return e.stateLocked("")
 }
@@ -725,6 +876,7 @@ func (e *Engine) Backspace() State {
 	if e.buffer != "" {
 		runes := []rune(e.buffer)
 		e.buffer = string(runes[:len(runes)-1])
+		e.invalidateCandidateCacheLocked()
 	}
 	return e.stateLocked("")
 }
@@ -733,6 +885,7 @@ func (e *Engine) Clear() State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.buffer = ""
+	e.invalidateCandidateCacheLocked()
 	return e.stateLocked("")
 }
 
@@ -741,6 +894,7 @@ func (e *Engine) SetMode(mode string) State {
 	defer e.mu.Unlock()
 	e.config.Mode = normalizeMode(mode)
 	e.buffer = ""
+	e.invalidateCandidateCacheLocked()
 	return e.stateLocked("")
 }
 
@@ -753,6 +907,7 @@ func (e *Engine) ToggleMode() State {
 		e.config.Mode = "en"
 	}
 	e.buffer = ""
+	e.invalidateCandidateCacheLocked()
 	return e.stateLocked("")
 }
 
@@ -760,6 +915,7 @@ func (e *Engine) Preview(input string) State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.buffer = e.normalizePreviewBufferLocked(input)
+	e.invalidateCandidateCacheLocked()
 	return e.stateLocked("")
 }
 
@@ -773,6 +929,7 @@ func (e *Engine) Select(index int) (State, error) {
 	selected := candidates[index]
 	e.user[selected.Reading+"|"+selected.Text] += 25
 	e.buffer = ""
+	e.invalidateCandidateCacheLocked()
 	return e.stateLocked(selected.Text), nil
 }
 
@@ -780,6 +937,7 @@ func (e *Engine) Associate(context string, limit int) State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.buffer = ""
+	e.invalidateCandidateCacheLocked()
 	return e.associationStateLocked(context, limit)
 }
 
@@ -795,6 +953,7 @@ func (e *Engine) SelectChar(index int, side string) (State, error) {
 		return e.stateLocked(""), err
 	}
 	e.buffer = ""
+	e.invalidateCandidateCacheLocked()
 	return e.stateLocked(text), nil
 }
 
@@ -822,6 +981,7 @@ func (e *Engine) RejectCandidate(index int) (State, Entry, error) {
 	}
 	e.rejects[rejectKey(entry.Reading, entry.Text)] = entry
 	delete(e.user, entry.Reading+"|"+entry.Text)
+	e.invalidateCandidateCacheLocked()
 	return e.stateLocked(""), entry, nil
 }
 
@@ -849,12 +1009,13 @@ func (e *Engine) PinCandidate(index int) (State, Entry, error) {
 	}
 	e.pins[pinKey(entry.Reading, entry.Text)] = entry
 	delete(e.rejects, rejectKey(entry.Reading, entry.Text))
+	e.invalidateCandidateCacheLocked()
 	return e.stateLocked(""), entry, nil
 }
 
 func (e *Engine) State() State {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.stateLocked("")
 }
 
@@ -883,6 +1044,7 @@ func (e *Engine) ImportUserScores(scores map[string]int) {
 		}
 		e.user[key] = value
 	}
+	e.invalidateCandidateCacheLocked()
 }
 
 func (e *Engine) ReplaceUserScores(scores map[string]int) {
@@ -895,12 +1057,14 @@ func (e *Engine) ReplaceUserScores(scores map[string]int) {
 		}
 		e.user[key] = value
 	}
+	e.invalidateCandidateCacheLocked()
 }
 
 func (e *Engine) DeleteUserScore(key string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	delete(e.user, key)
+	e.invalidateCandidateCacheLocked()
 }
 
 func (e *Engine) UserPins() []Entry {
@@ -928,6 +1092,7 @@ func (e *Engine) AddUserPins(entries []Entry) []Entry {
 		e.pins[pinKey(entry.Reading, entry.Text)] = entry
 		delete(e.rejects, rejectKey(entry.Reading, entry.Text))
 	}
+	e.invalidateCandidateCacheLocked()
 	return normalized
 }
 
@@ -940,6 +1105,7 @@ func (e *Engine) ReplaceUserPins(entries []Entry) []Entry {
 		e.pins[pinKey(entry.Reading, entry.Text)] = entry
 		delete(e.rejects, rejectKey(entry.Reading, entry.Text))
 	}
+	e.invalidateCandidateCacheLocked()
 	return normalized
 }
 
@@ -950,9 +1116,11 @@ func (e *Engine) DeleteUserPin(reading string, text string) {
 	defer e.mu.Unlock()
 	if reading == "" && text == "" {
 		e.pins = make(map[string]Entry)
+		e.invalidateCandidateCacheLocked()
 		return
 	}
 	delete(e.pins, pinKey(reading, text))
+	e.invalidateCandidateCacheLocked()
 }
 
 func (e *Engine) UserRejects() []Entry {
@@ -980,6 +1148,7 @@ func (e *Engine) AddUserRejects(entries []Entry) []Entry {
 		e.rejects[rejectKey(entry.Reading, entry.Text)] = entry
 		delete(e.user, entry.Reading+"|"+entry.Text)
 	}
+	e.invalidateCandidateCacheLocked()
 	return normalized
 }
 
@@ -992,6 +1161,7 @@ func (e *Engine) ReplaceUserRejects(entries []Entry) []Entry {
 		e.rejects[rejectKey(entry.Reading, entry.Text)] = entry
 		delete(e.user, entry.Reading+"|"+entry.Text)
 	}
+	e.invalidateCandidateCacheLocked()
 	return normalized
 }
 
@@ -1002,9 +1172,11 @@ func (e *Engine) DeleteUserReject(reading string, text string) {
 	defer e.mu.Unlock()
 	if reading == "" && text == "" {
 		e.rejects = make(map[string]Entry)
+		e.invalidateCandidateCacheLocked()
 		return
 	}
 	delete(e.rejects, rejectKey(reading, text))
+	e.invalidateCandidateCacheLocked()
 }
 
 func (e *Engine) stateLocked(committed string) State {
@@ -1012,10 +1184,11 @@ func (e *Engine) stateLocked(committed string) State {
 	if len(candidates) == 0 && e.config.Associations && strings.TrimSpace(committed) != "" {
 		candidates = e.associationCandidatesLocked(committed, e.config.MaxCandidates)
 	}
+	candidateSnapshot := append([]Candidate(nil), candidates...)
 	return State{
 		Buffer:     e.buffer,
 		Mode:       normalizeMode(e.config.Mode),
-		Candidates: candidates,
+		Candidates: candidateSnapshot,
 		Committed:  committed,
 		UpdatedAt:  time.Now().UTC(),
 	}
@@ -1031,6 +1204,26 @@ func (e *Engine) associationStateLocked(context string, limit int) State {
 }
 
 func (e *Engine) candidatesLocked() []Candidate {
+	mode := normalizeMode(e.config.Mode)
+	if e.cacheValid && e.cachedBuffer == e.buffer && e.cachedMode == mode {
+		return e.cachedEntries
+	}
+	candidates := e.computeCandidatesLocked()
+	e.cachedBuffer = e.buffer
+	e.cachedMode = mode
+	e.cachedEntries = candidates
+	e.cacheValid = true
+	return candidates
+}
+
+func (e *Engine) invalidateCandidateCacheLocked() {
+	e.cacheValid = false
+	e.cachedBuffer = ""
+	e.cachedMode = ""
+	e.cachedEntries = nil
+}
+
+func (e *Engine) computeCandidatesLocked() []Candidate {
 	if e.buffer == "" {
 		return nil
 	}
@@ -1124,6 +1317,11 @@ func (e *Engine) normalizePreviewBufferLocked(input string) string {
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return ""
+	}
+	if CalculatorInputShouldCompose(input) {
+		if normalized, ok := normalizeCalculatorInput(input); ok {
+			return normalized
+		}
 	}
 	if e.recognizerPatternNameLocked(input) != "" {
 		return input
@@ -1252,6 +1450,9 @@ func recognizerComment(name string) string {
 }
 
 func (e *Engine) lookupLocked(reading string) []Entry {
+	if entries := calculatorEntriesForInput(reading); len(entries) > 0 {
+		return entries
+	}
 	inputCode := normalizeInputCode(reading)
 	if code, ok := specialResourcePrefixCode(inputCode); ok {
 		entries := e.lookupSpecialResourcePrefixLocked(code)
@@ -1272,8 +1473,14 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 			if penalty > 0 {
 				next.Weight = max(1, next.Weight-penalty)
 			}
-			key := next.Text + "\x00" + next.Kind + "\x00" + next.Source
+			// The same visible word can come from the built-in bootstrap table,
+			// the production dictionary, and a user import. Keep only the best
+			// instance so scarce candidate slots are not wasted on duplicates.
+			key := next.Text
 			if previous, ok := seen[key]; ok {
+				if next.Source == "segmenter" && exact[previous].Source != "segmenter" {
+					continue
+				}
 				if next.Weight > exact[previous].Weight {
 					exact[previous] = next
 				} else if exact[previous].Comment == "" && next.Comment != "" {
@@ -1285,9 +1492,15 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 			exact = append(exact, next)
 		}
 	}
+	appendIndexedEntries := func(indexedReadings []string, penalty int) {
+		for _, indexedReading := range indexedReadings {
+			appendEntries(e.dict[indexedReading], penalty)
+		}
+	}
 
 	appendEntries(dynamicEntriesForInput(collapsedReading, nowFunc()), 0)
 	if separated, weight := e.segmentSeparatedLocked(inputCode); separated != "" {
+		weight = max(weight, separatorCandidateWeight)
 		appendEntries([]Entry{{
 			Reading: collapsedReading,
 			Text:    separated,
@@ -1305,17 +1518,100 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 		}
 		if len(exactEntries) > 0 {
 			segmented, weight := e.segmentBestLocked(item.reading)
-			if segmented == "" || segmented == collapsedReading {
-				continue
+			if segmented != "" && segmented != collapsedReading {
+				bestExact := 1
+				for _, entry := range exactEntries {
+					bestExact = max(bestExact, entry.Weight)
+				}
+				weight = min(weight, bestExact+max(500, bestExact/20))
+				appendEntries([]Entry{{
+					Reading: item.reading,
+					Text:    segmented,
+					Kind:    "phrase",
+					Source:  "segmenter",
+					Comment: "整句",
+					Weight:  weight,
+				}}, item.penalty)
 			}
-			appendEntries([]Entry{{
-				Reading: item.reading,
-				Text:    segmented,
-				Kind:    "phrase",
-				Source:  "segmenter",
-				Comment: "整句",
-				Weight:  weight,
-			}}, item.penalty)
+		}
+	}
+	if len(exact) > 0 {
+		maxCandidates := e.config.MaxCandidates
+		if maxCandidates <= 0 {
+			maxCandidates = DefaultConfig().MaxCandidates
+		}
+		bestExactWeight := 1
+		for _, entry := range exact {
+			if entry.Weight > bestExactWeight {
+				bestExactWeight = entry.Weight
+			}
+		}
+		// Microsoft/WeChat-style strips remain useful even when a reading has
+		// only a few exact rows. Fill the rest with high-quality phrase
+		// completions, capped below the best exact word so typing "nihao" does
+		// not collapse to a sparse four-item strip.
+		appendCompletions := func() bool {
+			for _, indexedReading := range e.prefix[collapsedReading] {
+				for _, entry := range e.dict[indexedReading] {
+					completion := entry
+					completion.Weight = min(completion.Weight, max(1, bestExactWeight-100))
+					if completion.Comment == "" {
+						completion.Comment = "联想"
+					}
+					appendEntries([]Entry{completion}, 0)
+					if len(exact) >= maxCandidates {
+						return true
+					}
+				}
+			}
+			return false
+		}
+		if appendCompletions() {
+			return exact
+		}
+
+		// When an exact phrase exists, Microsoft Pinyin falls back to useful
+		// partial commits (for example “巨大”, then “据/局/具”) instead of filling
+		// the strip with every possible character-beam sentence. Mirror that
+		// behavior: explicit apostrophe groups use their first group, continuous
+		// pinyin uses its first syllable, and both may then expose first-syllable
+		// characters. All partials share a score so stable length ordering keeps
+		// a real prefix phrase before isolated characters.
+		parts := separatedInputParts(inputCode)
+		if len(parts) <= 1 {
+			parts = segmentPinyinReading(collapsedReading)
+		}
+		var partialReadings []string
+		if len(parts) > 0 {
+			partialReadings = append(partialReadings, parts[0])
+			if syllables := segmentPinyinReading(parts[0]); len(syllables) > 0 && syllables[0] != parts[0] {
+				partialReadings = append(partialReadings, syllables[0])
+			}
+		}
+		partialWeight := max(1, bestExactWeight/20-100)
+		for _, partialReading := range partialReadings {
+			for _, entry := range e.dict[partialReading] {
+				if isEmojiResourceKind(entry.Kind) || entry.Kind == "symbol" || entry.Kind == "agent" {
+					continue
+				}
+				partial := entry
+				partial.Reading = collapsedReading
+				partial.Weight = partialWeight
+				partial.Comment = "拆分"
+				appendEntries([]Entry{partial}, 0)
+				if len(exact) >= maxCandidates {
+					return exact
+				}
+			}
+		}
+		return exact
+	}
+
+	seen = map[string]int{}
+	for _, item := range readings {
+		appendIndexedEntries(e.abbr[item.reading], item.penalty+abbreviationCandidatePenalty)
+		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
+			appendIndexedEntries(e.abbr[variant], item.penalty+fuzzyCandidatePenalty+abbreviationCandidatePenalty)
 		}
 	}
 	if len(exact) > 0 {
@@ -1324,20 +1620,9 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 
 	seen = map[string]int{}
 	for _, item := range readings {
-		appendEntries(e.abbr[item.reading], item.penalty+abbreviationCandidatePenalty)
+		appendIndexedEntries(e.prefix[item.reading], item.penalty)
 		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
-			appendEntries(e.abbr[variant], item.penalty+fuzzyCandidatePenalty+abbreviationCandidatePenalty)
-		}
-	}
-	if len(exact) > 0 {
-		return exact
-	}
-
-	seen = map[string]int{}
-	for _, item := range readings {
-		appendEntries(e.prefix[item.reading], item.penalty)
-		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
-			appendEntries(e.prefix[variant], item.penalty+fuzzyCandidatePenalty)
+			appendIndexedEntries(e.prefix[variant], item.penalty+fuzzyCandidatePenalty)
 		}
 	}
 	if len(exact) > 0 {
@@ -1346,21 +1631,30 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 
 	for _, item := range readings {
 		for _, variant := range append([]string{item.reading}, e.fuzzyReadingsLocked(item.reading)...) {
-			segmented, weight := e.segmentBestLocked(variant)
-			if segmented != "" && segmented != collapsedReading {
-				penalty := item.penalty
-				if variant != item.reading {
-					penalty += fuzzyCandidatePenalty
+			segmented := e.segmentCandidatesLocked(variant, e.config.MaxCandidates)
+			if len(segmented) == 0 {
+				if text, weight := e.segmentBestLocked(variant); text != "" {
+					segmented = []Entry{{
+						Reading: variant,
+						Text:    text,
+						Kind:    "phrase",
+						Source:  "segmenter",
+						Comment: "整句",
+						Weight:  weight,
+					}}
 				}
-				return []Entry{{
-					Reading: variant,
-					Text:    segmented,
-					Kind:    "phrase",
-					Source:  "segmenter",
-					Comment: "整句",
-					Weight:  max(1, weight-penalty),
-				}}
 			}
+			if len(segmented) == 0 {
+				continue
+			}
+			penalty := item.penalty
+			if variant != item.reading {
+				penalty += fuzzyCandidatePenalty
+			}
+			for i := range segmented {
+				segmented[i].Weight = max(1, segmented[i].Weight-penalty)
+			}
+			return segmented
 		}
 	}
 	return nil
@@ -1391,6 +1685,11 @@ func (e *Engine) lookupSpecialResourcePrefixLocked(code string) []Entry {
 			out = append(out, next)
 		}
 	}
+	appendIndexedSpecial := func(indexedReadings []string, penalty int) {
+		for _, indexedReading := range indexedReadings {
+			appendSpecial(e.dict[indexedReading], penalty)
+		}
+	}
 	for _, item := range readings {
 		appendSpecial(e.dict[item.reading], item.penalty)
 		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
@@ -1401,9 +1700,9 @@ func (e *Engine) lookupSpecialResourcePrefixLocked(code string) []Entry {
 		return out
 	}
 	for _, item := range readings {
-		appendSpecial(e.prefix[item.reading], item.penalty+abbreviationCandidatePenalty)
+		appendIndexedSpecial(e.prefix[item.reading], item.penalty+abbreviationCandidatePenalty)
 		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
-			appendSpecial(e.prefix[variant], item.penalty+fuzzyCandidatePenalty+abbreviationCandidatePenalty)
+			appendIndexedSpecial(e.prefix[variant], item.penalty+fuzzyCandidatePenalty+abbreviationCandidatePenalty)
 		}
 	}
 	return out
@@ -1570,46 +1869,152 @@ func (e *Engine) fuzzyReadingsLocked(reading string) []string {
 
 func (e *Engine) segmentBestLocked(reading string) (string, int) {
 	type segmentState struct {
-		text   string
-		score  int
-		pieces int
-		ok     bool
+		text  string
+		score int
+		ok    bool
 	}
-	states := make([]segmentState, len(reading)+1)
-	states[0] = segmentState{ok: true}
+	states := make([][]segmentState, len(reading)+1)
+	for i := range states {
+		states[i] = make([]segmentState, len(reading)+1)
+	}
+	states[0][0] = segmentState{ok: true}
 	for i := 0; i < len(reading); i++ {
-		if !states[i].ok {
-			continue
-		}
-		end := len(reading)
-		if e.maxReadingLen > 0 && i+e.maxReadingLen < end {
-			end = i + e.maxReadingLen
-		}
-		for j := i + 1; j <= end; j++ {
-			part := reading[i:j]
-			entries := e.dict[part]
-			if len(entries) == 0 {
+		for pieces := 0; pieces < len(reading); pieces++ {
+			current := states[i][pieces]
+			if !current.ok {
 				continue
 			}
-			best := e.bestEntryLocked(entries)
-			score := states[i].score + e.entryScoreLocked(best) - segmentedPiecePenalty
-			pieces := states[i].pieces + 1
-			if !states[j].ok || score > states[j].score ||
-				(score == states[j].score && pieces < states[j].pieces) {
-				states[j] = segmentState{
-					text:   states[i].text + best.Text,
-					score:  score,
-					pieces: pieces,
-					ok:     true,
+			end := len(reading)
+			if e.maxReadingLen > 0 && i+e.maxReadingLen < end {
+				end = i + e.maxReadingLen
+			}
+			for j := i + 1; j <= end; j++ {
+				part := reading[i:j]
+				entries := e.dict[part]
+				if len(entries) == 0 {
+					continue
+				}
+				best := e.bestEntryLocked(entries)
+				nextPieces := pieces + 1
+				score := current.score + e.entryScoreLocked(best) - segmentedPiecePenalty
+				if !states[j][nextPieces].ok || score > states[j][nextPieces].score {
+					states[j][nextPieces] = segmentState{
+						text:  current.text + best.Text,
+						score: score,
+						ok:    true,
+					}
 				}
 			}
 		}
 	}
-	best := states[len(reading)]
-	if !best.ok || best.pieces < 2 {
+	best := segmentState{}
+	bestPieces := 0
+	bestAverage := 0
+	for pieces := 2; pieces <= len(reading); pieces++ {
+		candidate := states[len(reading)][pieces]
+		if !candidate.ok {
+			continue
+		}
+		average := candidate.score / pieces
+		if !best.ok || average > bestAverage ||
+			(average == bestAverage && pieces < bestPieces) {
+			best = candidate
+			bestPieces = pieces
+			bestAverage = average
+		}
+	}
+	if !best.ok {
 		return "", 0
 	}
-	return best.text, max(1, best.score-segmentedCandidatePenalty)
+	return best.text, max(1, bestAverage)
+}
+
+func (e *Engine) segmentCandidatesLocked(reading string, limit int) []Entry {
+	parts := segmentPinyinReading(reading)
+	if len(parts) < 2 {
+		return nil
+	}
+	return e.segmentCandidatesForPartsLocked(parts, reading, limit)
+}
+
+func (e *Engine) segmentCandidatesForPartsLocked(parts []string, reading string, limit int) []Entry {
+	if len(parts) < 2 {
+		return nil
+	}
+	if limit <= 0 {
+		limit = DefaultConfig().MaxCandidates
+	}
+	type phrasePath struct {
+		text  string
+		score int
+	}
+	beamLimit := max(limit*3, 21)
+	beam := []phrasePath{{}}
+	for _, part := range parts {
+		entries := e.dict[part]
+		if len(entries) == 0 {
+			return nil
+		}
+		partEntries := make([]Entry, 0, 7)
+		for _, entry := range entries {
+			if isEmojiResourceKind(entry.Kind) || entry.Kind == "symbol" || entry.Kind == "agent" {
+				continue
+			}
+			partEntries = append(partEntries, entry)
+			if len(partEntries) >= 7 {
+				break
+			}
+		}
+		if len(partEntries) == 0 {
+			return nil
+		}
+		next := make([]phrasePath, 0, min(beamLimit, len(beam)*len(partEntries)))
+		seen := make(map[string]int)
+		for _, path := range beam {
+			for _, entry := range partEntries {
+				candidate := phrasePath{
+					text:  path.text + entry.Text,
+					score: path.score + e.entryScoreLocked(entry) - segmentedPiecePenalty,
+				}
+				if previous, ok := seen[candidate.text]; ok {
+					if candidate.score > next[previous].score {
+						next[previous] = candidate
+					}
+					continue
+				}
+				seen[candidate.text] = len(next)
+				next = append(next, candidate)
+			}
+		}
+		sort.SliceStable(next, func(i, j int) bool {
+			if next[i].score != next[j].score {
+				return next[i].score > next[j].score
+			}
+			return next[i].text < next[j].text
+		})
+		if len(next) > beamLimit {
+			next = next[:beamLimit]
+		}
+		beam = next
+	}
+	out := make([]Entry, 0, min(limit, len(beam)))
+	for _, path := range beam {
+		if path.text == "" {
+			continue
+		}
+		out = append(out, Entry{
+			Reading: reading,
+			Text:    path.text,
+			Kind:    "phrase",
+			Source:  "segmenter",
+			Comment: "整句",
+			Weight:  max(1, path.score/len(parts)),
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
 }
 
 func (e *Engine) segmentSeparatedLocked(input string) (string, int) {
@@ -1628,7 +2033,7 @@ func (e *Engine) segmentSeparatedLocked(input string) (string, int) {
 		builder.WriteString(best.Text)
 		score += e.entryScoreLocked(best) - segmentedPiecePenalty
 	}
-	return builder.String(), max(1, score)
+	return builder.String(), max(1, score/len(parts)-segmentedCandidatePenalty)
 }
 
 func (e *Engine) bestEntryLocked(entries []Entry) Entry {
@@ -1671,7 +2076,7 @@ func isRecognizerInputRune(r rune) bool {
 		return true
 	}
 	switch r {
-	case ';', '\'', '/', '`', '@', '.', '-', '_', ':', '?', '&', '=', '%', '+':
+	case ';', '\'', '/', '`', '@', '.', '-', '_', ':', '?', '&', '=', '%', '+', '*', '(', ')', '^':
 		return true
 	default:
 		return false
@@ -1735,6 +2140,8 @@ func normalizeDoublePinyinScheme(scheme string) string {
 	switch strings.ToLower(strings.TrimSpace(scheme)) {
 	case "", "xiaohe", "flypy":
 		return "xiaohe"
+	case "ziranma", "zrm", "natural", "natural-code", "double-pinyin-ziranma":
+		return "ziranma"
 	case "microsoft", "ms", "sogou":
 		return "microsoft"
 	default:
@@ -1947,6 +2354,35 @@ var microsoftFinals = map[byte][]string{
 	';': []string{"ing"},
 }
 
+var ziranmaFinals = map[byte][]string{
+	'a': []string{"a"},
+	'b': []string{"ou"},
+	'c': []string{"iao"},
+	'd': []string{"iang", "uang"},
+	'e': []string{"e"},
+	'f': []string{"en"},
+	'g': []string{"eng"},
+	'h': []string{"ang"},
+	'i': []string{"i"},
+	'j': []string{"an"},
+	'k': []string{"ao"},
+	'l': []string{"ai"},
+	'm': []string{"ian"},
+	'n': []string{"in"},
+	'o': []string{"o", "uo"},
+	'p': []string{"un"},
+	'q': []string{"iu"},
+	'r': []string{"uan", "er"},
+	's': []string{"ong", "iong"},
+	't': []string{"ue", "ve"},
+	'u': []string{"u"},
+	'v': []string{"ui", "v"},
+	'w': []string{"ia", "ua"},
+	'x': []string{"ie"},
+	'y': []string{"ing", "uai"},
+	'z': []string{"ei"},
+}
+
 func decodeDoublePinyin(input string, scheme string) []string {
 	input = normalizeInputCode(input)
 	if input == "" {
@@ -1955,10 +2391,13 @@ func decodeDoublePinyin(input string, scheme string) []string {
 	initials := xiaoheInitials
 	finals := xiaoheFinals
 	zeroInitial := byte(0)
-	if normalizeDoublePinyinScheme(scheme) == "microsoft" {
+	switch normalizeDoublePinyinScheme(scheme) {
+	case "microsoft":
 		initials = microsoftInitials
 		finals = microsoftFinals
 		zeroInitial = 'o'
+	case "ziranma":
+		finals = ziranmaFinals
 	}
 	seen := map[string]bool{}
 	var out []string
@@ -1979,6 +2418,16 @@ func decodeDoublePinyin(input string, scheme string) []string {
 			if values, ok := finals[input[pos]]; ok {
 				for _, final := range values {
 					walk(pos+1, append(parts, normalizeDoublePinyinSyllable("", final)))
+				}
+			}
+			if pos+1 < len(input) {
+				prefix := input[pos]
+				if values, ok := finals[input[pos+1]]; ok {
+					for _, final := range values {
+						if final != "" && final[0] == prefix {
+							walk(pos+2, append(parts, normalizeDoublePinyinSyllable("", final)))
+						}
+					}
 				}
 			}
 		} else if input[pos] == zeroInitial && pos+1 < len(input) {

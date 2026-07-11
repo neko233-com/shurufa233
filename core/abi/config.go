@@ -113,6 +113,7 @@ func normalizeConfig(config engine.Config) engine.Config {
 	}
 	config = engine.NormalizeSchemaConfig(config)
 	config = engine.NormalizeKeyBehavior(config)
+	config.KeyBindings = engine.NormalizeKeyBindings(config)
 	config.RecognizerPatterns = engine.NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = engine.NormalizeAppRules(config.AppRules)
 	config.Agent = engine.NormalizeAgent(config.Agent)
@@ -154,6 +155,8 @@ func normalizeDoublePinyinScheme(scheme string) string {
 	switch strings.ToLower(strings.TrimSpace(scheme)) {
 	case "", "xiaohe", "flypy":
 		return "xiaohe"
+	case "ziranma", "zrm", "natural", "natural-code", "double-pinyin-ziranma":
+		return "ziranma"
 	case "microsoft", "ms", "sogou":
 		return "microsoft"
 	default:
