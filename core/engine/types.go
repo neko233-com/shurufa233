@@ -7,7 +7,10 @@ type Config struct {
 	Schema                string              `json:"schema,omitempty"`
 	CandidatePageSize     int                 `json:"candidatePageSize"`
 	CandidateLayout       string              `json:"candidateLayout"`
+	CandidateWindowMode   string              `json:"candidateWindowMode,omitempty"`
 	ShowCandidateComments bool                `json:"showCandidateComments"`
+	PerformanceMode       string              `json:"performanceMode,omitempty"`
+	EmojiCandidates       bool                `json:"emojiCandidates"`
 	FuzzyInitials         []string            `json:"fuzzyInitials"`
 	SpellerAlgebra        []string            `json:"spellerAlgebra,omitempty"`
 	DoublePinyin          bool                `json:"doublePinyin"`
@@ -27,6 +30,7 @@ type Config struct {
 	BracketPageKeys       bool                `json:"bracketPageKeys"`
 	MinusEqualPageKeys    bool                `json:"minusEqualPageKeys"`
 	CommaPeriodPageKeys   bool                `json:"commaPeriodPageKeys"`
+	KeyBindings           []KeyBinding        `json:"keyBindings,omitempty"`
 	AppRules              []AppRule           `json:"appRules,omitempty"`
 	Skin                  Skin                `json:"skin"`
 	Update                Update              `json:"update"`
@@ -182,6 +186,32 @@ type SwitchOption struct {
 	On          string `json:"on"`
 	Off         string `json:"off"`
 	ConfigField string `json:"configField"`
+}
+
+type KeyBinding struct {
+	Action      string   `json:"action"`
+	Name        string   `json:"name,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Keys        []string `json:"keys"`
+	Enabled     bool     `json:"enabled"`
+	Scope       string   `json:"scope,omitempty"`
+}
+
+type KeyBindingConflict struct {
+	Key     string   `json:"key"`
+	Actions []string `json:"actions"`
+	Level   string   `json:"level"`
+	Message string   `json:"message"`
+}
+
+type KeyStroke struct {
+	Key       string   `json:"key,omitempty"`
+	Character string   `json:"character,omitempty"`
+	Ctrl      bool     `json:"ctrl,omitempty"`
+	Alt       bool     `json:"alt,omitempty"`
+	Shift     bool     `json:"shift,omitempty"`
+	Meta      bool     `json:"meta,omitempty"`
+	Modifiers []string `json:"modifiers,omitempty"`
 }
 
 const (

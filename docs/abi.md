@@ -43,11 +43,10 @@ Example response:
 choice. Switching modes clears the active composition buffer, matching Microsoft
 IME-style Chinese/English toggling.
 
-Candidate `text` is returned in the configured output script. `script` is read
-from the shared config and normalized to `simplified` or `traditional`; readings,
-weights, kinds, sources, and comments remain tied to the original dictionary
-rows. Native renderers should display and commit the returned `text` directly
-instead of doing their own simplified/traditional conversion.
+Candidate `text` is simplified Chinese. The legacy `script` config field is
+accepted only for backward-compatible profile loading and is always normalized
+to `simplified`; native renderers must display and commit the returned `text`
+directly without doing script conversion.
 
 `ShurufaPreview` and `ShurufaInputKey` preserve apostrophe pinyin separators in
 the returned `buffer`. The Go core collapses separators for dictionary lookup
@@ -88,7 +87,7 @@ Each row is:
 display_index<TAB>text<TAB>reading<TAB>score<TAB>kind<TAB>source<TAB>comment<TAB>pinned
 ```
 
-`kind`, `source`, `comment`, and `pinned` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, `phrase`, `dynamic`, and `agent`; renderers must tolerate older four-column, six-column, or seven-column payloads. Built-in examples include `zan` -> `👍` (`emoji`, comment `赞`), `kaixin` -> `ヽ(・∀・)ﾉ` (`kaomoji`), `shengluehao` -> `……` (`symbol`), `rq` -> today's date (`dynamic`, comment `动态`), and `rewrite` -> `/rewrite ` (`agent`, comment `润色`). `pinned=true` marks candidates promoted by `user-pins.json`.
+`kind`, `source`, `comment`, and `pinned` are optional extension fields. Current kinds include ordinary word candidates plus `emoji`, `kaomoji`, `symbol`, `phrase`, `dynamic`, and `agent`; renderers must tolerate older four-column, six-column, or seven-column payloads. Built-in examples include `zan` -> `👍` (`emoji`, comment `赞`), `kaixin` -> `ヽ(・∀・)ﾉ` (`kaomoji`), `shengluehao` -> `……` (`symbol`), `rq` -> today's date (`dynamic`, source `builtin-datetime`, comment `动态`), `1+2*3` -> `7` (`dynamic`, source `builtin-calculator`, comment `计算`), and `rewrite` -> `/rewrite ` (`agent`, comment `润色`). `pinned=true` marks candidates promoted by `user-pins.json`.
 
 The Windows glue calls `ShurufaFree` after copying the returned payload. Older per-candidate getters remain available as a compatibility fallback.
 
@@ -168,7 +167,8 @@ The shared `config-json` payload includes display-only fields such as
 comment text remains part of candidate payloads even when the UI hides it.
 It also includes `schema`, a stable Rime-style scheme id such as
 `wechat-pinyin`, `rime-luna-pinyin`, `rime-ice-pinyin`,
-`double-pinyin-xiaohe`, or `double-pinyin-microsoft`. `ShurufaSchemaPresetsJSON`
+`double-pinyin-xiaohe`, `double-pinyin-ziranma`, or
+`double-pinyin-microsoft`. `ShurufaSchemaPresetsJSON`
 lists the built-in scheme table, while `ShurufaApplySchemaJSON({"id":"..."})`
 expands a preset into the shared config fields that the native TSF layer already
 understands (`doublePinyin`, `doublePinyinScheme`, `candidateLayout`,
@@ -191,17 +191,19 @@ without adding another C ABI entry point.
 `abbreviation-candidates`, `pinyin-separators`, `rime-symbol-prefix`,
 `rime-ice-v-symbol-prefix`,
 `emoji-kaomoji-symbol-candidates`, `catalog-json`, and
-`dynamic-datetime-candidates`, `candidate-char-commit`, and
+`dynamic-datetime-candidates`, `calculator-candidates`, `candidate-char-commit`, and
 `candidate-comments`, `association-candidates`, `candidate-action-json`, and
 `extension-command-json`, `key-behavior-config`, `rime-switches-json`,
 `app-context-rules-json`, `apply-app-rules-json`, `user-data-delete-json`, and
 `key-event-json`.
 
 `ShurufaAssociate(session, {"context":"你好","limit":7})` returns a normal state
-object with post-commit association candidates. The same behavior is available
-through `ShurufaExecuteCommand(session, "associate", ...)` and through
-`candidate-action` with `{"action":"associate","context":"微信"}`. Candidate text
-is already script-converted, and rows are tagged `kind=association`.
+object with post-commit or local context association candidates. The same
+behavior is available through `ShurufaExecuteCommand(session, "associate", ...)`
+and through `candidate-action` with `{"action":"associate","context":"微信"}`.
+Candidate text is already script-converted, and rows are tagged
+`kind=association` with sources such as `builtin-association` or
+`context-association`.
 
 `ShurufaExecuteCommand` is the reserved forward-compatible command bus for
 future native glue. The first argument is the session id, the second is a stable
@@ -245,7 +247,7 @@ apply-sync-config-json {"sync":{"enabled":true,"provider":"local-directory","dir
 sync-export             {"directory":"D:/Sync/shurufa233"}
 sync-import             {"directory":"D:/Sync/shurufa233","merge":true}
 schema-presets-json
-apply-schema-json       {"id":"double-pinyin-microsoft"}
+apply-schema-json       {"id":"double-pinyin-ziranma"}
 skin-presets-json
 apply-skin-preset-json  {"id":"wechat-clean"}
 rime-custom-json        {"yaml":"patch:\n  schema_list:\n    - schema: double_pinyin_flypy\n"}
@@ -318,8 +320,7 @@ another round of platform C++ or IMKit changes.
 `switches-json`, `apply-switch-json`, `toggle-switch`, `ShurufaSwitchesJSON`,
 and `ShurufaApplySwitchJSON` reserve a Rime-style runtime switch surface.
 Current switches map directly onto shared config fields: `ascii_mode` (`mode`),
-`ascii_punct` (`punctuation`), `simplification` (`script`),
-`candidate_comments` (`showCandidateComments`), `associations`, and
+`ascii_punct` (`punctuation`), `candidate_comments` (`showCandidateComments`), `associations`, and
 `vertical_candidates` (`candidateLayout`). This lets native glue send one JSON
 switch event for Weasel/Squirrel-style UI behavior while Go owns the actual
 field mapping and future switch expansion.

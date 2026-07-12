@@ -47,18 +47,21 @@ type Config = {
   schema?: string;
   candidatePageSize: number;
   candidateLayout: "horizontal" | "vertical" | "auto";
+  candidateWindowMode: "win11" | "full" | "lite" | "minimal";
   showCandidateComments: boolean;
+  performanceMode: "balanced" | "high" | "compatibility";
+  emojiCandidates: boolean;
   fuzzyInitials: string[];
   spellerAlgebra?: string[];
   doublePinyin: boolean;
-  doublePinyinScheme: "xiaohe" | "microsoft";
+  doublePinyinScheme: "xiaohe" | "ziranma" | "microsoft";
   language: string;
   mode: "zh" | "en";
   punctuation: "full" | "half";
   punctuationFullShape?: Record<string, string[]>;
   punctuationHalfShape?: Record<string, string[]>;
   recognizerPatterns?: Record<string, string>;
-  script: "simplified" | "traditional";
+  script: "simplified";
   associations: boolean;
   keyProfile: "wechat" | "microsoft" | "rime" | "custom";
   shiftToggleMode: boolean;
@@ -67,11 +70,28 @@ type Config = {
   bracketPageKeys: boolean;
   minusEqualPageKeys: boolean;
   commaPeriodPageKeys: boolean;
+  keyBindings?: KeyBinding[];
   appRules: AppRule[];
   skin: Skin;
   update: UpdateConfig;
   agent: AgentConfig;
   sync: SyncConfig;
+};
+
+type KeyBinding = {
+  action: string;
+  name?: string;
+  description?: string;
+  keys: string[];
+  enabled: boolean;
+  scope?: string;
+};
+
+type KeyBindingConflict = {
+  key: string;
+  actions: string[];
+  level: "error" | "warning";
+  message: string;
 };
 
 type AgentConfig = {
@@ -445,7 +465,10 @@ const defaultConfig: Config = {
   schema: "wechat-pinyin",
   candidatePageSize: 7,
   candidateLayout: "horizontal",
-  showCandidateComments: true,
+  candidateWindowMode: "win11",
+  showCandidateComments: false,
+  performanceMode: "balanced",
+  emojiCandidates: true,
   fuzzyInitials: ["zh=z", "ch=c", "sh=s"],
   spellerAlgebra: [],
   doublePinyin: false,
@@ -470,6 +493,7 @@ const defaultConfig: Config = {
   bracketPageKeys: true,
   minusEqualPageKeys: true,
   commaPeriodPageKeys: false,
+  keyBindings: [],
   appRules: [
     {
       id: "password-field-ascii",
@@ -501,7 +525,7 @@ const defaultConfig: Config = {
   ],
   skin: {
     fontFamily: "Microsoft YaHei UI",
-    fontSize: 15,
+    fontSize: 12,
     accent: "#2563eb",
     surface: "#ffffff",
     text: "#111827",
@@ -694,6 +718,171 @@ const defaultTypingMetrics: TypingMetrics = {
   compositions: 0,
 };
 
+const keyBindingDefinitions: KeyBinding[] = [
+  { action: "toggle-mode", name: "切换中英文", description: "中文/英文直通模式切换", keys: [], enabled: true, scope: "global" },
+  { action: "commit-selection", name: "上屏当前候选", description: "上屏高亮候选或原始输入", keys: [], enabled: true, scope: "composition" },
+  { action: "clear-composition", name: "清空输入", description: "取消当前拼音和候选", keys: [], enabled: true, scope: "composition" },
+  { action: "backspace", name: "删除一个字符", description: "删除拼音缓冲区末尾字符", keys: [], enabled: true, scope: "composition" },
+  { action: "move-selection-prev", name: "候选上移", description: "移动到上一个候选", keys: [], enabled: true, scope: "candidate" },
+  { action: "move-selection-next", name: "候选下移", description: "移动到下一个候选", keys: [], enabled: true, scope: "candidate" },
+  { action: "move-selection-first", name: "移到首候选", description: "移动到第一个候选", keys: [], enabled: true, scope: "candidate" },
+  { action: "move-selection-last", name: "移到末候选", description: "移动到最后一个候选", keys: [], enabled: true, scope: "candidate" },
+  { action: "page-prev", name: "上一页候选", description: "翻到上一页候选", keys: [], enabled: true, scope: "candidate" },
+  { action: "page-next", name: "下一页候选", description: "翻到下一页候选", keys: [], enabled: true, scope: "candidate" },
+  { action: "quick-select-2", name: "二候选快捷上屏", description: "直接上屏第 2 候选", keys: [], enabled: true, scope: "candidate" },
+  { action: "quick-select-3", name: "三候选快捷上屏", description: "直接上屏第 3 候选", keys: [], enabled: true, scope: "candidate" },
+  ...Array.from({ length: 9 }, (_, index) => ({
+    action: `select-candidate-${index + 1}`,
+    name: `选择第 ${index + 1} 候选`,
+    description: "数字候选直接上屏",
+    keys: [],
+    enabled: true,
+    scope: "candidate",
+  })),
+  { action: "commit-first-char", name: "首字上屏", description: "只上屏当前候选第一个字", keys: [], enabled: true, scope: "candidate" },
+  { action: "commit-last-char", name: "末字上屏", description: "只上屏当前候选最后一个字", keys: [], enabled: true, scope: "candidate" },
+];
+
+function buildDefaultKeyBindings(config: Config): KeyBinding[] {
+  const bindings = keyBindingDefinitions.map((binding) => ({ ...binding, keys: [] as string[], enabled: true }));
+  const set = (action: string, keys: string[]) => {
+    const binding = bindings.find((item) => item.action === action);
+    if (binding) binding.keys = normalizeShortcutList(keys);
+  };
+  set("toggle-mode", config.shiftToggleMode ? ["Shift"] : []);
+  set("commit-selection", ["Space", "Enter"]);
+  set("clear-composition", ["Escape"]);
+  set("backspace", ["Backspace"]);
+  set("move-selection-prev", ["ArrowLeft", "ArrowUp", "Shift+Tab"]);
+  set("move-selection-next", ["ArrowRight", "ArrowDown", "Tab"]);
+  set("move-selection-first", ["Home"]);
+  set("move-selection-last", ["End"]);
+  set("page-prev", [
+    ...(config.bracketPageKeys ? ["["] : []),
+    ...(config.minusEqualPageKeys ? ["PageUp", "-"] : []),
+    ...(config.commaPeriodPageKeys ? [","] : []),
+  ]);
+  set("page-next", [
+    ...(config.bracketPageKeys ? ["]"] : []),
+    ...(config.minusEqualPageKeys ? ["PageDown", "="] : []),
+    ...(config.commaPeriodPageKeys ? ["."] : []),
+  ]);
+  set("quick-select-2", config.semicolonQuickSelect && !(config.doublePinyin && config.doublePinyinScheme === "microsoft") ? [";"] : []);
+  set("quick-select-3", config.quoteQuickSelect ? ["'"] : []);
+  for (let index = 1; index <= 9; index += 1) {
+    set(`select-candidate-${index}`, [`${index}`]);
+  }
+  return bindings;
+}
+
+function mergeKeyBindings(config: Config): KeyBinding[] {
+  if (config.keyProfile !== "custom" || !config.keyBindings?.length) return buildDefaultKeyBindings(config);
+  const defaults = buildDefaultKeyBindings(config);
+  const byAction = new Map(defaults.map((binding) => [binding.action, binding]));
+  for (const binding of config.keyBindings) {
+    const base = byAction.get(binding.action);
+    if (!base) continue;
+    byAction.set(binding.action, {
+      ...base,
+      ...binding,
+      keys: normalizeShortcutList(binding.keys ?? []),
+      enabled: binding.enabled !== false,
+    });
+  }
+  return keyBindingDefinitions.map((definition) => byAction.get(definition.action) ?? definition);
+}
+
+function normalizeShortcutList(keys: string[]) {
+  const seen = new Set<string>();
+  return keys
+    .map(normalizeShortcutKey)
+    .filter((key) => {
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function normalizeShortcutKey(raw: string) {
+  const value = raw.trim();
+  if (!value) return "";
+  const parts = value.split("+").map((part) => part.trim()).filter(Boolean);
+  let key = normalizeShortcutToken(parts.pop() ?? "");
+  let ctrl = false;
+  let alt = false;
+  let shift = false;
+  let win = false;
+  for (const part of parts) {
+    const token = normalizeShortcutToken(part);
+    if (token === "Ctrl") ctrl = true;
+    if (token === "Alt") alt = true;
+    if (token === "Shift") shift = true;
+    if (token === "Win") win = true;
+  }
+  if (!key) return "";
+  if (key === "Ctrl") ctrl = false;
+  if (key === "Alt") alt = false;
+  if (key === "Shift") shift = false;
+  if (key === "Win") win = false;
+  return [...(ctrl ? ["Ctrl"] : []), ...(alt ? ["Alt"] : []), ...(shift ? ["Shift"] : []), ...(win ? ["Win"] : []), key].join("+");
+}
+
+function normalizeShortcutToken(value: string) {
+  const lower = value.trim().toLowerCase();
+  if (lower === "control" || lower === "ctrl") return "Ctrl";
+  if (lower === "menu" || lower === "option" || lower === "alt") return "Alt";
+  if (lower === "shift") return "Shift";
+  if (["meta", "cmd", "command", "super", "windows", "win"].includes(lower)) return "Win";
+  if (lower === "spacebar" || lower === "space" || value === " ") return "Space";
+  if (lower === "return" || lower === "enter") return "Enter";
+  if (lower === "esc" || lower === "escape") return "Escape";
+  if (lower === "backspace" || lower === "bksp") return "Backspace";
+  if (lower === "tab") return "Tab";
+  if (lower === "left" || lower === "arrowleft") return "ArrowLeft";
+  if (lower === "right" || lower === "arrowright") return "ArrowRight";
+  if (lower === "up" || lower === "arrowup") return "ArrowUp";
+  if (lower === "down" || lower === "arrowdown") return "ArrowDown";
+  if (lower === "pageup" || lower === "prior" || lower === "pgup") return "PageUp";
+  if (lower === "pagedown" || lower === "next" || lower === "pgdn") return "PageDown";
+  if (lower === "del" || lower === "delete") return "Delete";
+  if (lower === "home") return "Home";
+  if (lower === "end") return "End";
+  return value.length === 1 ? value.toUpperCase() : value.trim();
+}
+
+function shortcutConflicts(bindings: KeyBinding[]): KeyBindingConflict[] {
+  const byKey = new Map<string, string[]>();
+  for (const binding of bindings) {
+    if (!binding.enabled) continue;
+    for (const key of binding.keys ?? []) {
+      if (!key) continue;
+      byKey.set(key, [...(byKey.get(key) ?? []), binding.action]);
+    }
+  }
+  const conflicts: KeyBindingConflict[] = [];
+  for (const [key, actions] of byKey) {
+    const uniqueActions = Array.from(new Set(actions));
+    if (uniqueActions.length > 1) {
+      conflicts.push({ key, actions: uniqueActions, level: "error", message: "同一个按键绑定了多个输入法动作。" });
+    } else {
+      const message = reservedShortcutMessage(key);
+      if (message) conflicts.push({ key, actions: uniqueActions, level: "warning", message });
+    }
+  }
+  return conflicts.sort((left, right) => left.level.localeCompare(right.level) || left.key.localeCompare(right.key));
+}
+
+function reservedShortcutMessage(key: string) {
+  if (["Alt+Tab", "Alt+F4", "Ctrl+Alt+Delete", "Ctrl+Shift", "Win+Space"].includes(key)) {
+    return "Windows 常见系统快捷键，建议换一个组合。";
+  }
+  if (key.startsWith("Win+")) return "Win 组合键通常由 Windows 全局占用。";
+  if (["Ctrl+C", "Ctrl+V", "Ctrl+X", "Ctrl+Z", "Ctrl+Y", "Ctrl+A", "Ctrl+S", "Ctrl+F", "Ctrl+P", "Ctrl+W", "Ctrl+N", "Ctrl+T"].includes(key)) {
+    return "常见应用快捷键，可能影响宿主程序。";
+  }
+  return "";
+}
+
 function createTypingStats() {
   return {
     startedAt: 0,
@@ -767,11 +956,20 @@ function pinEntries(response: PinResponse): PhraseEntry[] {
 }
 
 function hydrateConfig(config: Config): Config {
-  return {
+  const conflictPolicy: SyncConfig["conflictPolicy"] =
+    config.sync?.conflictPolicy === "replace-local" ||
+    config.sync?.conflictPolicy === "local-wins" ||
+    config.sync?.conflictPolicy === "remote-wins"
+      ? config.sync.conflictPolicy
+      : "merge-newer";
+  const hydrated: Config = {
     ...defaultConfig,
     ...config,
     candidatePageSize: Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize)),
     candidateLayout: normalizeCandidateLayout(config.candidateLayout),
+    candidateWindowMode: normalizeCandidateWindowMode(config.candidateWindowMode),
+    performanceMode: normalizePerformanceMode(config.performanceMode),
+    emojiCandidates: config.emojiCandidates ?? defaultConfig.emojiCandidates,
     script: normalizeScript(config.script),
     associations: config.associations ?? defaultConfig.associations,
     recognizerPatterns: config.recognizerPatterns ?? defaultConfig.recognizerPatterns,
@@ -805,13 +1003,12 @@ function hydrateConfig(config: Config): Config {
       ...defaultConfig.sync,
       ...config.sync,
       mirrorBaseUrls: config.sync?.mirrorBaseUrls ?? defaultConfig.sync.mirrorBaseUrls,
-      conflictPolicy:
-        config.sync?.conflictPolicy === "replace-local" ||
-        config.sync?.conflictPolicy === "local-wins" ||
-        config.sync?.conflictPolicy === "remote-wins"
-          ? config.sync.conflictPolicy
-          : "merge-newer",
+      conflictPolicy,
     },
+  };
+  return {
+    ...hydrated,
+    keyBindings: mergeKeyBindings(hydrated),
   };
 }
 
@@ -820,8 +1017,18 @@ function normalizeCandidateLayout(layout?: string): Config["candidateLayout"] {
   return "horizontal";
 }
 
-function normalizeScript(script?: string): Config["script"] {
-  return script === "traditional" ? "traditional" : "simplified";
+function normalizeCandidateWindowMode(mode?: string): Config["candidateWindowMode"] {
+  if (mode === "full" || mode === "lite" || mode === "minimal") return mode;
+  return "win11";
+}
+
+function normalizePerformanceMode(mode?: string): Config["performanceMode"] {
+  if (mode === "high" || mode === "compatibility") return mode;
+  return "balanced";
+}
+
+function normalizeScript(_script?: string): Config["script"] {
+  return "simplified";
 }
 
 function normalizeKeyProfile(profile?: string): Config["keyProfile"] {
@@ -831,10 +1038,11 @@ function normalizeKeyProfile(profile?: string): Config["keyProfile"] {
 
 function applyKeyProfileConfig(config: Config, profile: Config["keyProfile"]): Config {
   if (profile === "custom") {
-    return { ...config, keyProfile: "custom" };
+    const next: Config = { ...config, keyProfile: "custom" };
+    return { ...next, keyBindings: mergeKeyBindings(next) };
   }
   if (profile === "rime") {
-    return {
+    const next: Config = {
       ...config,
       keyProfile: "rime",
       shiftToggleMode: true,
@@ -844,8 +1052,9 @@ function applyKeyProfileConfig(config: Config, profile: Config["keyProfile"]): C
       minusEqualPageKeys: true,
       commaPeriodPageKeys: true,
     };
+    return { ...next, keyBindings: buildDefaultKeyBindings(next) };
   }
-  return {
+  const next: Config = {
     ...config,
     keyProfile: profile,
     shiftToggleMode: true,
@@ -855,10 +1064,11 @@ function applyKeyProfileConfig(config: Config, profile: Config["keyProfile"]): C
     minusEqualPageKeys: true,
     commaPeriodPageKeys: false,
   };
+  return { ...next, keyBindings: buildDefaultKeyBindings(next) };
 }
 
 function App() {
-  const [config, setConfig] = useState<Config>(defaultConfig);
+  const [config, setConfig] = useState<Config>(() => hydrateConfig(defaultConfig));
   const [preview, setPreview] = useState("nihao");
   const [previewPageStart, setPreviewPageStart] = useState(0);
   const [previewCommitted, setPreviewCommitted] = useState("");
@@ -994,6 +1204,10 @@ function App() {
   const candidatePageSize = Math.min(9, Math.max(3, config.candidatePageSize || defaultConfig.candidatePageSize));
   const candidateLayout = normalizeCandidateLayout(config.candidateLayout);
   const showCandidateComments = config.showCandidateComments ?? defaultConfig.showCandidateComments;
+  const keyBindings = useMemo(() => mergeKeyBindings(config), [config]);
+  const keyConflicts = useMemo(() => shortcutConflicts(keyBindings), [keyBindings]);
+  const conflictKeys = useMemo(() => new Set(keyConflicts.filter((item) => item.level === "error").map((item) => item.key)), [keyConflicts]);
+  const warningKeys = useMemo(() => new Set(keyConflicts.filter((item) => item.level === "warning").map((item) => item.key)), [keyConflicts]);
   const normalizedPreviewPageStart =
     candidateCount > 0 ? Math.min(previewPageStart, Math.floor((candidateCount - 1) / candidatePageSize) * candidatePageSize) : 0;
   const typingPrompt = useMemo(
@@ -1039,6 +1253,19 @@ function App() {
       .map((kind) => kindLabel(kind))
       .filter(Boolean);
   }, [typingProbeCandidates]);
+
+  function updateKeyBinding(action: string, keysText: string) {
+    const keys = normalizeShortcutList(keysText.split(/[,，\s]+/));
+    const nextBindings = mergeKeyBindings(config).map((binding) =>
+      binding.action === action ? { ...binding, keys, enabled: true } : binding,
+    );
+    setConfig({ ...config, keyProfile: "custom", keyBindings: nextBindings });
+  }
+
+  function toggleKeyBinding(action: string, enabled: boolean) {
+    const nextBindings = mergeKeyBindings(config).map((binding) => (binding.action === action ? { ...binding, enabled } : binding));
+    setConfig({ ...config, keyProfile: "custom", keyBindings: nextBindings });
+  }
 
   const refreshTypingMetrics = useCallback(
     (input: string) => {
@@ -2189,7 +2416,7 @@ function App() {
             <button className="iconButton" title="重新读取配置" onClick={loadConfig}>
               <RotateCcw size={18} />
             </button>
-            <button className="primary" onClick={saveConfig}>
+            <button className="primary" onClick={saveConfig} disabled={keyConflicts.some((conflict) => conflict.level === "error")}>
               {status === "saved" ? <Check size={18} /> : <Save size={18} />}
               保存
             </button>
@@ -2397,18 +2624,9 @@ function App() {
                 半角标点
               </button>
             </div>
-            <div className="segmented">
-              <button
-                className={(config.script ?? "simplified") === "simplified" ? "selected" : ""}
-                onClick={() => setConfig({ ...config, script: "simplified" })}
-              >
-                简体输出
-              </button>
-              <button
-                className={config.script === "traditional" ? "selected" : ""}
-                onClick={() => setConfig({ ...config, script: "traditional" })}
-              >
-                繁体输出
+            <div className="segmented" aria-label="输出语言">
+              <button className="selected" type="button" disabled>
+                简体中文（固定）
               </button>
             </div>
             <div className="segmented three">
@@ -2436,7 +2654,10 @@ function App() {
                 <input
                   type="checkbox"
                   checked={config.shiftToggleMode}
-                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", shiftToggleMode: event.target.checked })}
+                  onChange={(event) => {
+                    const next = { ...config, keyProfile: "custom" as const, shiftToggleMode: event.target.checked };
+                    setConfig({ ...next, keyBindings: buildDefaultKeyBindings(next) });
+                  }}
                 />
                 <span>Shift 切中英</span>
               </label>
@@ -2444,7 +2665,10 @@ function App() {
                 <input
                   type="checkbox"
                   checked={config.semicolonQuickSelect}
-                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", semicolonQuickSelect: event.target.checked })}
+                  onChange={(event) => {
+                    const next = { ...config, keyProfile: "custom" as const, semicolonQuickSelect: event.target.checked };
+                    setConfig({ ...next, keyBindings: buildDefaultKeyBindings(next) });
+                  }}
                 />
                 <span>; 选二候选</span>
               </label>
@@ -2452,7 +2676,10 @@ function App() {
                 <input
                   type="checkbox"
                   checked={config.quoteQuickSelect}
-                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", quoteQuickSelect: event.target.checked })}
+                  onChange={(event) => {
+                    const next = { ...config, keyProfile: "custom" as const, quoteQuickSelect: event.target.checked };
+                    setConfig({ ...next, keyBindings: buildDefaultKeyBindings(next) });
+                  }}
                 />
                 <span>' 选三候选</span>
               </label>
@@ -2460,7 +2687,10 @@ function App() {
                 <input
                   type="checkbox"
                   checked={config.bracketPageKeys}
-                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", bracketPageKeys: event.target.checked })}
+                  onChange={(event) => {
+                    const next = { ...config, keyProfile: "custom" as const, bracketPageKeys: event.target.checked };
+                    setConfig({ ...next, keyBindings: buildDefaultKeyBindings(next) });
+                  }}
                 />
                 <span>[] 翻页</span>
               </label>
@@ -2468,7 +2698,10 @@ function App() {
                 <input
                   type="checkbox"
                   checked={config.minusEqualPageKeys}
-                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", minusEqualPageKeys: event.target.checked })}
+                  onChange={(event) => {
+                    const next = { ...config, keyProfile: "custom" as const, minusEqualPageKeys: event.target.checked };
+                    setConfig({ ...next, keyBindings: buildDefaultKeyBindings(next) });
+                  }}
                 />
                 <span>-= 翻页</span>
               </label>
@@ -2476,10 +2709,59 @@ function App() {
                 <input
                   type="checkbox"
                   checked={config.commaPeriodPageKeys}
-                  onChange={(event) => setConfig({ ...config, keyProfile: "custom", commaPeriodPageKeys: event.target.checked })}
+                  onChange={(event) => {
+                    const next = { ...config, keyProfile: "custom" as const, commaPeriodPageKeys: event.target.checked };
+                    setConfig({ ...next, keyBindings: buildDefaultKeyBindings(next) });
+                  }}
                 />
                 <span>,. 翻页</span>
               </label>
+            </div>
+            <div className="shortcutEditor">
+              <div className="shortcutHeader">
+                <div>
+                  <strong>快捷键绑定</strong>
+                  <span>{keyConflicts.length === 0 ? "无冲突" : `${keyConflicts.length} 个冲突/提示`}</span>
+                </div>
+                <button className="secondary" onClick={() => setConfig({ ...config, keyProfile: "custom", keyBindings: buildDefaultKeyBindings(config) })}>
+                  <RotateCcw size={18} />
+                  重置键位
+                </button>
+              </div>
+              {keyConflicts.length > 0 && (
+                <div className="shortcutAlerts">
+                  {keyConflicts.slice(0, 5).map((conflict) => (
+                    <span className={conflict.level} key={`${conflict.key}-${conflict.actions.join("-")}`}>
+                      {conflict.key}: {conflict.message}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="shortcutList">
+                {keyBindings.map((binding) => {
+                  const hasError = binding.keys.some((key) => conflictKeys.has(key));
+                  const hasWarning = binding.keys.some((key) => warningKeys.has(key));
+                  return (
+                    <div className={hasError ? "shortcutRow error" : hasWarning ? "shortcutRow warning" : "shortcutRow"} key={binding.action}>
+                      <label className="shortcutToggle" title={binding.description}>
+                        <input
+                          type="checkbox"
+                          checked={binding.enabled}
+                          onChange={(event) => toggleKeyBinding(binding.action, event.target.checked)}
+                        />
+                        <span>{binding.name ?? binding.action}</span>
+                      </label>
+                      <input
+                        className="shortcutInput"
+                        value={(binding.keys ?? []).join(", ")}
+                        placeholder="未绑定"
+                        onChange={(event) => updateKeyBinding(binding.action, event.target.value)}
+                        spellCheck={false}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             <label className="field">
               <span>语言词库</span>
@@ -2524,6 +2806,29 @@ function App() {
                 竖排候选
               </button>
             </div>
+            <label className="field">
+              <span>候选窗样式</span>
+              <select
+                value={config.candidateWindowMode ?? "win11"}
+                onChange={(event) => setConfig({ ...config, candidateWindowMode: event.target.value as Config["candidateWindowMode"] })}
+              >
+                <option value="win11">Win11 风格</option>
+                <option value="full">完整工具区</option>
+                <option value="lite">轻量高性能</option>
+                <option value="minimal">极简候选</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>性能模式</span>
+              <select
+                value={config.performanceMode ?? "balanced"}
+                onChange={(event) => setConfig({ ...config, performanceMode: event.target.value as Config["performanceMode"] })}
+              >
+                <option value="balanced">均衡</option>
+                <option value="high">高性能</option>
+                <option value="compatibility">兼容优先</option>
+              </select>
+            </label>
             <label className="toggle">
               <input
                 type="checkbox"
@@ -2531,6 +2836,14 @@ function App() {
                 onChange={(event) => setConfig({ ...config, showCandidateComments: event.target.checked })}
               />
               <span>显示候选注释</span>
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={config.emojiCandidates ?? true}
+                onChange={(event) => setConfig({ ...config, emojiCandidates: event.target.checked })}
+              />
+              <span>显示 Emoji / 颜文字候选</span>
             </label>
             <label className="toggle">
               <input
@@ -2569,6 +2882,7 @@ function App() {
                 disabled={!config.doublePinyin}
               >
                 <option value="xiaohe">小鹤双拼</option>
+                <option value="ziranma">自然码双拼</option>
                 <option value="microsoft">微软/搜狗双拼</option>
               </select>
             </label>
@@ -3309,7 +3623,7 @@ function App() {
                     {entry.reading}
                     {entry.comment ? ` · ${entry.comment}` : ""}
                   </span>
-                  {kindLabel(entry.kind) && <i>{kindLabel(entry.kind)}</i>}
+                  {kindLabel(entry.kind, entry.source) && <i>{kindLabel(entry.kind, entry.source)}</i>}
                 </button>
               ))}
               {catalogEntries.length === 0 && <div className="emptyWordbook">暂无资源</div>}
@@ -3343,7 +3657,7 @@ function App() {
                   <strong>{entry.text}</strong>
                   <span>{entry.reading}</span>
                   <em>
-                    {entry.comment || kindLabel(entry.kind) || entry.source || "反查"}
+                    {entry.comment || kindLabel(entry.kind, entry.source) || entry.source || "反查"}
                   </em>
                 </button>
               ))}
@@ -3386,7 +3700,7 @@ function App() {
                         <span className="candidateText">{candidate.text}</span>
                         {showCandidateComments && candidate.comment && <span className="candidateComment">{candidate.comment}</span>}
                         {candidate.pinned && <i>顶</i>}
-                        {kindLabel(candidate.kind) && <i>{kindLabel(candidate.kind)}</i>}
+                        {kindLabel(candidate.kind, candidate.source) && <i>{kindLabel(candidate.kind, candidate.source)}</i>}
                       </button>
                     ))
                   ) : (
@@ -3485,7 +3799,7 @@ function App() {
                         <span>{candidate.text}</span>
                         {showCandidateComments && candidate.comment && <em>{candidate.comment}</em>}
                         {candidate.pinned && <i>顶</i>}
-                        {kindLabel(candidate.kind) && <i>{kindLabel(candidate.kind)}</i>}
+                        {kindLabel(candidate.kind, candidate.source) && <i>{kindLabel(candidate.kind, candidate.source)}</i>}
                       </span>
                     ))
                   ) : (
@@ -3567,14 +3881,15 @@ function statusLabel(status: "loading" | "ready" | "offline" | "saved") {
   return "离线";
 }
 
-function kindLabel(kind?: string) {
-  if (kind === "emoji") return "Emoji";
-  if (kind === "kaomoji") return "颜";
-  if (kind === "symbol") return "符";
-  if (kind === "phrase") return "短";
-  if (kind === "agent") return "AI";
-  if (kind === "dynamic") return "时";
-  return "";
+function kindLabel(kind?: string, source?: string) {
+	if (kind === "emoji") return "Emoji";
+	if (kind === "kaomoji") return "颜";
+	if (kind === "symbol") return "符";
+	if (kind === "phrase") return "短";
+	if (kind === "agent") return "AI";
+	if (kind === "dynamic" && source === "builtin-calculator") return "算";
+	if (kind === "dynamic") return "时";
+	return "";
 }
 
 createRoot(document.getElementById("root")!).render(

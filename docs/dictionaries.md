@@ -140,6 +140,15 @@ annotated character rows first, `shurufa-dictimport` now infers a weight-only
 word's reading from those imported character readings. Rows with characters
 that cannot be inferred are skipped instead of producing broken candidates.
 
+For production files built with `-max-entries`, compaction is Chinese-first:
+ordinary Latin rows are excluded from the simplified-Chinese runtime budget,
+readings from Rime Ice's maintained `base.dict.yaml` are protected ahead of
+extension/vector corpora, common single-syllable readings retain enough
+alternatives for partial commit, and the remaining budget is distributed
+across readings before adding deep homophone tails. This prevents a compact
+release from having many candidates for a few codes but no exact entry for
+ordinary phrases such as `wanan` (晚安) or `shaodeng` (稍等).
+
 Rime user phrases such as `custom_phrase.txt` are also supported. These files
 often have no YAML header and use the same table shape:
 

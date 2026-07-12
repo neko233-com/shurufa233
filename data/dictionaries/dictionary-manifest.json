@@ -1,28 +1,28 @@
 {
-  "version": "2026.07.04",
+  "version": "daily-2026.07.12",
   "channel": "stable",
-  "generatedAt": "2026-07-04T00:00:00Z",
+  "generatedAt": "2026-07-12T15:40:16Z",
   "source": {
-    "preset": "shurufa233-github",
-    "url": "https://github.com/neko233-com/shurufa233",
-    "license": "mixed-source-manifest",
-    "convertCommand": "shurufa-dictmanifest -version 2026.07.04 -base-url https://github.com/neko233-com/shurufa233/releases/latest/download data/dictionaries/zh-CN.2026.07.04.json data/dictionaries/en-US.2026.07.04.json"
+    "preset": "rime-ice-source",
+    "url": "https://github.com/iDvel/rime-ice",
+    "commit": "3a543652a42c21904c62bd881d65e987600f0722",
+    "license": "GPL-3.0",
+    "convertCommand": "go -C D:\\Code\\neko233-Projects\\shurufa233 run ./cmd/dictimport -language zh-CN -version daily-2026.07.12 -source rime-ice -missing-imports error -out data\\dictionaries\\zh-CN.daily-2026.07.12.json.gz -max-entries 80000 .cache\\dictionaries\\iDvel-rime-ice\\rime_ice.dict.yaml .cache\\dictionaries\\iDvel-rime-ice\\melt_eng.dict.yaml .cache\\dictionaries\\iDvel-rime-ice\\symbols_v.yaml .cache\\dictionaries\\iDvel-rime-ice\\symbols_caps_v.yaml .cache\\dictionaries\\iDvel-rime-ice\\opencc\\emoji.txt"
   },
   "dictionaries": [
     {
       "language": "zh-CN",
-      "version": "2026.07.04",
-      "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.2026.07.04.json",
+      "version": "daily-2026.07.12",
+      "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/zh-CN.daily-2026.07.12.json.gz",
+      "sha256": "be1c9f402d3b9eb4fff8eedc5ca5703fe5abe81a2da8d1bac23d8a634cbfee11",
+      "compression": "gzip",
+      "contentSha256": "41001bbb35b4056e325399507a56e4ee90ae357d4407bb98a2dce6f8d31c29ed",
       "source": {
-        "preset": "shurufa233-github"
-      }
-    },
-    {
-      "language": "en-US",
-      "version": "2026.07.04",
-      "url": "https://github.com/neko233-com/shurufa233/releases/latest/download/en-US.2026.07.04.json",
-      "source": {
-        "preset": "shurufa233-github"
+        "preset": "rime-ice-source",
+        "url": "https://github.com/iDvel/rime-ice",
+        "commit": "3a543652a42c21904c62bd881d65e987600f0722",
+        "license": "GPL-3.0",
+        "convertCommand": "go -C D:\\Code\\neko233-Projects\\shurufa233 run ./cmd/dictimport -language zh-CN -version daily-2026.07.12 -source rime-ice -missing-imports error -out data\\dictionaries\\zh-CN.daily-2026.07.12.json.gz -max-entries 80000 .cache\\dictionaries\\iDvel-rime-ice\\rime_ice.dict.yaml .cache\\dictionaries\\iDvel-rime-ice\\melt_eng.dict.yaml .cache\\dictionaries\\iDvel-rime-ice\\symbols_v.yaml .cache\\dictionaries\\iDvel-rime-ice\\symbols_caps_v.yaml .cache\\dictionaries\\iDvel-rime-ice\\opencc\\emoji.txt"
       }
     }
   ]

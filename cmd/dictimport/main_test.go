@@ -646,6 +646,61 @@ func TestMergeEntriesKeepsHighestWeight(t *testing.T) {
 	}
 }
 
+func TestCompactEntriesKeepsHigherFrequencyDailyPhraseGroups(t *testing.T) {
+	entries := []engine.Entry{
+		{Reading: "gaopin", Text: "高频", Weight: 2000},
+		{Reading: "nihaoma", Text: "你好吗", Weight: 25000},
+	}
+
+	got := compactEntries(entries, 1)
+	if len(got) != 1 || got[0].Reading != "nihaoma" {
+		t.Fatalf("compact entries = %#v, want daily phrase group", got)
+	}
+}
+
+func TestCompactEntriesSpendsBudgetOnReadingCoverage(t *testing.T) {
+	entries := []engine.Entry{
+		{Reading: "gaopin", Text: "高频", Weight: 900000},
+		{Reading: "gaopin", Text: "高品", Weight: 800000},
+		{Reading: "gaopin", Text: "高聘", Weight: 700000},
+		{Reading: "wanan", Text: "晚安", Weight: 1000},
+		{Reading: "shaodeng", Text: "稍等", Weight: 900},
+		{Reading: "heshui", Text: "喝水", Weight: 800},
+	}
+
+	got := compactEntries(entries, 4)
+	readings := map[string]bool{}
+	for _, entry := range got {
+		readings[entry.Reading] = true
+	}
+	if len(readings) < 3 || !readings["wanan"] || !readings["shaodeng"] {
+		t.Fatalf("compact coverage = %#v, want at least three reading groups including daily phrases", got)
+	}
+}
+
+func TestCompactEntriesDropsOrdinaryLatinEntriesFromChineseRuntimeLexicon(t *testing.T) {
+	entries := []engine.Entry{
+		{Reading: "hello", Text: "hello", Weight: 999999},
+		{Reading: "wanan", Text: "晚安", Weight: 100},
+		{Reading: "bq", Text: "😊", Kind: "emoji", Weight: 1},
+	}
+	got := compactEntries(entries, 2)
+	if len(got) != 2 || got[0].Text == "hello" || got[1].Text == "hello" {
+		t.Fatalf("compactEntries should reserve the Chinese runtime budget, got %#v", got)
+	}
+}
+
+func TestCompactEntriesProtectsPreferredDailyReadings(t *testing.T) {
+	entries := []engine.Entry{
+		{Reading: "wanghongci", Text: "网红词", Weight: 900000},
+		{Reading: "wanan", Text: "晚安", Weight: 10},
+	}
+	got := compactEntriesWithPreferredReadings(entries, 1, map[string]bool{"wanan": true})
+	if len(got) != 1 || got[0].Text != "晚安" {
+		t.Fatalf("preferred daily reading was compacted out: %#v", got)
+	}
+}
+
 func writeFile(t *testing.T, path string, data string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

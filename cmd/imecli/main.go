@@ -432,7 +432,7 @@ Usage:
   shurufa-imecli associate "你好"
   shurufa-imecli mode [zh|en|toggle]
   shurufa-imecli switches
-  shurufa-imecli switch <ascii_mode|ascii_punct|simplification|candidate_comments|associations|vertical_candidates> [on|off|toggle]
+  shurufa-imecli switch <ascii_mode|ascii_punct|candidate_comments|associations|vertical_candidates> [on|off|toggle]
   shurufa-imecli app-rules
   shurufa-imecli app-context resolve --process WeGame.exe [--title TITLE] [--class CLASS] [--path EXE] [--password] [--terminal] [--game]
   shurufa-imecli wordbook list

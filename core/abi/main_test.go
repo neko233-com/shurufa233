@@ -136,6 +136,24 @@ func TestLoadConfigKeepsHalfWidthPunctuation(t *testing.T) {
 	}
 }
 
+func TestLoadConfigForcesSimplifiedChinese(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("SHURUFA233_CONFIG", configPath)
+	config := engine.DefaultConfig()
+	config.Script = "traditional"
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := loadConfig(); got.Script != "simplified" {
+		t.Fatalf("script = %q, want simplified", got.Script)
+	}
+}
+
 func TestLoadConfigKeepsDoublePinyinScheme(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	t.Setenv("SHURUFA233_CONFIG", configPath)
@@ -153,6 +171,26 @@ func TestLoadConfigKeepsDoublePinyinScheme(t *testing.T) {
 	got := loadConfig()
 	if !got.DoublePinyin || got.DoublePinyinScheme != "microsoft" {
 		t.Fatalf("double pinyin config = enabled:%v scheme:%q, want microsoft", got.DoublePinyin, got.DoublePinyinScheme)
+	}
+}
+
+func TestLoadConfigKeepsZiranmaDoublePinyinScheme(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("SHURUFA233_CONFIG", configPath)
+	config := engine.DefaultConfig()
+	config.DoublePinyin = true
+	config.DoublePinyinScheme = "zrm"
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := loadConfig()
+	if !got.DoublePinyin || got.DoublePinyinScheme != "ziranma" || got.Schema != "double-pinyin-ziranma" {
+		t.Fatalf("double pinyin config = %#v, want ziranma", got)
 	}
 }
 
@@ -366,6 +404,15 @@ func TestCapabilitiesIncludeAssociationCandidates(t *testing.T) {
 	t.Fatalf("capabilities missing association-candidates: %#v", abiFeatureList)
 }
 
+func TestCapabilitiesIncludeCalculatorCandidates(t *testing.T) {
+	for _, feature := range abiFeatureList {
+		if feature == "calculator-candidates" {
+			return
+		}
+	}
+	t.Fatalf("capabilities missing calculator-candidates: %#v", abiFeatureList)
+}
+
 func TestCapabilitiesIncludeDictionarySourcePresets(t *testing.T) {
 	seen := map[string]bool{}
 	for _, feature := range abiFeatureList {
@@ -379,12 +426,15 @@ func TestCapabilitiesIncludeDictionarySourcePresets(t *testing.T) {
 }
 
 func TestCapabilitiesIncludeKeyBehaviorConfig(t *testing.T) {
+	seen := map[string]bool{}
 	for _, feature := range abiFeatureList {
-		if feature == "key-behavior-config" {
-			return
+		seen[feature] = true
+	}
+	for _, feature := range []string{"key-behavior-config", "key-bindings-json", "shortcut-conflict-detection"} {
+		if !seen[feature] {
+			t.Fatalf("capabilities missing %s: %#v", feature, abiFeatureList)
 		}
 	}
-	t.Fatalf("capabilities missing key-behavior-config: %#v", abiFeatureList)
 }
 
 func TestCapabilitiesIncludeRimeRecognizerPatterns(t *testing.T) {
@@ -1398,6 +1448,34 @@ func TestExecuteExtensionCommandKeyEventCommitsFullWidthPunctuation(t *testing.T
 	}
 }
 
+func TestExecuteExtensionCommandKeyEventCalculatorInput(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+	session.InputKey('8')
+	for _, key := range []string{"/", "2"} {
+		got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"`+key+`","character":"`+key+`"}`)
+		if !handled {
+			t.Fatal("key-event-json command was not handled")
+		}
+		result, ok := got.(keyEventResult)
+		if !ok || !result.OK || !result.Handled || !strings.HasPrefix(result.Action, "input") {
+			t.Fatalf("key-event calculator input %q = %#v", key, got)
+		}
+	}
+	state := session.State()
+	if state.Buffer != "8/2" || len(state.Candidates) == 0 || state.Candidates[0].Text != "4" ||
+		state.Candidates[0].Source != "builtin-calculator" {
+		t.Fatalf("calculator key-event state = %#v", state)
+	}
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"space"}`)
+	if !handled {
+		t.Fatal("key-event-json space was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || !result.OK || !result.Handled || result.Action != "commit-candidate" || result.Committed != "4" {
+		t.Fatalf("key-event calculator commit = %#v", got)
+	}
+}
+
 func TestExecuteExtensionCommandKeyEventCommitsCandidateBeforePunctuation(t *testing.T) {
 	t.Setenv("SHURUFA233_USER_SCORES", filepath.Join(t.TempDir(), "user-scores.json"))
 	session := engine.New(engine.DefaultConfig())
@@ -1500,6 +1578,68 @@ func TestExecuteExtensionCommandKeyEventRimeProfilePagesWithCommaPeriod(t *testi
 	}
 }
 
+func TestExecuteExtensionCommandCustomKeyBindings(t *testing.T) {
+	config := engine.DefaultConfig()
+	config.KeyProfile = "custom"
+	config.KeyBindings = []engine.KeyBinding{
+		{Action: "page-next", Keys: []string{"Ctrl+J"}, Enabled: true},
+		{Action: "quick-select-2", Keys: []string{"Ctrl+K"}, Enabled: true},
+	}
+	session := engine.New(config)
+	for i := 0; i < 10; i++ {
+		session.AddEntries([]engine.Entry{{Reading: "custom", Text: "候" + strconv.Itoa(i), Weight: 100 - i}})
+	}
+	session.Preview("custom")
+
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"j","character":"j","ctrl":true,"limit":5}`)
+	if !handled {
+		t.Fatal("key-event-json custom page was not handled")
+	}
+	page, ok := got.(keyEventResult)
+	if !ok || !page.OK || !page.Handled || page.Action != "page-candidates" || page.PageDelta != 1 || page.Reason != "shortcut" {
+		t.Fatalf("custom page shortcut = %#v", got)
+	}
+
+	session.Preview("custom")
+	got, handled = executeSessionExtensionCommand(session, "key-event-json", `{"key":"k","character":"k","ctrl":true,"limit":5}`)
+	if !handled {
+		t.Fatal("key-event-json custom quick select was not handled")
+	}
+	selectResult, ok := got.(keyEventResult)
+	if !ok || !selectResult.OK || !selectResult.Handled || selectResult.Action != "commit-candidate" || selectResult.Index != 1 || selectResult.Committed != "候1" {
+		t.Fatalf("custom quick shortcut = %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandShortcutsEnvelopeAndApply(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+
+	got, handled := executeSessionExtensionCommand(session, "apply-key-bindings-json", `{"keyBindings":[{"action":"toggle-mode","keys":["Ctrl+J"],"enabled":true},{"action":"page-next","keys":["Ctrl+J"],"enabled":true}]}`)
+	if !handled {
+		t.Fatal("apply-key-bindings-json command was not handled")
+	}
+	applied, ok := got.(map[string]any)
+	if !ok || applied["ok"] != false {
+		t.Fatalf("apply key bindings = %#v", got)
+	}
+	conflicts, ok := applied["conflicts"].([]engine.KeyBindingConflict)
+	if !ok || len(conflicts) == 0 || conflicts[0].Key != "Ctrl+J" {
+		t.Fatalf("expected shortcut conflict, got %#v", applied["conflicts"])
+	}
+	if session.Config().KeyProfile == "custom" {
+		t.Fatalf("conflicting bindings should not be applied: %#v", session.Config())
+	}
+
+	got, handled = executeSessionExtensionCommand(session, "shortcuts-json", `{}`)
+	if !handled {
+		t.Fatal("shortcuts-json command was not handled")
+	}
+	envelope, ok := got.(map[string]any)
+	if !ok || envelope["keyBindings"] == nil || envelope["conflicts"] == nil {
+		t.Fatalf("shortcuts envelope = %#v", got)
+	}
+}
+
 func TestExecuteExtensionCommandKeyEventNavigationIntent(t *testing.T) {
 	session := engine.New(engine.DefaultConfig())
 	session.AddEntries([]engine.Entry{
@@ -1536,6 +1676,41 @@ func TestExecuteExtensionCommandKeyEventMicrosoftDoublePinyinKeepsSemicolonInput
 	result, ok := got.(keyEventResult)
 	if !ok || !result.OK || !result.Handled || result.Action == "commit-candidate" || result.Committed == "候二" {
 		t.Fatalf("microsoft double pinyin semicolon should not quick-select: %#v", got)
+	}
+}
+
+func TestExecuteExtensionCommandKeyEventComposesCalculatorBeforeCandidateSelection(t *testing.T) {
+	session := engine.New(engine.DefaultConfig())
+
+	for _, payload := range []string{
+		`{"key":"1","character":"1"}`,
+		`{"key":"+","character":"+","shift":true}`,
+		`{"key":"2","character":"2"}`,
+		`{"key":"*","character":"*","shift":true}`,
+		`{"key":"3","character":"3"}`,
+	} {
+		got, handled := executeSessionExtensionCommand(session, "key-event-json", payload)
+		if !handled {
+			t.Fatalf("key event %s was not handled", payload)
+		}
+		result, ok := got.(keyEventResult)
+		if !ok || !result.OK || !result.Handled {
+			t.Fatalf("key event %s = %#v", payload, got)
+		}
+	}
+
+	state := session.State()
+	if state.Buffer != "1+2*3" || len(state.Candidates) == 0 || state.Candidates[0].Text != "7" {
+		t.Fatalf("calculator composition = %#v", state)
+	}
+
+	got, handled := executeSessionExtensionCommand(session, "key-event-json", `{"key":"space"}`)
+	if !handled {
+		t.Fatal("calculator commit was not handled")
+	}
+	result, ok := got.(keyEventResult)
+	if !ok || result.Action != "commit-candidate" || result.Committed != "7" {
+		t.Fatalf("calculator commit = %#v", got)
 	}
 }
 

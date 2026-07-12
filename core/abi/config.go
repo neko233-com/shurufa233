@@ -113,28 +113,16 @@ func normalizeConfig(config engine.Config) engine.Config {
 	}
 	config = engine.NormalizeSchemaConfig(config)
 	config = engine.NormalizeKeyBehavior(config)
+	config.KeyBindings = engine.NormalizeKeyBindings(config)
 	config.RecognizerPatterns = engine.NormalizeRecognizerPatterns(config.RecognizerPatterns)
 	config.AppRules = engine.NormalizeAppRules(config.AppRules)
 	config.Agent = engine.NormalizeAgent(config.Agent)
 	config.Sync = engine.NormalizeSync(config.Sync)
-	return config
+	return engine.NormalizeConfig(config)
 }
 
-func normalizeScript(script string, fallback string) string {
-	switch strings.ToLower(strings.TrimSpace(script)) {
-	case "", "simplified", "simp", "s", "zh-cn", "cn":
-		if strings.TrimSpace(script) == "" && fallback != "" {
-			return fallback
-		}
-		return "simplified"
-	case "traditional", "trad", "t", "zh-tw", "zh-hk", "tw", "hk":
-		return "traditional"
-	default:
-		if fallback == "" {
-			return "simplified"
-		}
-		return fallback
-	}
+func normalizeScript(string, string) string {
+	return "simplified"
 }
 
 func normalizeCandidateLayout(layout string) string {
@@ -154,6 +142,8 @@ func normalizeDoublePinyinScheme(scheme string) string {
 	switch strings.ToLower(strings.TrimSpace(scheme)) {
 	case "", "xiaohe", "flypy":
 		return "xiaohe"
+	case "ziranma", "zrm", "natural", "natural-code", "double-pinyin-ziranma":
+		return "ziranma"
 	case "microsoft", "ms", "sogou":
 		return "microsoft"
 	default:

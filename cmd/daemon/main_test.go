@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -142,6 +143,118 @@ func TestPutConfigNormalizesCandidatePool(t *testing.T) {
 	}
 	if state.config.CandidatePageSize != 9 {
 		t.Fatalf("candidatePageSize = %d, want 9", state.config.CandidatePageSize)
+	}
+}
+
+func TestPutConfigRejectsConflictingKeyBindings(t *testing.T) {
+	config := engine.DefaultConfig()
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	state.sessions["default"] = state.engine
+
+	next := engine.DefaultConfig()
+	next.KeyProfile = "custom"
+	next.KeyBindings = []engine.KeyBinding{
+		{Action: "toggle-mode", Keys: []string{"Ctrl+J"}, Enabled: true},
+		{Action: "page-next", Keys: []string{"Ctrl+J"}, Enabled: true},
+	}
+	body, err := json.Marshal(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/config", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	state.putConfig(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got shortcutResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.OK || len(got.Conflicts) == 0 || !strings.Contains(got.Error, "Ctrl+J") {
+		t.Fatalf("conflict response = %#v", got)
+	}
+	if state.config.KeyProfile != config.KeyProfile {
+		t.Fatalf("invalid bindings changed config: %#v", state.config)
+	}
+}
+
+func TestPutShortcutsPersistsNormalizedBindingsAndUpdatesSessions(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/shortcuts", strings.NewReader(`{
+		"keyBindings":[{"action":"page-next","keys":["ctrl+j"],"enabled":true}]
+	}`))
+	rec := httptest.NewRecorder()
+	state.putShortcuts(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got shortcutResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK || got.Config.KeyProfile != "custom" || len(got.KeyBindings) == 0 || len(got.Conflicts) != 0 {
+		t.Fatalf("shortcut response = %#v", got)
+	}
+	stroke := engine.KeyStroke{Key: "j", Character: "j", Ctrl: true}
+	if action := engine.ShortcutActionForStroke(state.config, stroke); action != "page-next" {
+		t.Fatalf("stored shortcut action = %q", action)
+	}
+	if action := engine.ShortcutActionForStroke(session.Config(), stroke); action != "page-next" {
+		t.Fatalf("session shortcut action = %q", action)
+	}
+	if _, err := os.Stat(state.path); err != nil {
+		t.Fatalf("shortcuts were not persisted: %v", err)
+	}
+}
+
+func TestPutShortcutsRejectsConflictsWithoutChangingConfig(t *testing.T) {
+	config := engine.DefaultConfig()
+	state := &AppState{
+		config:   config,
+		engine:   engine.New(config),
+		sessions: map[string]*engine.Engine{},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+	state.sessions["default"] = state.engine
+
+	req := httptest.NewRequest(http.MethodPut, "/shortcuts", strings.NewReader(`{
+		"bindings":[
+			{"action":"toggle-mode","keys":["Ctrl+J"],"enabled":true},
+			{"action":"page-next","keys":["Ctrl+J"],"enabled":true}
+		]
+	}`))
+	rec := httptest.NewRecorder()
+	state.putShortcuts(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got shortcutResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.OK || len(got.Conflicts) == 0 || !strings.Contains(got.Error, "Ctrl+J") {
+		t.Fatalf("conflict response = %#v", got)
+	}
+	if state.config.KeyProfile != config.KeyProfile || !reflect.DeepEqual(state.config.KeyBindings, config.KeyBindings) {
+		t.Fatalf("conflicting shortcuts changed config: %#v", state.config)
 	}
 }
 
@@ -426,7 +539,7 @@ func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	parts := strings.Split(rec.Body.String(), "|")
-	if len(parts) != 18 {
+	if len(parts) != 21 {
 		t.Fatalf("skin payload parts = %#v", parts)
 	}
 	if parts[9] != "5" {
@@ -440,6 +553,9 @@ func TestImeSkinIncludesCandidatePageSize(t *testing.T) {
 	}
 	if got := strings.Join(parts[12:18], ","); got != "11,13,9,7,15,96" {
 		t.Fatalf("skin metric payload = %q", got)
+	}
+	if got := strings.Join(parts[18:21], ","); got != "win11,balanced,true" {
+		t.Fatalf("candidate window payload = %q", got)
 	}
 }
 
@@ -497,6 +613,15 @@ func TestNormalizeConfigKeepsCandidateLayout(t *testing.T) {
 
 	if got.CandidateLayout != "vertical" {
 		t.Fatalf("candidateLayout = %q, want vertical", got.CandidateLayout)
+	}
+}
+
+func TestNormalizeConfigForcesSimplifiedChinese(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.Script = "traditional"
+
+	if got := normalizeConfig(next); got.Script != "simplified" {
+		t.Fatalf("script = %q, want simplified", got.Script)
 	}
 }
 
@@ -584,6 +709,18 @@ func TestNormalizeConfigKeepsMicrosoftDoublePinyinScheme(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigKeepsZiranmaDoublePinyinScheme(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.DoublePinyin = true
+	next.DoublePinyinScheme = " natural-code "
+
+	got := normalizeConfig(next)
+
+	if !got.DoublePinyin || got.DoublePinyinScheme != "ziranma" || got.Schema != "double-pinyin-ziranma" {
+		t.Fatalf("double pinyin config = %#v, want ziranma", got)
+	}
+}
+
 func TestNormalizeConfigDefaultsInvalidDoublePinyinScheme(t *testing.T) {
 	next := engine.DefaultConfig()
 	next.DoublePinyinScheme = "broken"
@@ -644,7 +781,7 @@ func TestSchemasEndpointListsPresets(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Selected != "wechat-pinyin" || len(got.Schemas) < 4 {
+	if got.Selected != "wechat-pinyin" || len(got.Schemas) < 5 {
 		t.Fatalf("schemas response = %#v", got)
 	}
 }
@@ -671,6 +808,34 @@ func TestApplySchemaUpdatesConfigAndSessions(t *testing.T) {
 	}
 	if got.Config.Schema != "double-pinyin-microsoft" || !got.Config.DoublePinyin || got.Config.DoublePinyinScheme != "microsoft" {
 		t.Fatalf("applied schema config = %#v", got.Config)
+	}
+}
+
+func TestApplyZiranmaSchemaUpdatesConfigAndSessions(t *testing.T) {
+	config := engine.DefaultConfig()
+	session := engine.New(config)
+	state := &AppState{
+		config:   config,
+		engine:   session,
+		sessions: map[string]*engine.Engine{"default": session},
+		path:     filepath.Join(t.TempDir(), "shurufa233", "config.json"),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/schemas/apply", strings.NewReader(`{"id":"double-pinyin-ziranma"}`))
+	rec := httptest.NewRecorder()
+	state.applySchema(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got schemaResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Config.Schema != "double-pinyin-ziranma" || !got.Config.DoublePinyin || got.Config.DoublePinyinScheme != "ziranma" {
+		t.Fatalf("applied schema config = %#v", got.Config)
+	}
+	if session.Config().DoublePinyinScheme != "ziranma" {
+		t.Fatalf("session config = %#v, want ziranma", session.Config())
 	}
 }
 

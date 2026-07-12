@@ -678,7 +678,9 @@ $ProfileCtl = Join-Path $InstallDir "Shurufa233ProfileCtl.exe"
 if (Test-Path $ProfileCtl) {
   & $ProfileCtl enable | Write-Host
   if ($ActivateProfile) {
-    Set-WinDefaultInputMethodOverride -InputTip $Tip
+    # Activate only for the current TSF session. Never persist this TIP as the
+    # Windows default; shurufa233 must coexist with Microsoft Pinyin even on a
+    # developer/testing install.
     & $ProfileCtl activate | Write-Host
   }
 }

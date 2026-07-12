@@ -108,7 +108,7 @@ func TestBuiltinSchemaPresetsIncludeRimeAndDoublePinyin(t *testing.T) {
 	for _, preset := range presets {
 		seen[preset.ID] = true
 	}
-	for _, id := range []string{"wechat-pinyin", "rime-luna-pinyin", "rime-ice-pinyin", "double-pinyin-xiaohe", "double-pinyin-microsoft"} {
+	for _, id := range []string{"wechat-pinyin", "rime-luna-pinyin", "rime-ice-pinyin", "double-pinyin-xiaohe", "double-pinyin-ziranma", "double-pinyin-microsoft"} {
 		if !seen[id] {
 			t.Fatalf("missing schema preset %q in %#v", id, presets)
 		}
@@ -135,6 +135,61 @@ func TestBuiltinSkinPresetsIncludeWechatAndRime(t *testing.T) {
 		if !seen[id] {
 			t.Fatalf("missing skin preset %q in %#v", id, presets)
 		}
+	}
+}
+
+func TestKeyBindingsNormalizeAndDetectConflicts(t *testing.T) {
+	config := DefaultConfig()
+	config.KeyProfile = "custom"
+	config.KeyBindings = []KeyBinding{
+		{Action: "toggle-mode", Keys: []string{"Ctrl+J"}, Enabled: true},
+		{Action: "page-next", Keys: []string{"ctrl+j"}, Enabled: true},
+		{Action: "page-prev", Keys: []string{"Win+Space"}, Enabled: true},
+	}
+
+	bindings := NormalizeKeyBindings(config)
+	if got := bindings[0].Keys[0]; got != "Ctrl+J" {
+		t.Fatalf("normalized shortcut = %q, want Ctrl+J", got)
+	}
+
+	conflicts := KeyBindingConflicts(config)
+	seenDuplicate := false
+	seenReserved := false
+	for _, conflict := range conflicts {
+		if conflict.Key == "Ctrl+J" && conflict.Level == "error" {
+			seenDuplicate = true
+		}
+		if conflict.Key == "Win+Space" && conflict.Level == "warning" {
+			seenReserved = true
+		}
+	}
+	if !seenDuplicate || !seenReserved {
+		t.Fatalf("conflicts = %#v", conflicts)
+	}
+	blocking := BlockingKeyBindingConflicts(config)
+	if len(blocking) != 1 || blocking[0].Key != "Ctrl+J" {
+		t.Fatalf("blocking conflicts = %#v", blocking)
+	}
+	if message := KeyBindingConflictMessage(config); !strings.Contains(message, "Ctrl+J") {
+		t.Fatalf("conflict message = %q", message)
+	}
+}
+
+func TestShortcutActionForStrokeUsesCustomBindings(t *testing.T) {
+	config := DefaultConfig()
+	config.KeyProfile = "custom"
+	config.KeyBindings = []KeyBinding{
+		{Action: "page-next", Keys: []string{"Ctrl+J"}, Enabled: true},
+		{Action: "toggle-mode", Keys: []string{"Shift"}, Enabled: true},
+	}
+	config = NormalizeConfig(config)
+
+	action := ShortcutActionForStroke(config, KeyStroke{Key: "j", Character: "j", Ctrl: true})
+	if action != "page-next" {
+		t.Fatalf("action = %q, want page-next", action)
+	}
+	if got := ShortcutActionForStroke(config, KeyStroke{Key: "shift"}); got != "toggle-mode" {
+		t.Fatalf("shift action = %q, want toggle-mode", got)
 	}
 }
 
@@ -200,6 +255,37 @@ func TestApplySchemaPresetConfigEnablesMicrosoftDoublePinyin(t *testing.T) {
 	if config.Schema != "double-pinyin-microsoft" || !config.DoublePinyin || config.DoublePinyinScheme != "microsoft" {
 		t.Fatalf("schema config = %#v", config)
 	}
+	if config.CandidatePageSize != 7 || config.CandidateWindowMode != "win11" || config.ShowCandidateComments {
+		t.Fatalf("microsoft strip config = %#v", config)
+	}
+}
+
+func TestApplyWechatSchemaRestoresCompactProductStrip(t *testing.T) {
+	legacy := DefaultConfig()
+	legacy.CandidatePageSize = 9
+	legacy.CandidateLayout = "vertical"
+	legacy.CandidateWindowMode = "full"
+	legacy.ShowCandidateComments = true
+	legacy.KeyProfile = "rime"
+
+	config, ok := ApplySchemaPresetConfig(legacy, "wechat-pinyin")
+	if !ok {
+		t.Fatal("expected wechat schema")
+	}
+	if config.CandidatePageSize != 7 || config.CandidateLayout != "horizontal" ||
+		config.CandidateWindowMode != "win11" || config.ShowCandidateComments || config.KeyProfile != "wechat" {
+		t.Fatalf("wechat product strip config = %#v", config)
+	}
+}
+
+func TestApplySchemaPresetConfigEnablesZiranmaDoublePinyin(t *testing.T) {
+	config, ok := ApplySchemaPresetConfig(DefaultConfig(), "double-pinyin-ziranma")
+	if !ok {
+		t.Fatal("expected ziranma double pinyin schema")
+	}
+	if config.Schema != "double-pinyin-ziranma" || !config.DoublePinyin || config.DoublePinyinScheme != "ziranma" {
+		t.Fatalf("schema config = %#v", config)
+	}
 }
 
 func TestNormalizeSchemaConfigDerivesManualDoublePinyin(t *testing.T) {
@@ -215,26 +301,67 @@ func TestNormalizeSchemaConfigDerivesManualDoublePinyin(t *testing.T) {
 	}
 }
 
-func TestGreedySegmentation(t *testing.T) {
-	e := New(DefaultConfig())
-	state := e.Preview("womende")
-	if len(state.Candidates) == 0 || state.Candidates[0].Text != "我们的" {
-		t.Fatalf("expected segmented candidate 我们的, got %#v", state.Candidates)
+func TestNormalizeSchemaConfigDerivesNaturalCodeDoublePinyin(t *testing.T) {
+	config := DefaultConfig()
+	config.Schema = ""
+	config.DoublePinyin = true
+	config.DoublePinyinScheme = "natural-code"
+
+	got := NormalizeSchemaConfig(NormalizeConfig(config))
+
+	if got.Schema != "double-pinyin-ziranma" || got.DoublePinyinScheme != "ziranma" {
+		t.Fatalf("schema config = %#v, want ziranma", got)
 	}
 }
 
-func TestSegmentedCandidateUsesBestScoredPath(t *testing.T) {
+func TestGreedySegmentation(t *testing.T) {
+	e := New(DefaultConfig())
+	// A very frequent single-syllable character must not beat the known
+	// multi-syllable word `women` during sentence fallback.
+	e.AddEntries([]Entry{{Reading: "men", Text: "门", Weight: 1000000}})
+	state := e.Preview("womende")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "我们的" {
+		t.Fatalf("expected word-level segmented candidate 我们的, got %#v", state.Candidates)
+	}
+	segmenterCount := 0
+	for _, candidate := range state.Candidates {
+		if candidate.Source == "segmenter" {
+			segmenterCount++
+		}
+		if candidate.Text == "women的" {
+			t.Fatalf("ASCII dictionary rows must not leak into Chinese sentence paths: %#v", state.Candidates)
+		}
+	}
+	if segmenterCount > 3 {
+		t.Fatalf("synthetic sentence alternatives = %d, want <= 3: %#v", segmenterCount, state.Candidates)
+	}
+}
+
+func TestCuratedCommonSentenceStaysDictionaryBacked(t *testing.T) {
+	e := New(DefaultConfig())
+	state := e.Preview("dadaowuqing")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "大道无情" {
+		t.Fatalf("expected curated candidate 大道无情, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Source == "segmenter" {
+		t.Fatalf("curated common sentence must not be synthesized: %#v", state.Candidates[0])
+	}
+}
+
+func TestExactCandidateSuppressesSyntheticSentence(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddEntries([]Entry{
 		{Reading: "nide", Text: "泥德", Weight: 100},
 	})
 
 	state := e.Preview("nide")
-	if len(state.Candidates) == 0 || state.Candidates[0].Text != "你的" {
-		t.Fatalf("expected best segmented candidate 你的 to outrank low-quality exact word, got %#v", state.Candidates)
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "泥德" {
+		t.Fatalf("exact dictionary candidate must stay ahead of synthetic sentence paths, got %#v", state.Candidates)
 	}
-	if state.Candidates[0].Kind != "phrase" || state.Candidates[0].Source != "segmenter" {
-		t.Fatalf("expected segmented phrase metadata, got %#v", state.Candidates[0])
+	for _, candidate := range state.Candidates {
+		if candidate.Source == "segmenter" {
+			t.Fatalf("exact lookup must not add random segmented candidates: %#v", state.Candidates)
+		}
 	}
 }
 
@@ -252,18 +379,18 @@ func TestSegmentedCandidateDoesNotOverrideStrongExactPhrase(t *testing.T) {
 func TestSegmentedCandidateUsesUserScoresInPath(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddEntries([]Entry{
-		{Reading: "aa", Text: "甲", Weight: 500},
-		{Reading: "aa", Text: "乙", Weight: 100},
-		{Reading: "bb", Text: "丙", Weight: 500},
+		{Reading: "ni", Text: "甲", Weight: 50000},
+		{Reading: "ni", Text: "乙", Weight: 10000},
+		{Reading: "de", Text: "丙", Weight: 50000},
 	})
 
-	state := e.Preview("aabb")
+	state := e.Preview("nide")
 	if len(state.Candidates) == 0 || state.Candidates[0].Text != "甲丙" {
 		t.Fatalf("expected static segment path 甲丙, got %#v", state.Candidates)
 	}
 
-	e.ImportUserScores(map[string]int{"aa|乙": 1000})
-	state = e.Preview("aabb")
+	e.ImportUserScores(map[string]int{"ni|乙": 100000})
+	state = e.Preview("nide")
 	if len(state.Candidates) == 0 || state.Candidates[0].Text != "乙丙" {
 		t.Fatalf("expected learned segment path 乙丙, got %#v", state.Candidates)
 	}
@@ -573,22 +700,22 @@ func TestPinCandidateRemovesMatchingReject(t *testing.T) {
 	}
 }
 
-func TestTraditionalScriptConvertsCandidateText(t *testing.T) {
+func TestTraditionalConfigIsForcedToSimplifiedOutput(t *testing.T) {
 	config := DefaultConfig()
 	config.Script = "traditional"
 	e := New(config)
 	e.AddEntries([]Entry{{Reading: "zhongguo", Text: "中国", Weight: 20000}})
 
 	state := e.Preview("zhongguo")
-	if len(state.Candidates) == 0 || state.Candidates[0].Text != "中國" {
-		t.Fatalf("expected traditional candidate text, got %#v", state.Candidates)
+	if e.Config().Script != "simplified" || len(state.Candidates) == 0 || state.Candidates[0].Text != "中国" {
+		t.Fatalf("legacy traditional config must be normalized to simplified output, got config=%#v candidates=%#v", e.Config(), state.Candidates)
 	}
 	if state.Candidates[0].Reading != "zhongguo" {
 		t.Fatalf("candidate reading should stay unchanged, got %#v", state.Candidates[0])
 	}
 }
 
-func TestTraditionalRejectUsesConvertedCandidateText(t *testing.T) {
+func TestRejectUsesSimplifiedCandidateText(t *testing.T) {
 	config := DefaultConfig()
 	config.Script = "traditional"
 	e := New(config)
@@ -598,18 +725,18 @@ func TestTraditionalRejectUsesConvertedCandidateText(t *testing.T) {
 	})
 
 	state := e.Preview("ceshi")
-	if len(state.Candidates) == 0 || state.Candidates[0].Text != "錯詞" {
-		t.Fatalf("expected converted wrong candidate first, got %#v", state.Candidates)
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "错词" {
+		t.Fatalf("expected simplified wrong candidate first, got %#v", state.Candidates)
 	}
 	state, rejected, err := e.RejectCandidate(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rejected.Reading != "ceshi" || rejected.Text != "錯詞" {
+	if rejected.Reading != "ceshi" || rejected.Text != "错词" {
 		t.Fatalf("rejected = %#v", rejected)
 	}
-	if len(state.Candidates) == 0 || state.Candidates[0].Text == "錯詞" {
-		t.Fatalf("expected converted rejected candidate to disappear, got %#v", state.Candidates)
+	if len(state.Candidates) == 0 || state.Candidates[0].Text == "错词" {
+		t.Fatalf("expected simplified rejected candidate to disappear, got %#v", state.Candidates)
 	}
 }
 
@@ -622,6 +749,40 @@ func TestAssociateReturnsNextWordCandidates(t *testing.T) {
 	}
 	if state.Candidates[0].Kind != "association" || state.Candidates[0].Comment != "联想" {
 		t.Fatalf("association metadata = %#v", state.Candidates[0])
+	}
+}
+
+func TestAssociateUsesLocalContextKeywords(t *testing.T) {
+	e := New(DefaultConfig())
+
+	state := e.Associate("刚才的会议时间怎么安排", 5)
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "会议" {
+		t.Fatalf("expected context association candidates, got %#v", state.Candidates)
+	}
+	if state.Candidates[0].Kind != "association" || state.Candidates[0].Source != "context-association" ||
+		state.Candidates[0].Comment != "上下文联想" {
+		t.Fatalf("context association metadata = %#v", state.Candidates[0])
+	}
+}
+
+func TestAssociateKeepsDirectSuffixAheadOfContext(t *testing.T) {
+	e := New(DefaultConfig())
+
+	state := e.Associate("我正在用微信", 5)
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "输入法" || state.Candidates[0].Source != "builtin-association" {
+		t.Fatalf("expected direct suffix association first, got %#v", state.Candidates)
+	}
+}
+
+func TestAssociateContextHonorsRejectedCandidates(t *testing.T) {
+	e := New(DefaultConfig())
+	e.AddUserRejects([]Entry{{Reading: "huiyi", Text: "会议"}})
+
+	state := e.Associate("刚才的会议时间怎么安排", 5)
+	for _, candidate := range state.Candidates {
+		if candidate.Text == "会议" {
+			t.Fatalf("rejected context association should be hidden, got %#v", state.Candidates)
+		}
 	}
 }
 
@@ -775,9 +936,28 @@ func TestToggleModeClearsBufferAndNormalizesMode(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigShowsCandidateComments(t *testing.T) {
-	if !DefaultConfig().ShowCandidateComments {
-		t.Fatal("showCandidateComments should default to true")
+func TestDefaultConfigHidesCandidateComments(t *testing.T) {
+	if DefaultConfig().ShowCandidateComments {
+		t.Fatal("showCandidateComments should default to false in the Microsoft/WeChat strip")
+	}
+}
+
+func TestDefaultCandidateFontIsTwelvePixels(t *testing.T) {
+	if got := DefaultConfig().Skin.FontSize; got != 12 {
+		t.Fatalf("fontSize = %d, want 12", got)
+	}
+}
+
+func TestDefaultConfigCandidateWindowPerformanceAndEmoji(t *testing.T) {
+	config := DefaultConfig()
+	if config.CandidateWindowMode != "win11" {
+		t.Fatalf("candidateWindowMode = %q, want win11", config.CandidateWindowMode)
+	}
+	if config.PerformanceMode != "balanced" {
+		t.Fatalf("performanceMode = %q, want balanced", config.PerformanceMode)
+	}
+	if !config.EmojiCandidates {
+		t.Fatal("emojiCandidates should default to true")
 	}
 }
 
@@ -805,6 +985,21 @@ func TestKeyBehaviorProfilesNormalize(t *testing.T) {
 	}
 }
 
+func TestWechatDefaultUsesMinusEqualPaging(t *testing.T) {
+	config := DefaultConfig()
+	for _, test := range []struct {
+		key  string
+		want string
+	}{
+		{key: "-", want: "page-prev"},
+		{key: "=", want: "page-next"},
+	} {
+		if got := ShortcutActionForStroke(config, KeyStroke{Key: test.key, Character: test.key}); got != test.want {
+			t.Fatalf("%q shortcut = %q, want %q", test.key, got, test.want)
+		}
+	}
+}
+
 func TestKeyBehaviorCanBeDerivedFromSchema(t *testing.T) {
 	config := NormalizeKeyBehavior(Config{Schema: "rime-luna-pinyin"})
 	if config.KeyProfile != "rime" || !config.CommaPeriodPageKeys || config.SemicolonQuickSelect {
@@ -816,7 +1011,6 @@ func TestSwitchOptionsExposeRimeStyleRuntimeSwitches(t *testing.T) {
 	config := DefaultConfig()
 	config.Mode = "en"
 	config.Punctuation = "half"
-	config.Script = "traditional"
 	config.CandidateLayout = "vertical"
 	options := SwitchOptions(config)
 	got := map[string]bool{}
@@ -826,14 +1020,16 @@ func TestSwitchOptionsExposeRimeStyleRuntimeSwitches(t *testing.T) {
 	for id, value := range map[string]bool{
 		"ascii_mode":          true,
 		"ascii_punct":         true,
-		"simplification":      false,
-		"candidate_comments":  true,
+		"candidate_comments":  false,
 		"associations":        true,
 		"vertical_candidates": true,
 	} {
 		if got[id] != value {
 			t.Fatalf("switch %s = %v, want %v; options=%#v", id, got[id], value, options)
 		}
+	}
+	if _, exists := got["simplification"]; exists {
+		t.Fatalf("traditional output switch must not be exposed: %#v", options)
 	}
 }
 
@@ -848,8 +1044,8 @@ func TestApplySwitchTogglesConfigFields(t *testing.T) {
 		t.Fatalf("ascii_punct switch config = %#v", config)
 	}
 	config, _, ok = ApplySwitch(config, "simplification", false, false)
-	if !ok || config.Script != "traditional" {
-		t.Fatalf("simplification switch config = %#v", config)
+	if ok || config.Script != "simplified" {
+		t.Fatalf("traditional switch must be unsupported and keep simplified output: %#v", config)
 	}
 	config, _, ok = ApplySwitch(config, "candidate_comments", false, false)
 	if !ok || config.ShowCandidateComments {
@@ -900,8 +1096,11 @@ patch:
 	if config.CandidatePageSize != 8 || config.CandidateLayout != "vertical" {
 		t.Fatalf("candidate UI patch not applied: %#v", config)
 	}
-	if config.Mode != "en" || config.Punctuation != "half" || config.Script != "traditional" || config.ShowCandidateComments {
+	if config.Mode != "en" || config.Punctuation != "half" || config.Script != "simplified" || config.ShowCandidateComments {
 		t.Fatalf("switch patch not applied: %#v", config)
+	}
+	if !containsString(result.Warnings, "unsupported switch: simplification") {
+		t.Fatalf("legacy traditional Rime switch should be reported as ignored: %#v", result.Warnings)
 	}
 	if config.KeyProfile != "custom" || config.ShiftToggleMode {
 		t.Fatalf("shift key patch not applied: %#v", config)
@@ -1207,7 +1406,7 @@ func TestDoublePinyinXiaoheCandidates(t *testing.T) {
 	}{
 		{input: "nihk", want: "你好"},
 		{input: "vswf", want: "中文"},
-		{input: "uuru", want: "输入法"},
+		{input: "uuru", want: "输入"},
 	}
 
 	for _, tt := range tests {
@@ -1242,7 +1441,7 @@ func TestDoublePinyinMicrosoftCandidates(t *testing.T) {
 	}{
 		{input: "nill", want: "你来"},
 		{input: "vswf", want: "中文"},
-		{input: "uuru", want: "输入法"},
+		{input: "uuru", want: "输入"},
 	}
 
 	e.AddEntries([]Entry{{Reading: "nilai", Text: "你来", Weight: 18000}})
@@ -1271,6 +1470,39 @@ func TestDoublePinyinMicrosoftZeroInitialAndSemicolonFinal(t *testing.T) {
 	state = e.Preview("m;")
 	if len(state.Candidates) == 0 || state.Candidates[0].Text != "明" {
 		t.Fatalf("expected microsoft semicolon final m; -> ming candidate, got %#v", state.Candidates)
+	}
+}
+
+func TestDoublePinyinZiranmaCandidates(t *testing.T) {
+	config := DefaultConfig()
+	config.DoublePinyin = true
+	config.DoublePinyinScheme = "ziranma"
+	e := New(config)
+	e.AddEntries([]Entry{
+		{Reading: "xiexie", Text: "谢谢", Weight: 18000},
+		{Reading: "shuangpin", Text: "双拼", Weight: 18000},
+		{Reading: "huanghe", Text: "黄河", Weight: 18000},
+		{Reading: "lai", Text: "来", Weight: 18000},
+		{Reading: "ang", Text: "昂", Weight: 18000},
+	})
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "nihk", want: "你好"},
+		{input: "xxxx", want: "谢谢"},
+		{input: "udpn", want: "双拼"},
+		{input: "hdhe", want: "黄河"},
+		{input: "ll", want: "来"},
+		{input: "ah", want: "昂"},
+	}
+
+	for _, tt := range tests {
+		state := e.Preview(tt.input)
+		if len(state.Candidates) == 0 || state.Candidates[0].Text != tt.want {
+			t.Fatalf("expected ziranma double pinyin %q -> %q, got %#v", tt.input, tt.want, state.Candidates)
+		}
 	}
 }
 
@@ -1439,6 +1671,19 @@ func TestBuiltinEmojiCandidateMetadata(t *testing.T) {
 	}
 }
 
+func TestEmojiCandidatesCanBeDisabled(t *testing.T) {
+	config := DefaultConfig()
+	config.EmojiCandidates = false
+	e := New(config)
+
+	state := e.Preview("zan")
+	for _, candidate := range state.Candidates {
+		if candidate.Kind == "emoji" || candidate.Kind == "kaomoji" {
+			t.Fatalf("emoji candidate should be disabled, got %#v", candidate)
+		}
+	}
+}
+
 func TestCatalogEntriesFiltersSpecialResources(t *testing.T) {
 	e := New(DefaultConfig())
 	e.AddEntries([]Entry{
@@ -1566,6 +1811,45 @@ func TestDynamicWeekCandidates(t *testing.T) {
 	}
 }
 
+func TestCalculatorCandidates(t *testing.T) {
+	e := New(DefaultConfig())
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "1+2*3", want: "7"},
+		{input: "(1+2)*3=", want: "9"},
+		{input: "8/2", want: "4"},
+		{input: "2^3", want: "8"},
+		{input: "5%2", want: "1"},
+		{input: "0.1+0.2", want: "0.30000000000000004"},
+	}
+	for _, tt := range tests {
+		state := e.Preview(tt.input)
+		if len(state.Candidates) == 0 || state.Candidates[0].Text != tt.want {
+			t.Fatalf("expected calculator %q -> %q, got %#v", tt.input, tt.want, state.Candidates)
+		}
+		if state.Candidates[0].Kind != "dynamic" || state.Candidates[0].Source != "builtin-calculator" ||
+			state.Candidates[0].Comment != "计算" {
+			t.Fatalf("calculator metadata = %#v", state.Candidates[0])
+		}
+	}
+}
+
+func TestCalculatorRejectsUnsafeExpressions(t *testing.T) {
+	e := New(DefaultConfig())
+
+	for _, input := range []string{"8/0", "1+alert", "1+", "2**3"} {
+		state := e.Preview(input)
+		for _, candidate := range state.Candidates {
+			if candidate.Source == "builtin-calculator" {
+				t.Fatalf("unsafe calculator input %q produced candidate %#v", input, candidate)
+			}
+		}
+	}
+}
+
 func TestBundledZhDictionaryHasPagingCandidates(t *testing.T) {
 	e := New(DefaultConfig())
 	file, err := os.Open(filepath.Join("..", "..", "data", "dictionaries", "zh-CN.2026.07.04.json"))
@@ -1582,6 +1866,114 @@ func TestBundledZhDictionaryHasPagingCandidates(t *testing.T) {
 	}
 	if state.Candidates[0].Text != "是" {
 		t.Fatalf("expected top bundled shi candidate 是, got %#v", state.Candidates)
+	}
+}
+
+func TestProductionDictionarySmoke(t *testing.T) {
+	path := strings.TrimSpace(os.Getenv("SHURUFA233_PRODUCTION_DICTIONARY"))
+	if path == "" {
+		t.Skip("set SHURUFA233_PRODUCTION_DICTIONARY to run the production lexicon gate")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	e := New(DefaultConfig())
+	started := time.Now()
+	if _, err := e.LoadDictionary(file); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("production dictionary indexed in %s", time.Since(started))
+
+	state := e.Preview("juda'wubi")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "巨大无比" {
+		t.Fatalf("juda'wubi candidates = %#v", state.Candidates)
+	}
+	if len(state.Candidates) < 2 || state.Candidates[1].Text != "巨大" {
+		t.Fatalf("juda'wubi should expose Microsoft-style partial commit after the exact phrase, got %#v", state.Candidates)
+	}
+	state = e.Preview("nihao")
+	t.Logf("nihao first page = %#v", state.Candidates[:min(len(state.Candidates), DefaultConfig().CandidatePageSize)])
+	minimumUsefulPage := DefaultConfig().CandidatePageSize - 2
+	if len(state.Candidates) < minimumUsefulPage {
+		t.Fatalf("nihao should expose a useful production candidate page, got %#v", state.Candidates)
+	}
+	foundContinuation := false
+	segmenterCount := 0
+	for _, candidate := range state.Candidates[:min(len(state.Candidates), DefaultConfig().CandidatePageSize)] {
+		if candidate.Text == "你好吗" {
+			foundContinuation = true
+		}
+		if candidate.Source == "segmenter" {
+			segmenterCount++
+		}
+	}
+	if !foundContinuation || segmenterCount > 3 {
+		t.Fatalf("nihao first page should prefer dictionary phrases over character beams, got %#v", state.Candidates[:min(len(state.Candidates), DefaultConfig().CandidatePageSize)])
+	}
+	for _, test := range []struct {
+		input string
+		want  string
+	}{
+		{input: "jintian", want: "今天"},
+		{input: "shijie", want: "世界"},
+		{input: "gongzuo", want: "工作"},
+		{input: "keyi", want: "可以"},
+		{input: "weishenme", want: "为什么"},
+		{input: "qingwen", want: "请问"},
+		{input: "mima", want: "密码"},
+		{input: "weixin", want: "微信"},
+		{input: "shuru", want: "输入"},
+		{input: "ceshi", want: "测试"},
+		{input: "mingtian", want: "明天"},
+		{input: "xianzai", want: "现在"},
+		{input: "zhidao", want: "知道"},
+		{input: "xihuan", want: "喜欢"},
+		{input: "pengyou", want: "朋友"},
+		{input: "shijian", want: "时间"},
+		{input: "dongxi", want: "东西"},
+		{input: "meiyou", want: "没有"},
+		{input: "shenme", want: "什么"},
+		{input: "zhende", want: "真的"},
+		{input: "duibuqi", want: "对不起"},
+		{input: "meiguanxi", want: "没关系"},
+		{input: "zaijian", want: "再见"},
+		{input: "xiexie", want: "谢谢"},
+		{input: "bangmang", want: "帮忙"},
+		{input: "huijia", want: "回家"},
+		{input: "chifan", want: "吃饭"},
+		{input: "heshui", want: "喝水"},
+		{input: "shuijiao", want: "睡觉"},
+		{input: "kaixin", want: "开心"},
+		{input: "gaoxing", want: "高兴"},
+		{input: "wenti", want: "问题"},
+		{input: "xiaoxi", want: "消息"},
+		{input: "dianhua", want: "电话"},
+		{input: "diannao", want: "电脑"},
+		{input: "shouji", want: "手机"},
+		{input: "yinyue", want: "音乐"},
+		{input: "dianying", want: "电影"},
+		{input: "wanan", want: "晚安"},
+		{input: "shaodeng", want: "稍等"},
+		{input: "dadaowuqing", want: "大道无情"},
+	} {
+		state = e.Preview(test.input)
+		if len(state.Candidates) == 0 || state.Candidates[0].Text != test.want {
+			t.Fatalf("%s first candidate = %#v, want %q", test.input, state.Candidates, test.want)
+		}
+		if state.Candidates[0].Source == "segmenter" {
+			t.Fatalf("%s first candidate must be dictionary-backed, got %#v", test.input, state.Candidates[0])
+		}
+	}
+	state = e.Preview("womende")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "我们的" {
+		t.Fatalf("womende must rank the typed word-level sentence before longer prefix completions, got %#v", state.Candidates)
+	}
+	state = e.Preview("wananshuijiao")
+	if len(state.Candidates) == 0 || state.Candidates[0].Text != "晚安睡觉" {
+		t.Fatalf("wananshuijiao must compose common dictionary words, got %#v", state.Candidates)
 	}
 }
 
