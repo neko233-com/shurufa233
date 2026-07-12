@@ -3021,21 +3021,8 @@ func normalizePunctuationValue(mode string, fallback string) string {
 	}
 }
 
-func normalizeScriptValue(script string, fallback string) string {
-	switch strings.ToLower(strings.TrimSpace(script)) {
-	case "", "simplified", "simp", "s", "zh-cn", "cn":
-		if strings.TrimSpace(script) == "" && fallback != "" {
-			return fallback
-		}
-		return "simplified"
-	case "traditional", "trad", "t", "zh-tw", "zh-hk", "tw", "hk":
-		return "traditional"
-	default:
-		if fallback == "" {
-			return "simplified"
-		}
-		return fallback
-	}
+func normalizeScriptValue(string, string) string {
+	return "simplified"
 }
 
 func normalizeDoublePinyinSchemeValue(scheme string, fallback string) string {

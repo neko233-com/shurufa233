@@ -616,6 +616,15 @@ func TestNormalizeConfigKeepsCandidateLayout(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigForcesSimplifiedChinese(t *testing.T) {
+	next := engine.DefaultConfig()
+	next.Script = "traditional"
+
+	if got := normalizeConfig(next); got.Script != "simplified" {
+		t.Fatalf("script = %q, want simplified", got.Script)
+	}
+}
+
 func TestNormalizeConfigKeepsCandidateSkinReadable(t *testing.T) {
 	next := engine.DefaultConfig()
 	next.Skin.Surface = "#ffffff"

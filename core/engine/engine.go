@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 type Engine struct {
@@ -39,6 +41,7 @@ const doublePinyinVariantLimit = 64
 const abbreviationCandidatePenalty = 600
 const segmentedCandidatePenalty = 600
 const segmentedPiecePenalty = 220
+const segmentedLexicalPieceBonus = 1000000
 const separatorCandidateWeight = 500000000
 const dynamicCandidateWeightBase = 8800
 const pinnedCandidateBonus = 1000000
@@ -1516,24 +1519,6 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
 			appendEntries(e.dict[variant], item.penalty+fuzzyCandidatePenalty)
 		}
-		if len(exactEntries) > 0 {
-			segmented, weight := e.segmentBestLocked(item.reading)
-			if segmented != "" && segmented != collapsedReading {
-				bestExact := 1
-				for _, entry := range exactEntries {
-					bestExact = max(bestExact, entry.Weight)
-				}
-				weight = min(weight, bestExact+max(500, bestExact/20))
-				appendEntries([]Entry{{
-					Reading: item.reading,
-					Text:    segmented,
-					Kind:    "phrase",
-					Source:  "segmenter",
-					Comment: "整句",
-					Weight:  weight,
-				}}, item.penalty)
-			}
-		}
 	}
 	if len(exact) > 0 {
 		maxCandidates := e.config.MaxCandidates
@@ -1618,32 +1603,15 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 		return exact
 	}
 
+	// For a complete pinyin sequence without a whole-reading dictionary row,
+	// build the typed text from dictionary words before offering longer prefix
+	// completions. Otherwise `womende` jumps straight to “我们的心” and omits
+	// the intended “我们的”. Prefix completions are still merged below the
+	// word-level result to keep the horizontal page useful.
 	seen = map[string]int{}
-	for _, item := range readings {
-		appendIndexedEntries(e.prefix[item.reading], item.penalty)
-		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
-			appendIndexedEntries(e.prefix[variant], item.penalty+fuzzyCandidatePenalty)
-		}
-	}
-	if len(exact) > 0 {
-		return exact
-	}
-
 	for _, item := range readings {
 		for _, variant := range append([]string{item.reading}, e.fuzzyReadingsLocked(item.reading)...) {
 			segmented := e.segmentCandidatesLocked(variant, e.config.MaxCandidates)
-			if len(segmented) == 0 {
-				if text, weight := e.segmentBestLocked(variant); text != "" {
-					segmented = []Entry{{
-						Reading: variant,
-						Text:    text,
-						Kind:    "phrase",
-						Source:  "segmenter",
-						Comment: "整句",
-						Weight:  weight,
-					}}
-				}
-			}
 			if len(segmented) == 0 {
 				continue
 			}
@@ -1654,10 +1622,16 @@ func (e *Engine) lookupLocked(reading string) []Entry {
 			for i := range segmented {
 				segmented[i].Weight = max(1, segmented[i].Weight-penalty)
 			}
-			return segmented
+			appendEntries(segmented, 0)
 		}
 	}
-	return nil
+	for _, item := range readings {
+		appendIndexedEntries(e.prefix[item.reading], item.penalty)
+		for _, variant := range e.fuzzyReadingsLocked(item.reading) {
+			appendIndexedEntries(e.prefix[variant], item.penalty+fuzzyCandidatePenalty)
+		}
+	}
+	return exact
 }
 
 func (e *Engine) lookupSpecialResourcePrefixLocked(code string) []Entry {
@@ -1867,68 +1841,6 @@ func (e *Engine) fuzzyReadingsLocked(reading string) []string {
 	return out
 }
 
-func (e *Engine) segmentBestLocked(reading string) (string, int) {
-	type segmentState struct {
-		text  string
-		score int
-		ok    bool
-	}
-	states := make([][]segmentState, len(reading)+1)
-	for i := range states {
-		states[i] = make([]segmentState, len(reading)+1)
-	}
-	states[0][0] = segmentState{ok: true}
-	for i := 0; i < len(reading); i++ {
-		for pieces := 0; pieces < len(reading); pieces++ {
-			current := states[i][pieces]
-			if !current.ok {
-				continue
-			}
-			end := len(reading)
-			if e.maxReadingLen > 0 && i+e.maxReadingLen < end {
-				end = i + e.maxReadingLen
-			}
-			for j := i + 1; j <= end; j++ {
-				part := reading[i:j]
-				entries := e.dict[part]
-				if len(entries) == 0 {
-					continue
-				}
-				best := e.bestEntryLocked(entries)
-				nextPieces := pieces + 1
-				score := current.score + e.entryScoreLocked(best) - segmentedPiecePenalty
-				if !states[j][nextPieces].ok || score > states[j][nextPieces].score {
-					states[j][nextPieces] = segmentState{
-						text:  current.text + best.Text,
-						score: score,
-						ok:    true,
-					}
-				}
-			}
-		}
-	}
-	best := segmentState{}
-	bestPieces := 0
-	bestAverage := 0
-	for pieces := 2; pieces <= len(reading); pieces++ {
-		candidate := states[len(reading)][pieces]
-		if !candidate.ok {
-			continue
-		}
-		average := candidate.score / pieces
-		if !best.ok || average > bestAverage ||
-			(average == bestAverage && pieces < bestPieces) {
-			best = candidate
-			bestPieces = pieces
-			bestAverage = average
-		}
-	}
-	if !best.ok {
-		return "", 0
-	}
-	return best.text, max(1, bestAverage)
-}
-
 func (e *Engine) segmentCandidatesLocked(reading string, limit int) []Entry {
 	parts := segmentPinyinReading(reading)
 	if len(parts) < 2 {
@@ -1944,63 +1856,105 @@ func (e *Engine) segmentCandidatesForPartsLocked(parts []string, reading string,
 	if limit <= 0 {
 		limit = DefaultConfig().MaxCandidates
 	}
+	// Synthetic sentences are a safety net, not a dictionary replacement.
+	// Three alternatives are enough to expose ambiguity without filling one or
+	// more pages with low-confidence Cartesian products.
+	limit = min(limit, 3)
 	type phrasePath struct {
-		text  string
-		score int
+		text   string
+		score  int
+		pieces int
 	}
-	beamLimit := max(limit*3, 21)
-	beam := []phrasePath{{}}
-	for _, part := range parts {
-		entries := e.dict[part]
-		if len(entries) == 0 {
-			return nil
+	betterPath := func(left phrasePath, right phrasePath) bool {
+		if left.pieces != right.pieces {
+			return left.pieces < right.pieces
 		}
-		partEntries := make([]Entry, 0, 7)
-		for _, entry := range entries {
-			if isEmojiResourceKind(entry.Kind) || entry.Kind == "symbol" || entry.Kind == "agent" {
+		if left.score != right.score {
+			return left.score > right.score
+		}
+		return left.text < right.text
+	}
+	prune := func(paths []phrasePath, maxPaths int) []phrasePath {
+		seen := make(map[string]int, len(paths))
+		unique := make([]phrasePath, 0, len(paths))
+		for _, path := range paths {
+			if previous, ok := seen[path.text]; ok {
+				if betterPath(path, unique[previous]) {
+					unique[previous] = path
+				}
 				continue
 			}
-			partEntries = append(partEntries, entry)
-			if len(partEntries) >= 7 {
-				break
+			seen[path.text] = len(unique)
+			unique = append(unique, path)
+		}
+		sort.SliceStable(unique, func(i, j int) bool { return betterPath(unique[i], unique[j]) })
+		if len(unique) > maxPaths {
+			unique = unique[:maxPaths]
+		}
+		return unique
+	}
+
+	// Segment on syllable boundaries, but allow every consecutive syllable
+	// group to resolve as a dictionary word.  The old code forced one entry per
+	// syllable and produced character Cartesian products such as 大到无请 for
+	// dadaowuqing.  Word-count is the primary cost; dictionary/user frequency
+	// only ranks paths with the same number of lexical pieces.
+	beamLimit := max(limit*6, 42)
+	states := make([][]phrasePath, len(parts)+1)
+	states[0] = []phrasePath{{}}
+	for start := 0; start < len(parts); start++ {
+		if len(states[start]) == 0 {
+			continue
+		}
+		states[start] = prune(states[start], beamLimit)
+		var partBuilder strings.Builder
+		for end := start + 1; end <= len(parts); end++ {
+			partBuilder.WriteString(parts[end-1])
+			entries := e.dict[partBuilder.String()]
+			if len(entries) == 0 {
+				continue
 			}
-		}
-		if len(partEntries) == 0 {
-			return nil
-		}
-		next := make([]phrasePath, 0, min(beamLimit, len(beam)*len(partEntries)))
-		seen := make(map[string]int)
-		for _, path := range beam {
-			for _, entry := range partEntries {
-				candidate := phrasePath{
-					text:  path.text + entry.Text,
-					score: path.score + e.entryScoreLocked(entry) - segmentedPiecePenalty,
-				}
-				if previous, ok := seen[candidate.text]; ok {
-					if candidate.score > next[previous].score {
-						next[previous] = candidate
-					}
+			partEntries := make([]Entry, 0, 5)
+			for _, entry := range entries {
+				if isEmojiResourceKind(entry.Kind) || entry.Kind == "symbol" || entry.Kind == "agent" {
 					continue
 				}
-				seen[candidate.text] = len(next)
-				next = append(next, candidate)
+				if !containsHanText(entry.Text) {
+					continue
+				}
+				partEntries = append(partEntries, entry)
+				if len(partEntries) >= 5 {
+					break
+				}
+			}
+			for _, path := range states[start] {
+				for _, entry := range partEntries {
+					rawScore := max(1, e.entryScoreLocked(entry))
+					lexicalScore := int(math.Log1p(float64(rawScore))*1000) - segmentedPiecePenalty
+					states[end] = append(states[end], phrasePath{
+						text:   path.text + entry.Text,
+						score:  path.score + lexicalScore,
+						pieces: path.pieces + 1,
+					})
+				}
+			}
+			if len(states[end]) > beamLimit*4 {
+				states[end] = prune(states[end], beamLimit)
 			}
 		}
-		sort.SliceStable(next, func(i, j int) bool {
-			if next[i].score != next[j].score {
-				return next[i].score > next[j].score
-			}
-			return next[i].text < next[j].text
-		})
-		if len(next) > beamLimit {
-			next = next[:beamLimit]
-		}
-		beam = next
 	}
+	beam := prune(states[len(parts)], beamLimit)
+	if len(beam) == 0 || beam[0].pieces < 2 {
+		return nil
+	}
+	maxPieces := beam[0].pieces + 1
 	out := make([]Entry, 0, min(limit, len(beam)))
 	for _, path := range beam {
 		if path.text == "" {
 			continue
+		}
+		if path.pieces > maxPieces {
+			break
 		}
 		out = append(out, Entry{
 			Reading: reading,
@@ -2008,13 +1962,25 @@ func (e *Engine) segmentCandidatesForPartsLocked(parts []string, reading string,
 			Kind:    "phrase",
 			Source:  "segmenter",
 			Comment: "整句",
-			Weight:  max(1, path.score/len(parts)),
+			// Preserve the word-count priority after candidates leave the
+			// segmenter and enter the engine's normal weight sort.
+			Weight: max(1, (len(parts)-path.pieces+1)*segmentedLexicalPieceBonus+
+				path.score/path.pieces),
 		})
 		if len(out) >= limit {
 			break
 		}
 	}
 	return out
+}
+
+func containsHanText(text string) bool {
+	for _, char := range text {
+		if unicode.Is(unicode.Han, char) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) segmentSeparatedLocked(input string) (string, int) {
@@ -2125,15 +2091,11 @@ func normalizeMode(mode string) string {
 	}
 }
 
-func normalizeScript(script string) string {
-	switch strings.ToLower(strings.TrimSpace(script)) {
-	case "", "simplified", "simp", "s", "zh-cn", "cn":
-		return "simplified"
-	case "traditional", "trad", "t", "zh-tw", "zh-hk", "tw", "hk":
-		return "traditional"
-	default:
-		return "simplified"
-	}
+func normalizeScript(string) string {
+	// This product intentionally ships one output language: simplified Chinese.
+	// Keep accepting the legacy config field so existing profiles load safely,
+	// but never allow it to change candidate or commit text at runtime.
+	return "simplified"
 }
 
 func normalizeDoublePinyinScheme(scheme string) string {

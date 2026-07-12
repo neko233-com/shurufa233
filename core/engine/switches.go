@@ -26,16 +26,6 @@ func SwitchOptions(config Config) []SwitchOption {
 			ConfigField: "punctuation",
 		},
 		{
-			ID:          "simplification",
-			Name:        "简繁输出",
-			RimeName:    "simplification",
-			Description: "打开时输出简体，关闭时输出繁体。",
-			Value:       normalizeScript(config.Script) == "simplified",
-			On:          "简体",
-			Off:         "繁体",
-			ConfigField: "script",
-		},
-		{
 			ID:          "candidate_comments",
 			Name:        "候选注释",
 			RimeName:    "comment",
@@ -94,12 +84,6 @@ func ApplySwitch(config Config, id string, value bool, toggle bool) (Config, Swi
 		} else {
 			config.Punctuation = "full"
 		}
-	case "simplification":
-		if value {
-			config.Script = "simplified"
-		} else {
-			config.Script = "traditional"
-		}
 	case "candidate_comments":
 		config.ShowCandidateComments = value
 	case "associations":
@@ -123,8 +107,6 @@ func NormalizeSwitchID(id string) string {
 		return "ascii_mode"
 	case "ascii_punct", "punctuation", "punct", "ascii_punctuation":
 		return "ascii_punct"
-	case "simplification", "simplified", "traditional", "script":
-		return "simplification"
 	case "comment", "comments", "candidate_comment", "candidate_comments", "show_candidate_comments":
 		return "candidate_comments"
 	case "association", "associations", "prediction", "predict":

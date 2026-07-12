@@ -83,8 +83,8 @@ The settings UI uses this IPC directly in development. A Wails v3 shell can host
 
 It clears active composition and returns next-word or local context association
 candidates in the normal `State` shape. Rows use `kind=association`, carry a
-`source` such as `builtin-association` or `context-association`, and are already
-converted through the configured `script`. The same association path is returned
+`source` such as `builtin-association` or `context-association`, and are emitted
+as simplified Chinese. The same association path is returned
 after `select` when the committed text has follow-up suggestions, so a native
 candidate strip can show WeChat-style post-commit choices and offline
 keyword-aware follow-ups without adding platform-specific prediction logic.
@@ -94,12 +94,10 @@ keyword-aware follow-ups without adding platform-specific prediction logic.
 ASCII punctuation while preserving candidate-first commit behavior during active
 composition.
 
-They also include `script`, normalized to `simplified` or `traditional`.
-Candidate text returned by preview, paging, selection, and candidate-action
-endpoints is already converted for display/commit, while readings and dictionary
-metadata stay unchanged. The current converter is a compact built-in mapping so
-full OpenCC data can later be hot-updated or swapped in without changing daemon,
-CLI, Wails, or native TSF IPC contracts.
+They also retain the legacy `script` field for profile compatibility, but it is
+always normalized to `simplified`. Candidate text returned by preview, paging,
+selection, and candidate-action endpoints is simplified Chinese for display and
+commit, while readings and dictionary metadata stay unchanged.
 
 They also include `candidatePageSize`, which controls the visible candidates per
 page in the native strip and React previews. The default is `7`; values are

@@ -136,6 +136,24 @@ func TestLoadConfigKeepsHalfWidthPunctuation(t *testing.T) {
 	}
 }
 
+func TestLoadConfigForcesSimplifiedChinese(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("SHURUFA233_CONFIG", configPath)
+	config := engine.DefaultConfig()
+	config.Script = "traditional"
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := loadConfig(); got.Script != "simplified" {
+		t.Fatalf("script = %q, want simplified", got.Script)
+	}
+}
+
 func TestLoadConfigKeepsDoublePinyinScheme(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	t.Setenv("SHURUFA233_CONFIG", configPath)

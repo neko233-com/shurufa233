@@ -121,21 +121,8 @@ func normalizeConfig(config engine.Config) engine.Config {
 	return engine.NormalizeConfig(config)
 }
 
-func normalizeScript(script string, fallback string) string {
-	switch strings.ToLower(strings.TrimSpace(script)) {
-	case "", "simplified", "simp", "s", "zh-cn", "cn":
-		if strings.TrimSpace(script) == "" && fallback != "" {
-			return fallback
-		}
-		return "simplified"
-	case "traditional", "trad", "t", "zh-tw", "zh-hk", "tw", "hk":
-		return "traditional"
-	default:
-		if fallback == "" {
-			return "simplified"
-		}
-		return fallback
-	}
+func normalizeScript(string, string) string {
+	return "simplified"
 }
 
 func normalizeCandidateLayout(layout string) string {

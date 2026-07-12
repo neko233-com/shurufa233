@@ -51,7 +51,7 @@ func main() {
 
 	mergedEntries := mergeEntries(entries)
 	if *maxEntries > 0 {
-		mergedEntries = compactEntries(mergedEntries, *maxEntries)
+		mergedEntries = compactEntriesWithPreferredReadings(mergedEntries, *maxEntries, collector.preferredReadings)
 	}
 	dictionary := engine.DictionaryFile{
 		Language: *language,
@@ -99,22 +99,24 @@ func gzipData(data []byte) ([]byte, error) {
 }
 
 type rimeCollector struct {
-	source         string
-	includeImports bool
-	missingPolicy  string
-	warnTo         io.Writer
-	visited        map[string]bool
-	readingsByText map[string][]string
+	source            string
+	includeImports    bool
+	missingPolicy     string
+	warnTo            io.Writer
+	visited           map[string]bool
+	readingsByText    map[string][]string
+	preferredReadings map[string]bool
 }
 
 func newRimeCollector(source string, includeImports bool, missingPolicy string, warnTo io.Writer) *rimeCollector {
 	return &rimeCollector{
-		source:         source,
-		includeImports: includeImports,
-		missingPolicy:  strings.ToLower(strings.TrimSpace(missingPolicy)),
-		warnTo:         warnTo,
-		visited:        make(map[string]bool),
-		readingsByText: make(map[string][]string),
+		source:            source,
+		includeImports:    includeImports,
+		missingPolicy:     strings.ToLower(strings.TrimSpace(missingPolicy)),
+		warnTo:            warnTo,
+		visited:           make(map[string]bool),
+		readingsByText:    make(map[string][]string),
+		preferredReadings: make(map[string]bool),
 	}
 }
 
@@ -146,6 +148,11 @@ func (collector *rimeCollector) collectResolved(path string) ([]engine.Entry, er
 	}
 	if closeErr != nil {
 		return nil, fmt.Errorf("%s: %w", cleanPath, closeErr)
+	}
+	if strings.EqualFold(filepath.Base(cleanPath), "base.dict.yaml") {
+		for _, entry := range entries {
+			collector.preferredReadings[entry.Reading] = true
+		}
 	}
 
 	if !collector.includeImports {
@@ -1055,17 +1062,32 @@ func mergeEntries(entries []engine.Entry) []engine.Entry {
 }
 
 func compactEntries(entries []engine.Entry, limit int) []engine.Entry {
-	if limit <= 0 || len(entries) <= limit {
+	return compactEntriesWithPreferredReadings(entries, limit, nil)
+}
+
+func compactEntriesWithPreferredReadings(entries []engine.Entry, limit int, preferredReadings map[string]bool) []engine.Entry {
+	if limit <= 0 {
 		return entries
 	}
 	type readingGroup struct {
 		reading  string
 		entries  []engine.Entry
 		priority int
+		core     bool
 	}
 	byReading := make(map[string][]engine.Entry)
 	for _, entry := range entries {
+		// The production runtime lexicon serves simplified Chinese.  English is
+		// committed literally after Shift and symbols/emoji have explicit kinds;
+		// keeping ordinary Latin entries (for example melt_eng) spends tens of
+		// thousands of scarce reading slots and removes daily words such as 晚安.
+		if !isCompactChineseEntry(entry) {
+			continue
+		}
 		byReading[entry.Reading] = append(byReading[entry.Reading], entry)
+	}
+	if len(byReading) == 0 {
+		return nil
 	}
 	groups := make([]readingGroup, 0, len(byReading))
 	for reading, grouped := range byReading {
@@ -1076,6 +1098,7 @@ func compactEntries(entries []engine.Entry, limit int) []engine.Entry {
 			return grouped[i].Text < grouped[j].Text
 		})
 		priority := grouped[0].Weight
+		core := false
 		for _, entry := range grouped {
 			priority = max(priority, dailyEntryPriority(entry))
 			special := entry.Kind == "emoji" || entry.Kind == "kaomoji" || entry.Kind == "symbol"
@@ -1084,9 +1107,17 @@ func compactEntries(entries []engine.Entry, limit int) []engine.Entry {
 			}
 			if utf8.RuneCountInString(entry.Text) == 1 {
 				priority = max(priority, 500000000)
+				core = true
 			}
 		}
-		groups = append(groups, readingGroup{reading: reading, entries: grouped, priority: priority})
+		if preferredReadings[reading] {
+			// rime-ice base.dict.yaml is the maintained daily vocabulary layer.
+			// Protect it from extension/vector corpora while retaining frequency
+			// order inside the base layer; an alphabetical tie silently removed
+			// ordinary later readings such as wanan.
+			priority = 750000000 + min(priority, 249999999)
+		}
+		groups = append(groups, readingGroup{reading: reading, entries: grouped, priority: priority, core: core})
 	}
 	sort.SliceStable(groups, func(i, j int) bool {
 		if groups[i].priority != groups[j].priority {
@@ -1096,15 +1127,42 @@ func compactEntries(entries []engine.Entry, limit int) []engine.Entry {
 	})
 	const candidatesPerReading = 7
 	out := make([]engine.Entry, 0, limit)
-	for _, group := range groups {
-		for i, entry := range group.entries {
-			if i >= candidatesPerReading || len(out) >= limit {
-				break
+
+	// Spend most of the compact budget on reading coverage before adding
+	// homophones.  The previous group-at-a-time loop could consume seven slots
+	// per popular reading and retain only ~11k readings in an 80k dictionary;
+	// ordinary chat words such as `wanan` and `shaodeng` disappeared entirely.
+	coverageTarget := max(1, (limit*3+3)/4)
+	coverageGroups := min(len(groups), coverageTarget)
+	for index := 0; index < coverageGroups && len(out) < limit; index++ {
+		out = append(out, groups[index].entries[0])
+	}
+	nextCandidate := make([]int, coverageGroups)
+	for index := range nextCandidate {
+		nextCandidate[index] = 1
+	}
+	// A full-pinyin strip also needs enough single-syllable alternatives for
+	// partial commit and sentence beams.  Reserve a small bounded slice before
+	// the general homophone pass; otherwise an 80k lexicon can still show only
+	// two candidates for everyday input such as nihao.
+	for candidateIndex := 1; candidateIndex < candidatesPerReading && len(out) < limit; candidateIndex++ {
+		for groupIndex := 0; groupIndex < coverageGroups && len(out) < limit; groupIndex++ {
+			group := groups[groupIndex]
+			if !group.core || candidateIndex >= len(group.entries) {
+				continue
 			}
-			out = append(out, entry)
+			out = append(out, group.entries[candidateIndex])
+			nextCandidate[groupIndex] = candidateIndex + 1
 		}
-		if len(out) >= limit {
-			break
+	}
+	for round := 1; round < candidatesPerReading && len(out) < limit; round++ {
+		for groupIndex := 0; groupIndex < coverageGroups && len(out) < limit; groupIndex++ {
+			group := groups[groupIndex]
+			candidateIndex := nextCandidate[groupIndex]
+			if candidateIndex < len(group.entries) {
+				out = append(out, group.entries[candidateIndex])
+				nextCandidate[groupIndex]++
+			}
 		}
 	}
 	return out
@@ -1128,14 +1186,27 @@ func dailyEntryPriority(entry engine.Entry) int {
 	case count == 1:
 		return 500000000
 	case count == 2:
-		return scaled(2)
+		return scaled(12)
 	case count >= 3 && count <= 4:
-		return scaled(20)
+		return scaled(8)
 	case count >= 5 && count <= 8:
 		return scaled(8)
 	default:
 		return weight
 	}
+}
+
+func isCompactChineseEntry(entry engine.Entry) bool {
+	switch entry.Kind {
+	case "emoji", "kaomoji", "symbol":
+		return true
+	}
+	for _, char := range entry.Text {
+		if unicode.Is(unicode.Han, char) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsString(items []string, value string) bool {

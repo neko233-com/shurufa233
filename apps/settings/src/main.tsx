@@ -61,7 +61,7 @@ type Config = {
   punctuationFullShape?: Record<string, string[]>;
   punctuationHalfShape?: Record<string, string[]>;
   recognizerPatterns?: Record<string, string>;
-  script: "simplified" | "traditional";
+  script: "simplified";
   associations: boolean;
   keyProfile: "wechat" | "microsoft" | "rime" | "custom";
   shiftToggleMode: boolean;
@@ -1027,8 +1027,8 @@ function normalizePerformanceMode(mode?: string): Config["performanceMode"] {
   return "balanced";
 }
 
-function normalizeScript(script?: string): Config["script"] {
-  return script === "traditional" ? "traditional" : "simplified";
+function normalizeScript(_script?: string): Config["script"] {
+  return "simplified";
 }
 
 function normalizeKeyProfile(profile?: string): Config["keyProfile"] {
@@ -2624,18 +2624,9 @@ function App() {
                 半角标点
               </button>
             </div>
-            <div className="segmented">
-              <button
-                className={(config.script ?? "simplified") === "simplified" ? "selected" : ""}
-                onClick={() => setConfig({ ...config, script: "simplified" })}
-              >
-                简体输出
-              </button>
-              <button
-                className={config.script === "traditional" ? "selected" : ""}
-                onClick={() => setConfig({ ...config, script: "traditional" })}
-              >
-                繁体输出
+            <div className="segmented" aria-label="输出语言">
+              <button className="selected" type="button" disabled>
+                简体中文（固定）
               </button>
             </div>
             <div className="segmented three">

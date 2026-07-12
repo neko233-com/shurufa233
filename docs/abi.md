@@ -43,11 +43,10 @@ Example response:
 choice. Switching modes clears the active composition buffer, matching Microsoft
 IME-style Chinese/English toggling.
 
-Candidate `text` is returned in the configured output script. `script` is read
-from the shared config and normalized to `simplified` or `traditional`; readings,
-weights, kinds, sources, and comments remain tied to the original dictionary
-rows. Native renderers should display and commit the returned `text` directly
-instead of doing their own simplified/traditional conversion.
+Candidate `text` is simplified Chinese. The legacy `script` config field is
+accepted only for backward-compatible profile loading and is always normalized
+to `simplified`; native renderers must display and commit the returned `text`
+directly without doing script conversion.
 
 `ShurufaPreview` and `ShurufaInputKey` preserve apostrophe pinyin separators in
 the returned `buffer`. The Go core collapses separators for dictionary lookup
@@ -321,8 +320,7 @@ another round of platform C++ or IMKit changes.
 `switches-json`, `apply-switch-json`, `toggle-switch`, `ShurufaSwitchesJSON`,
 and `ShurufaApplySwitchJSON` reserve a Rime-style runtime switch surface.
 Current switches map directly onto shared config fields: `ascii_mode` (`mode`),
-`ascii_punct` (`punctuation`), `simplification` (`script`),
-`candidate_comments` (`showCandidateComments`), `associations`, and
+`ascii_punct` (`punctuation`), `candidate_comments` (`showCandidateComments`), `associations`, and
 `vertical_candidates` (`candidateLayout`). This lets native glue send one JSON
 switch event for Weasel/Squirrel-style UI behavior while Go owns the actual
 field mapping and future switch expansion.

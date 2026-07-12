@@ -635,8 +635,14 @@ std::wstring Utf8ToWide(const char *value) {
   if (len <= 1) {
     return L"";
   }
-  std::wstring wide(static_cast<size_t>(len - 1), L'\0');
+  // `len` includes the trailing NUL because the source length is -1.  Reserve
+  // room for it before conversion, then remove it from the C++ string.  The
+  // old len-1 allocation wrote one wchar past the buffer on every conversion,
+  // corrupting composition text and making inline preedit appear as candidate
+  // text in real TSF hosts.
+  std::wstring wide(static_cast<size_t>(len), L'\0');
   MultiByteToWideChar(CP_UTF8, 0, value, -1, wide.data(), len);
+  wide.resize(static_cast<size_t>(len - 1));
   return wide;
 }
 
@@ -3191,7 +3197,14 @@ class TextService final : public ITfTextInputProcessorEx,
     if (IsToggleModeKey(key)) {
       if (!shiftDown_) {
         shiftDown_ = true;
-        shiftToggleCandidate_ = rawBuffer_.empty() && cachedCandidateCount_ == 0;
+        // A light Shift tap has the same meaning while a pinyin strip is
+        // visible as it has at rest: finish the literal spelling and switch
+        // to English.  This lets a user type `github`, `wechat`, or an
+        // unfinished pinyin buffer, tap Shift once, and continue in English
+        // without losing or accidentally committing a Chinese candidate.
+        // OnTestKeyDown clears this flag as soon as Shift is used as a
+        // modifier, so Shift+letter still behaves like normal uppercase input.
+        shiftToggleCandidate_ = true;
       }
       *eaten = TRUE;
       return S_OK;
@@ -3285,6 +3298,18 @@ class TextService final : public ITfTextInputProcessorEx,
       return S_OK;
     }
 
+    // A live pinyin composition owns apostrophe as a syllable separator.  This
+    // must happen before the WeChat quote quick-select route; otherwise
+    // `juda'wubi` commits candidate 3 at the first separator and makes the
+    // requested Microsoft-style preedit impossible to type.  When no raw
+    // composition is active (for example post-commit associations), quote
+    // keeps its normal third-candidate quick-select meaning.
+    if (ShouldUseApostropheSeparator(key)) {
+      InputCompositionChar(context, '\'');
+      *eaten = TRUE;
+      return S_OK;
+    }
+
     const int quickIndex = ConfiguredQuickSelectIndexFromKey(key);
     if (quickIndex >= 0 && cachedCandidateCount_ > pageOffset_ + quickIndex) {
       CommitCandidate(context, pageOffset_ + quickIndex);
@@ -3354,7 +3379,16 @@ class TextService final : public ITfTextInputProcessorEx,
       const bool shouldToggle = shiftDown_ && shiftToggleCandidate_ &&
                                 (!HasSystemModifier() || HasConfiguredShortcutForKey(key));
       if (shouldToggle) {
-        ToggleAsciiMode();
+        const bool commitRawPinyin = !asciiMode_ && !rawBuffer_.empty();
+        if (commitRawPinyin) {
+          // Do not turn the selected Chinese candidate into text here. The
+          // user asked to keep the actual typed spelling as the English word.
+          CommitRawBuffer(lastContext_);
+        }
+        // CommitRawBuffer finishes the TSF composition itself. Avoid a second
+        // cancel in that case so an async host cannot erase the just-committed
+        // English spelling.
+        ToggleAsciiMode(!commitRawPinyin);
       }
       shiftDown_ = false;
       shiftToggleCandidate_ = false;
@@ -3840,6 +3874,9 @@ class TextService final : public ITfTextInputProcessorEx,
         return true;
       }
     }
+    if (ShouldUseApostropheSeparator(key)) {
+      return true;
+    }
     if (IsBackspaceKey(key)) {
       return compositionLength_ > 0;
     }
@@ -3876,6 +3913,23 @@ class TextService final : public ITfTextInputProcessorEx,
   bool ShouldStartSlashSymbolPrefix(WPARAM key) const {
     return !asciiMode_ && rawBuffer_.empty() && cachedCandidateCount_ == 0 && !IsShiftPressed() &&
            (key == VK_OEM_2 || key == L'/');
+  }
+
+  bool IsApostropheSeparatorKey(WPARAM key) const {
+    return key == VK_OEM_7 || key == L'\'';
+  }
+
+  bool ShouldUseApostropheSeparator(WPARAM key) const {
+    if (asciiMode_ || !IsApostropheSeparatorKey(key) || rawBuffer_.empty() ||
+        IsRecognizerLiteralCurrent()) {
+      return false;
+    }
+    for (char ch : rawBuffer_) {
+      if ((ch < 'a' || ch > 'z') && ch != '\'') {
+        return false;
+      }
+    }
+    return true;
   }
 
   void RequestCompositionEdit(
@@ -5033,8 +5087,10 @@ class TextService final : public ITfTextInputProcessorEx,
     }
   }
 
-  void ToggleAsciiMode() {
-    CancelComposition(lastContext_);
+  void ToggleAsciiMode(bool cancelComposition = true) {
+    if (cancelComposition) {
+      CancelComposition(lastContext_);
+    }
     if (session_ && g_core.toggleMode) {
       char *state = g_core.toggleMode(session_);
       asciiMode_ = ModePayloadIsEnglish(state);
